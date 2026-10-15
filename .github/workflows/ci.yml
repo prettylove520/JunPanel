@@ -29,7 +29,7 @@ jobs:
       - name: Browser and installer syntax
         run: |
           node --check web/app.js
-          for script in install.sh build.sh uninstall.sh; do
+          for script in install.sh quick-install.sh build.sh uninstall.sh; do
             bash -n "$script"
           done
       - name: Linux amd64 and arm64 builds
