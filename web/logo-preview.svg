@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300">
+<rect width="880" height="300" rx="26" fill="#111318"/>
+<rect x="1" y="1" width="878" height="298" rx="25" fill="none" stroke="#FFFFFF" stroke-opacity=".08"/>
+<svg x="144" y="78" width="144" height="144" viewBox="0 0 80 80" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="8" y1="4" x2="72" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#243D33"/><stop offset=".52" stop-color="#13271F"/><stop offset="1" stop-color="#101C19"/></linearGradient>
+    <linearGradient id="edge" x1="10" y1="3" x2="65" y2="79" gradientUnits="userSpaceOnUse"><stop stop-color="#B7F1D5" stop-opacity=".46"/><stop offset=".5" stop-color="#91D6B6" stop-opacity=".12"/><stop offset="1" stop-color="#91D6B6" stop-opacity=".25"/></linearGradient>
+    <linearGradient id="jade" x1="25" y1="19" x2="55" y2="63" gradientUnits="userSpaceOnUse"><stop stop-color="#D1FBE6"/><stop offset=".45" stop-color="#A2E9C7"/><stop offset="1" stop-color="#65C39B"/></linearGradient>
+  </defs>
+  <rect x="1" y="1" width="78" height="78" rx="22" fill="url(#surface)" stroke="url(#edge)"/>
+  <path d="M40 19H56.5A2.5 2.5 0 0 1 59 21.5V40C59 54.4 50.5 63 37 63C25.9 63 18.3 57.4 15 47.9L26.9 42.6C28.7 48 31.8 51 37 51C43 51 46 47.1 46 40V31H40V19Z" fill="url(#jade)"/>
+  <rect x="19" y="19" width="13" height="12" rx="3.5" fill="url(#jade)"/>
+  <rect x="19" y="36" width="13" height="4" rx="2" fill="#9EDDBC" opacity=".28"/>
+  <path fill="none" d="M41 20H56.5A1.5 1.5 0 0 1 58 21.5V39" stroke="#E4FFF0" stroke-opacity=".32" stroke-linecap="round"/>
+</svg>
+<text x="331" y="152" fill="#F1F5F2" font-family="Segoe UI Variable,Segoe UI,Arial,sans-serif" font-size="68" font-weight="700" letter-spacing="-2.6">Jun<tspan fill="#BDC8C1" font-weight="400">Panel</tspan></text>
+<text x="336" y="194" fill="#899B90" font-family="Microsoft YaHei,Segoe UI,sans-serif" font-size="16" letter-spacing="3">你的服务器工作空间</text>
+</svg>
