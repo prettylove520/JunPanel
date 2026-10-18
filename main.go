@@ -95,6 +95,7 @@ func main() {
 		metricsStop := make(chan struct{})
 		defer close(metricsStop)
 		a.startMetrics(metricsStop)
+		a.startTrashCleanup(metricsStop)
 		serve(&http.Server{Handler: a.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, MaxHeaderBytes: 32768}, listener)
 	case "server":
 		if *port < 1024 || *port > 65535 {

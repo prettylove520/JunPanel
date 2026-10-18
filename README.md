@@ -101,11 +101,11 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 | 应用中心 | 独立编写的 WordPress、Gitea、Uptime Kuma、PostgreSQL、MySQL、Redis 六种精选模板；安装、启停、重启、重新部署、卸载保留数据、恢复部署、绑定域名 |
 | Docker | 现有容器列表与状态、启停重启、最近日志、镜像列表、镜像拉取及非强制删除 |
 | Compose | 从 Docker 标签识别现有项目，分组展示容器；对现有非一次性容器执行整组启停重启 |
-| 文件 | 限定 `/srv/junpanel`；浏览、新建文件夹/文本、上传、下载、UTF-8 编辑、版本冲突检查、重命名/移动、回收站与恢复 |
+| 文件 | 限定 `/srv/junpanel`；浏览、新建文件夹/文本、上传、下载、UTF-8 编辑、版本冲突检查、重命名/移动、回收站（恢复、永久删除、清空，30 天自动清理） |
 | 数据库 | 应用中心创建的 PostgreSQL/MySQL/WordPress 内部 MariaDB；执行 SQL、创建数据库、手动导出；Redis 的 INFO/DBSIZE/PING；再次验证面板密码后查看连接凭据 |
 | 容器终端 | 运行中容器的 `/bin/sh` 基础行终端、输入输出、Ctrl+C、断开；一次性连接票据与并发限制 |
 | 任务记录 | 应用/镜像/容器/项目任务结果与有界输出；应用部署与镜像拉取提供进行中的命令输出 |
-| 账号安全 | 单管理员、密码哈希、登录限速、服务器端会话、闲置/绝对过期、CSRF、同源校验、TOTP 两步验证 |
+| 账号安全 | 单管理员、密码哈希、按来源 IP 登录限速、服务器端会话、闲置/绝对过期、CSRF、同源校验、TOTP 两步验证（动态码一次性使用） |
 
 本版不提供全盘文件管理、宿主机 Web Shell、任意 Compose 编辑/导入、Docker 网络/卷编辑、现有外部数据库纳管、SQL 文件导入、Redis 任意键编辑或整套生产级数据库迁移工具。GitHub 自动部署、告警、多用户授权和更多应用模板可在此结构上扩展，当前界面没有占位操作入口。
 
@@ -158,6 +158,15 @@ sudo systemctl disable --now junpanel-web junpanel-agent
 sudo systemctl enable --now junpanel-agent junpanel-web
 ```
 
+登录日志记录结果与来源 IP，例如 `login result=failed ip=203.0.113.5`，可供 Fail2ban 等工具使用（面板不会自行配置 Fail2ban）。过滤规则示例：
+
+```ini
+# /etc/fail2ban/filter.d/junpanel.conf
+[Definition]
+failregex = login result=(failed|throttled) ip=<HOST>$
+journalmatch = _SYSTEMD_UNIT=junpanel-web.service
+```
+
 请勿把重置密码命令的输出粘贴到公开日志或反馈中。重置应以上面指定的 `junpanel-web` 用户执行，以保持认证文件归属正确。
 
 移除面板程序与服务（保留应用、站点和数据，可再次安装）：
@@ -177,24 +186,24 @@ sudo bash junpanel/uninstall.sh
 | `/var/lib/junpanel-agent` | root 私有登记文件、应用 Compose 配置和数据库凭据 |
 | `/run/junpanel/agent.sock` | root:junpanel、0660 的本机控制通道 |
 | `/srv/junpanel/sites` | 面板静态网站目录，网页文件供 Caddy 读取 |
-| `/srv/junpanel/.trash` | root 私有回收站，不设自动清理策略 |
+| `/srv/junpanel/.trash` | root 私有回收站，项目移入 30 天后自动永久删除 |
 | `/etc/caddy/junpanel.d/managed.caddy` | 面板拥有的站点片段；请通过网站模块编辑 |
 
 网页服务使用 `junpanel-web` 低权限用户；它不加入 docker 组，不直接挂载或访问 Docker socket。独立 root 代理连接系统 Docker，并执行范围固定的管理接口。**代理仍拥有 root 与 Docker 的高权限，网页服务被攻破后也可能滥用代理允许的能力；这一拆分不是强沙箱，也不使 Docker 管理变成低权限操作。** 面板管理员等同于服务器管理员信任级别。
 
-网页程序固定监听 `127.0.0.1`；在线安装器使用 `public-access.sh` 通过现有系统 Caddy 提供公网 IPv4 HTTPS 入口，校验原始 Origin 后适配本机接口，并给会话 Cookie 添加 Secure；请使用这套完整配置，而非仅增加一条普通反向代理。可显式选择本机模式并通过 SSH 隧道访问。公网入口启用后任何人都可到达登录页，仍必须通过管理员认证；登录失败锁定为全局共享，公开后也可能被外部请求触发。
+网页程序固定监听 `127.0.0.1`；在线安装器使用 `public-access.sh` 通过现有系统 Caddy 提供公网 IPv4 HTTPS 入口，校验原始 Origin 后适配本机接口，并给会话 Cookie 添加 Secure；请使用这套完整配置，而非仅增加一条普通反向代理。可显式选择本机模式并通过 SSH 隧道访问。公网入口启用后任何人都可到达登录页，仍必须通过管理员认证；登录失败按来源 IP 分别锁定，单个来源无法把管理员锁在门外。
 
 Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不将登录凭据写入 localStorage。公网访问使用 HTTPS 和 Secure Cookie；SSH 隧道访问使用本机 HTTP，远程链路由 SSH 加密。请在可信电脑上使用面板。
 
 文件操作使用 Go `os.Root` 限定路径，拒绝 `..` 与逃逸符号链接。它不是针对宿主机 root 的隔离机制，不能防御管理员在目录内预置特殊挂载点或硬链接。容器终端也可能经现有容器的高权限/宿主机挂载影响主机，请只进入可信容器。
 
-会话闲置 30 分钟、最长 8 小时；后台轮询不延长闲置期。5 次连续验证失败会锁定 10 分钟；状态存于网页进程内存，重启后清空。TOTP 支持前后各一个 30 秒时间窗口，需要服务器时钟准确。终端最多并发 2 个，连接最长 30 分钟；客户端无活动时约 5 分钟后断开。已有终端连接在账号变更时不即时中止，应同时重启面板服务以立即关闭。
+会话闲置 30 分钟、最长 8 小时；后台轮询不延长闲置期。同一来源 IP（IPv6 按 /64 计）10 分钟内验证失败 5 次即锁定该来源 10 分钟；全部来源 10 分钟内累计失败 200 次时，暂停最近 30 天内未成功登录过的来源。来源地址取自本机 Caddy 写入的 `X-Forwarded-For`，直连时取连接地址。状态存于网页进程内存，重启后清空。TOTP 支持前后各一个 30 秒时间窗口，需要服务器时钟准确；每个动态码只能使用一次，同一时间窗口内再次登录或验证需等待下一个动态码。终端最多并发 2 个，连接最长 30 分钟；客户端无活动时约 5 分钟后断开。已有终端连接在账号变更时不即时中止，应同时重启面板服务以立即关闭。
 
 ## 当前限制与验证状态
 
 - 管理界面中文优先，个别容器/数据库的原生命令输出保留原文。
 - 任务最多并行 2 个、保留 80 项，输出保留末尾 128 KiB；任务和指标历史不写入长期数据库。代理重启后会提示核对被中断的应用操作。
-- 文本编辑 1 MiB，文件上传 4 MiB、下载 8 MiB，目录最多 5000 项。回收站保留在本机，不是备份；没有自动永久清理。
+- 文本编辑 1 MiB，文件上传 4 MiB、下载 8 MiB，目录最多 5000 项。回收站保留在本机，不是备份；移入 30 天后自动永久删除，也可在回收站中手动永久删除或清空。
 - 数据库查询与导出结果上限 8 MiB，过大时拒绝，避免把截断结果当成完整导出。大规模导入导出、整站迁移请用原生工具。
 - 现有 Compose 项目按标签识别，整组操作逐个执行，不重新解释外部 Compose 文件或保证依赖顺序；遇到失败会停止并提示部分完成。一次性容器不参与整组操作。
 - 安装器面向 Debian + 标准 systemd `caddy.service`、`caddy` 用户（home 为 `/var/lib/caddy`）、`/usr/bin/caddy`、`/etc/caddy/Caddyfile`、现有 Docker/Compose。自定义 Caddy 环境文件、主配置中的环境变量、非标准路径会拒绝自动安装；其它导入文件中的环境变量同样需要人工核对后，为代理及 Caddy 校验命令配置一致的环境。

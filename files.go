@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -398,9 +399,122 @@ func (a *agent) trashList(w http.ResponseWriter, r *http.Request) error {
 	send(w, 200, out)
 	return nil
 }
+
+var trashID = regexp.MustCompile(`^t_[a-f0-9]{20}$`)
+
+const trashRetention = 30 * 24 * time.Hour
+
+// purgeTrash removes the item before its record so a failed removal stays listed.
+func purgeTrash(root *os.Root, id string) error {
+	if e := root.RemoveAll(".trash/" + id + ".data"); e != nil {
+		return e
+	}
+	if e := root.Remove(".trash/" + id + ".json"); e != nil && !os.IsNotExist(e) {
+		return e
+	}
+	return nil
+}
+func (a *agent) trashDelete(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	if !trashID.MatchString(id) {
+		return bad(400, "回收记录无效")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	root, e := a.rootFS()
+	if e != nil {
+		return e
+	}
+	defer root.Close()
+	if _, e = root.Lstat(".trash/" + id + ".json"); e != nil {
+		return bad(404, "回收记录不存在")
+	}
+	if e = purgeTrash(root, id); e != nil {
+		return bad(500, "永久删除未完成，请通过 SSH 检查回收站")
+	}
+	send(w, 200, map[string]any{"ok": true})
+	return nil
+}
+
+// emptyTrash removes everything in the recycle bin, or only records older than
+// the cutoff when one is given. Items without a readable record are kept then.
+func (a *agent) emptyTrash(before time.Time) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	root, e := a.rootFS()
+	if e != nil {
+		return 0, e
+	}
+	defer root.Close()
+	dir, e := root.Open(".trash")
+	if e != nil {
+		return 0, e
+	}
+	entries, e := dir.ReadDir(-1)
+	dir.Close()
+	if e != nil {
+		return 0, e
+	}
+	removed := 0
+	var failed error
+	for _, entry := range entries {
+		id, ok := strings.CutSuffix(entry.Name(), ".json")
+		if !ok || !trashID.MatchString(id) {
+			if before.IsZero() {
+				if e = root.RemoveAll(".trash/" + entry.Name()); e != nil {
+					failed = e
+				}
+			}
+			continue
+		}
+		if !before.IsZero() {
+			b, e := root.ReadFile(".trash/" + entry.Name())
+			var record trashRecord
+			if e != nil || json.Unmarshal(b, &record) != nil || !record.At.Before(before) {
+				continue
+			}
+		}
+		if e = purgeTrash(root, id); e != nil {
+			failed = e
+			continue
+		}
+		removed++
+	}
+	return removed, failed
+}
+func (a *agent) trashEmpty(w http.ResponseWriter, r *http.Request) error {
+	removed, e := a.emptyTrash(time.Time{})
+	if e != nil {
+		return bad(500, "部分项目未能删除，请通过 SSH 检查回收站")
+	}
+	send(w, 200, map[string]any{"ok": true, "removed": removed})
+	return nil
+}
+func (a *agent) startTrashCleanup(stop <-chan struct{}) {
+	clean := func() {
+		if n, e := a.emptyTrash(time.Now().Add(-trashRetention)); e != nil {
+			log.Printf("trash_cleanup result=failed removed=%d", n)
+		} else if n > 0 {
+			log.Printf("trash_cleanup result=success removed=%d", n)
+		}
+	}
+	go func() {
+		clean()
+		tick := time.NewTicker(6 * time.Hour)
+		defer tick.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tick.C:
+				clean()
+			}
+		}
+	}()
+}
 func (a *agent) trashRestore(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	if !regexp.MustCompile(`^t_[a-f0-9]{20}$`).MatchString(id) {
+	if !trashID.MatchString(id) {
 		return bad(400, "回收记录无效")
 	}
 	a.mu.Lock()
