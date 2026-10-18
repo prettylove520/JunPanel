@@ -1,17 +1,13 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -92,59 +88,6 @@ func renderSites(sites []site) []byte {
 		b.WriteString("  header X-Content-Type-Options nosniff\n}\n\n")
 	}
 	return []byte(b.String())
-}
-func (a *agent) caddyHosts() ([]string, error) {
-	var raw string
-	var e error
-	if a.capture != nil {
-		raw, e = a.capture(10*time.Second, "/usr/bin/caddy", "adapt", "--config", a.cfg.Caddy, "--adapter", "caddyfile")
-	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		b, err := exec.CommandContext(ctx, "/usr/bin/caddy", "adapt", "--config", a.cfg.Caddy, "--adapter", "caddyfile").Output()
-		raw = string(b)
-		e = err
-	}
-	if e != nil {
-		return nil, bad(502, "Caddyfile 读取失败；请检查路径、导入文件与服务环境变量")
-	}
-	if len(raw) > 8<<20 {
-		return nil, bad(500, "Caddy 配置过大")
-	}
-	var value any
-	if json.Unmarshal([]byte(raw), &value) != nil {
-		return nil, bad(502, "Caddy 转换结果无效")
-	}
-	hosts := map[string]bool{}
-	var visit func(any)
-	visit = func(v any) {
-		switch x := v.(type) {
-		case map[string]any:
-			for k, val := range x {
-				if k == "host" {
-					if arr, ok := val.([]any); ok {
-						for _, h := range arr {
-							if s, ok := h.(string); ok {
-								hosts[s] = true
-							}
-						}
-					}
-				}
-				visit(val)
-			}
-		case []any:
-			for _, v := range x {
-				visit(v)
-			}
-		}
-	}
-	visit(value)
-	out := []string{}
-	for host := range hosts {
-		out = append(out, host)
-	}
-	sort.Strings(out)
-	return out, nil
 }
 
 // Existing Caddy sites remain outside the panel's editable registry.
@@ -239,13 +182,13 @@ func (a *agent) siteList(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	hosts, he := a.caddyHosts()
+	hosts, sources, he := a.caddyInventory()
 	message := ""
 	if he != nil {
 		message = he.Error()
 	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"sites": sites, "existing_hosts": hosts, "external_hosts": a.externalHosts(sites, hosts), "error": message, "state": strings.TrimSpace(state), "root": a.cfg.Root})
+	send(w, 200, map[string]any{"sites": sites, "existing_hosts": hosts, "caddy_sources": sources, "external_hosts": a.externalHosts(sites, hosts), "error": message, "state": strings.TrimSpace(state), "root": a.cfg.Root})
 	return nil
 }
 func (a *agent) siteSave(w http.ResponseWriter, r *http.Request) error {

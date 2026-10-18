@@ -268,6 +268,7 @@ func testAgent(t *testing.T) *agent {
 	}
 	a.runner = func(time.Duration, string, ...string) (string, error) { return "active", nil }
 	a.capture = func(time.Duration, string, ...string) (string, error) { return `{"apps":{"http":{"servers":{}}}}`, nil }
+	a.processConfigs = func() ([]caddyConfig, error) { return nil, nil }
 	return a
 }
 func TestFilesContainmentConflictRecycle(t *testing.T) {
@@ -392,7 +393,7 @@ func TestSiteValidationAndConflict(t *testing.T) {
 	}
 	a := testAgent(t)
 	a.capture = func(time.Duration, string, ...string) (string, error) {
-		return `{"routes":[{"match":[{"host":["*.example.com"]}]}]}`, nil
+		return `{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["*.example.com"]}]}]}}}}}`, nil
 	}
 	r := request(a.routes(), "POST", "/sites", `{"id":"","name":"test","domains":["www.example.com"],"kind":"proxy","upstream":"http://localhost:8080"}`, nil, nil)
 	if r.Code != 409 {

@@ -12,13 +12,14 @@ import (
 
 type agentConfig struct{ State, Root, Caddy, Fragments, Socket string }
 type agent struct {
-	cfg     agentConfig
-	docker  *dockerClient
-	jobs    *jobQueue
-	mu      sync.Mutex
-	metrics *hostSampler
-	runner  func(time.Duration, string, ...string) (string, error)
-	capture func(time.Duration, string, ...string) (string, error)
+	cfg            agentConfig
+	docker         *dockerClient
+	jobs           *jobQueue
+	mu             sync.Mutex
+	metrics        *hostSampler
+	runner         func(time.Duration, string, ...string) (string, error)
+	capture        func(time.Duration, string, ...string) (string, error)
+	processConfigs func() ([]caddyConfig, error)
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -110,7 +111,7 @@ func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 	a.mu.Lock()
 	sites, se := a.readSites()
 	apps, ae := a.readApps()
-	hosts, he := a.caddyHosts()
+	hosts, sources, he := a.caddyInventory()
 	external := a.externalHosts(sites, hosts)
 	a.mu.Unlock()
 	sitesErr, appsErr, caddyErr := "", "", ""
@@ -124,7 +125,7 @@ func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 		caddyErr = he.Error()
 	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
+	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
 	return nil
 }
 func decodeObject(b []byte, v any) error {
