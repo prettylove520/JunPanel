@@ -11,6 +11,58 @@ valid_ip() {
     [[ "$part" == 0 || "$part" != 0* ]] && ((10#$part <= 255)) || return 1
   done
 }
+public_ip() {
+  valid_ip "$1" || return 1
+  local a b c d
+  IFS=. read -r a b c d <<< "$1"
+  ((a != 0 && a != 10 && a != 127 && a < 224)) || return 1
+  ! ((a == 100 && b >= 64 && b <= 127)) || return 1
+  ! ((a == 169 && b == 254)) || return 1
+  ! ((a == 172 && b >= 16 && b <= 31)) || return 1
+  ! ((a == 192 && (b == 168 || (b == 0 && (c == 0 || c == 2))))) || return 1
+  ! ((a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100)))) || return 1
+  ! ((a == 203 && b == 0 && c == 113)) || return 1
+}
+detect_ip() {
+  local candidate='' line='' client_ip='' client_port='' server_ip='' server_port='' token='' previous=''
+  if [[ -n "${JUNPANEL_PUBLIC_IP:-}" ]]; then
+    public_ip "$JUNPANEL_PUBLIC_IP" || return 1
+    printf '%s\n' "$JUNPANEL_PUBLIC_IP"; return
+  fi
+  # Preserve a previously configured public entry across installer updates.
+  if [[ -f /etc/caddy/junpanel.d/panel-access.caddy && ! -L /etc/caddy/junpanel.d/panel-access.caddy ]]; then
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^https://([0-9.]+)[[:space:]]\{ ]]; then
+        candidate="${BASH_REMATCH[1]}"
+        if public_ip "$candidate"; then printf '%s\n' "$candidate"; return; fi
+      fi
+    done < /etc/caddy/junpanel.d/panel-access.caddy
+  fi
+  read -r client_ip client_port server_ip server_port <<< "${SSH_CONNECTION:-}"
+  if public_ip "$server_ip"; then printf '%s\n' "$server_ip"; return; fi
+  command -v ip >/dev/null || return 1
+  # A route lookup reads the kernel routing table; it does not contact this address.
+  line="$(ip -4 route get 1.1.1.1 2>/dev/null)" || line=''
+  local -a tokens=()
+  read -ra tokens <<< "$line"
+  for token in "${tokens[@]}"; do
+    if [[ "$previous" == src ]] && public_ip "$token"; then printf '%s\n' "$token"; return; fi
+    previous="$token"
+  done
+  local -a found=()
+  while IFS= read -r line; do
+    tokens=(); read -ra tokens <<< "$line"; previous=''
+    for token in "${tokens[@]}"; do
+      if [[ "$previous" == inet ]]; then
+        candidate="${token%%/*}"
+        if public_ip "$candidate" && [[ " ${found[*]} " != *" $candidate "* ]]; then found+=("$candidate"); fi
+      fi
+      previous="$token"
+    done
+  done < <(ip -4 -o address show scope global 2>/dev/null)
+  ((${#found[@]} == 1)) || return 1
+  printf '%s\n' "${found[0]}"
+}
 render() {
   local ip="$1" port="$2"
   cat <<CADDY
@@ -54,6 +106,10 @@ main() (
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   local mode="${1:-}" ip='' port=8787
   die() { printf '\n[JunPanel] %s\n' "$*" >&2; exit 1; }
+  if [[ "$mode" == --detect ]]; then
+    detect_ip || die '未检测到唯一可用的公网 IPv4；可设置 JUNPANEL_PUBLIC_IP，或显式传入服务器公网 IPv4。'
+    exit
+  fi
   if [[ "$mode" == --print ]]; then
     ip="${2:-}"; port="${3:-8787}"
     valid_ip "$ip" || die '请输入规范的 IPv4 地址。'
@@ -61,8 +117,12 @@ main() (
     render "$ip" "$((10#$port))"
     exit
   fi
-  [[ $EUID -eq 0 ]] || die '请使用 sudo bash public-access.sh 公网IPv4，或以 root 执行。'
-  [[ "$mode" == --disable ]] || { ip="$mode"; valid_ip "$ip" || die '用法：sudo bash public-access.sh 服务器公网IPv4（关闭直连使用 --disable）。'; }
+  [[ $EUID -eq 0 ]] || die '请使用 sudo bash public-access.sh，或以 root 执行。'
+  if [[ "$mode" != --disable ]]; then
+    if [[ -n "$mode" ]]; then ip="$mode"; else ip="$(detect_ip)" || die '未能自动识别公网 IPv4，请显式传入服务器公网 IPv4。'; fi
+    public_ip "$ip" || die '需要服务器真实的公网 IPv4，不能使用内网、回环或文档示例地址。'
+    printf '[JunPanel] 已识别管理入口 IP：%s\n' "$ip"
+  fi
   for command in systemctl runuser mktemp chmod grep cp mv rm dpkg; do command -v "$command" >/dev/null || die "缺少系统工具：$command"; done
   [[ -f /opt/junpanel/.junpanel-install && ! -L /opt/junpanel && -f /opt/junpanel/port && ! -L /opt/junpanel/port ]] || die '请先完成 JunPanel 安装。'
   [[ -d /etc/caddy/junpanel.d && ! -L /etc/caddy/junpanel.d && -f /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]] || die 'Caddy 配置目录异常。'
@@ -118,13 +178,17 @@ main() (
   if [[ "$mode" == --disable ]]; then
     printf '\n[JunPanel] 公网直连已关闭，仍可使用原有 SSH 隧道访问。\n'; exit
   fi
-  printf '\n[JunPanel] HTTPS 直连入口已配置：https://%s\nCaddy 正在申请 IP 证书，稍后直接在浏览器打开上方地址，无需 SSH 隧道。\n' "$ip"
-  if curl --noproxy '*' --fail --silent --show-error --connect-timeout 5 --max-time 15 "https://$ip/api/meta" >/dev/null 2>&1; then
-    printf '本机 HTTPS 证书与面板响应检查通过；外部网络是否可达仍取决于现有网络设置。\n'
-  else
-    printf '证书签发或外部入口尚未就绪。公网 80/443 需可达；可查看：sudo journalctl -u caddy -n 80 --no-pager\n'
-  fi
-  printf '使用原有面板账号和密码登录。建议在“账号与安全”开启两步验证。\n'
+  printf '\n[JunPanel] 正在准备 HTTPS 登录入口，首次签发证书最多等待约一分钟…\n'
+  local attempt response=''
+  for attempt in {1..12}; do
+    if response="$(curl --noproxy '*' --fail --silent --show-error --connect-timeout 3 --max-time 4 "https://$ip/api/meta" 2>/dev/null)" && [[ "$response" == *'"version":'* ]]; then
+      printf '\n  登录链接：https://%s\n  状态：HTTPS 证书与面板响应检查通过\n  账号：使用现有面板账号\n\n以后直接在浏览器打开上方链接，无需 SSH 隧道。\n' "$ip"
+      exit
+    fi
+    ((attempt == 12)) || sleep 1
+  done
+  printf '\n  登录链接（准备中）：https://%s\n  面板已安装，但 HTTPS 证书或入口尚未就绪，当前不能确认可登录。\n\n公网 80/443 需可达；请查看：sudo journalctl -u caddy -n 80 --no-pager\n' "$ip"
+  exit 2
 )
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
