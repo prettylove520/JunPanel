@@ -1,0 +1,110 @@
+name: Release
+
+# Publish a release from main: update `version` in main.go, merge, then either push
+# a tag vX.Y.Z or run this workflow with the version number. Optional release notes
+# go in .github/release-notes/vX.Y.Z.md (otherwise GitHub generates them).
+# Afterwards a pull request updates the version and SHA-256 pinned in quick-install.sh.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号，例如 0.1.6（需与 main.go 中的 version 一致）'
+        required: true
+        type: string
+      prerelease:
+        description: '标记为预发布'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EVENT_NAME: ${{ github.event_name }}
+      REF_NAME: ${{ github.ref_name }}
+      INPUT_VERSION: ${{ inputs.version }}
+      INPUT_PRERELEASE: ${{ inputs.prerelease }}
+    steps:
+      - name: Resolve version
+        run: |
+          if [[ "$EVENT_NAME" == push ]]; then
+            version="${REF_NAME#v}"
+            prerelease=true
+          else
+            version="$INPUT_VERSION"
+            prerelease="$INPUT_PRERELEASE"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版本号格式应为 X.Y.Z，收到：$version"
+            exit 1
+          fi
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::v$version 已有 Release，不会覆盖"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "PRERELEASE=$prerelease" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test and package
+        run: bash scripts/package-release.sh "$VERSION"
+      - name: Publish release
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "JunPanel v$VERSION")
+          if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          notes=".github/release-notes/v$VERSION.md"
+          if [[ -f "$notes" ]]; then args+=(--notes-file "$notes"); else args+=(--generate-notes); fi
+          gh release create "v$VERSION" "${args[@]}" dist/*
+      - name: Verify the published files
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+          for file in "JunPanel-$VERSION-linux.tar.gz" "JunPanel-$VERSION-SHA256SUMS.txt" "JunPanel-$VERSION-source.zip"; do
+            curl --fail --location --silent --show-error --retry 4 --retry-delay 5 --output "check-$file" "$base/$file"
+            cmp "check-$file" "dist/$file"
+          done
+      - name: Open a pull request pinning quick-install.sh
+        env:
+          # Pull requests opened with the workflow token do not trigger the CI workflow.
+          PUSH_TOKEN: ${{ github.token }}
+        run: |
+          hash="$(sha256sum "dist/JunPanel-$VERSION-linux.tar.gz" | cut -d' ' -f1)"
+          branch="release/pin-v$VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin main
+          git checkout -q -B "$branch" FETCH_HEAD
+          sed -i "s/^  local version=.*/  local version=$VERSION/; s/^  local expected=.*/  local expected=$hash/" quick-install.sh
+          grep -Fxq "  local version=$VERSION" quick-install.sh
+          grep -Fxq "  local expected=$hash" quick-install.sh
+          if git diff --quiet quick-install.sh; then
+            echo "quick-install.sh 已经是 v$VERSION，无需更新"
+            exit 0
+          fi
+          git commit -q -am "Pin quick-install.sh to v$VERSION"
+          git push -q --force origin "$branch"
+          body="Release v$VERSION 已发布，将在线安装器改为下载该版本，并固定安装包的 SHA-256：\`$hash\`。合并后一键安装命令才会安装 v$VERSION。"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title "一键安装改用 v$VERSION" --body "$body" \
+            || echo "::warning::未能自动创建 PR（仓库设置里需允许 Actions 创建 PR）。分支 $branch 已推送，请手动创建。"
