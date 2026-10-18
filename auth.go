@@ -173,8 +173,8 @@ func (a *authStore) change(old, new, otp string) error {
 	if a.Account.TOTP != "" && !validOTP(a.Account.TOTP, otp, time.Now()) {
 		return bad(403, "动态码错误")
 	}
-	if utf8.RuneCountInString(new) < 14 || utf8.RuneCountInString(new) > 256 {
-		return bad(400, "新密码需为 14–256 字符")
+	if utf8.RuneCountInString(new) < 8 || utf8.RuneCountInString(new) > 256 {
+		return bad(400, "新密码需为 8–256 字符")
 	}
 	v := newAccount(a.Account.User, new)
 	v.TOTP = a.Account.TOTP

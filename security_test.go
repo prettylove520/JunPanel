@@ -78,13 +78,13 @@ func TestAuthenticationLifecycle(t *testing.T) {
 	if e = a.change(pw, "汉字密码仅七字", ""); e == nil {
 		t.Fatal("password minimum counted bytes instead of characters")
 	}
-	if e = a.change(pw, "AnotherLongPassword2026!", ""); e != nil {
+	if e = a.change(pw, "Jun2026!", ""); e != nil {
 		t.Fatal(e)
 	}
 	if _, e = a.get(token, false); e == nil {
 		t.Fatal("password change retained session")
 	}
-	token, _, e = a.login("admin", "AnotherLongPassword2026!", "")
+	token, _, e = a.login("admin", "Jun2026!", "")
 	if e != nil {
 		t.Fatal(e)
 	}
