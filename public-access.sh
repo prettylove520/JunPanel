@@ -63,6 +63,34 @@ detect_ip() {
   ((${#found[@]} == 1)) || return 1
   printf '%s\n' "${found[0]}"
 }
+rewrite_root() {
+  local file="$1" address="$2" action="$3"
+  awk -v address="$address" -v action="$action" '
+    { lines[NR]=$0
+      if ($0 ~ /^[[:space:]]*default_sni[[:space:]]+/) {
+        if ($0 ~ /# JunPanel IP TLS default[[:space:]]*$/) owned=1
+        else { split($0, fields, /[[:space:]]+/); value=$0; sub(/^[[:space:]]*default_sni[[:space:]]+/, "", value); sub(/[[:space:]#].*$/, "", value); if (value != address) conflict=1; else existing=1 }
+      }
+    }
+    END {
+      if (action == "enable" && conflict) exit 42
+      insert=(action == "enable" && !owned && !existing)
+      for (i=1; i<=NR; i++) {
+        line=lines[i]
+        if (insert && line !~ /^[[:space:]]*(#.*)?$/) {
+          if (line ~ /^[[:space:]]*\{[[:space:]]*(#.*)?$/) {
+            print line; print "    default_sni " address " # JunPanel IP TLS default"; insert=0; continue
+          }
+          print "{"; print "    default_sni " address " # JunPanel IP TLS default"; print "}"; print ""; insert=0
+        }
+        if (line ~ /^[[:space:]]*default_sni[[:space:]]+/ && line ~ /# JunPanel IP TLS default[[:space:]]*$/) {
+          if (action == "enable") print "    default_sni " address " # JunPanel IP TLS default"
+        } else print line
+      }
+      if (insert) { print "{"; print "    default_sni " address " # JunPanel IP TLS default"; print "}" }
+    }
+  ' "$file"
+}
 render() {
   local ip="$1" port="$2"
   cat <<CADDY
@@ -123,13 +151,14 @@ main() (
     public_ip "$ip" || die '需要服务器真实的公网 IPv4，不能使用内网、回环或文档示例地址。'
     printf '[JunPanel] 已识别管理入口 IP：%s\n' "$ip"
   fi
-  for command in systemctl runuser mktemp chmod grep cp mv rm dpkg; do command -v "$command" >/dev/null || die "缺少系统工具：$command"; done
+  for command in systemctl runuser mktemp chmod grep cp mv rm dpkg awk cmp; do command -v "$command" >/dev/null || die "缺少系统工具：$command"; done
   [[ -f /opt/junpanel/.junpanel-install && ! -L /opt/junpanel && -f /opt/junpanel/port && ! -L /opt/junpanel/port ]] || die '请先完成 JunPanel 安装。'
   [[ -d /etc/caddy/junpanel.d && ! -L /etc/caddy/junpanel.d && -f /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]] || die 'Caddy 配置目录异常。'
   grep -Fxq 'import /etc/caddy/junpanel.d/*.caddy' /etc/caddy/Caddyfile || die '主 Caddyfile 缺少 JunPanel import，请先完成安装。'
   [[ -x /usr/bin/caddy ]] || die '未找到 /usr/bin/caddy。'
   systemctl is-active --quiet caddy.service || die 'Caddy 服务未运行。'
   local target=/etc/caddy/junpanel.d/panel-access.caddy backup='' temp='' changed=0 had_previous=0
+  local root_backup='' root_temp='' root_action=enable
   [[ ! -L "$target" ]] || die '入口配置是符号链接，拒绝覆盖。'
   if [[ -e "$target" ]]; then
     [[ -f "$target" ]] && grep -Fxq '# JunPanel public HTTPS access - managed by public-access.sh' "$target" || die '同名配置不属于 JunPanel，拒绝覆盖。'
@@ -145,7 +174,7 @@ main() (
     [[ "$port" =~ ^[0-9]{4,5}$ ]] && ((10#$port >= 1024 && 10#$port <= 65535)) || die '已保存的面板端口无效。'
     port=$((10#$port))
     curl --noproxy '*' --fail --silent --show-error --max-time 5 "http://127.0.0.1:$port/api/meta" >/dev/null || die '本机面板尚未就绪。'
-  elif ((had_previous == 0)); then
+  elif ((had_previous == 0)) && ! grep -Eq '^[[:space:]]*default_sni[[:space:]].*# JunPanel IP TLS default[[:space:]]*$' /etc/caddy/Caddyfile; then
     printf '[JunPanel] 未配置公网直连，无需更改。\n'; exit
   fi
   cleanup() {
@@ -154,25 +183,34 @@ main() (
     if ((code && changed)); then
       printf '\n[JunPanel] 配置失败，正在恢复原入口。\n' >&2
       if ((had_previous)); then cp -p -- "$backup" "$target"; else rm -f -- "$target"; fi
+      if [[ -n "$root_backup" && -f "$root_backup" ]]; then cp -p -- "$root_backup" /etc/caddy/Caddyfile; fi
       if ! runuser -u caddy -- /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || ! systemctl reload caddy.service; then
         printf '[JunPanel] Caddy 恢复未完成，请通过 SSH 检查服务日志。\n' >&2
       fi
     fi
     [[ -z "$backup" ]] || rm -f -- "$backup"
     [[ -z "$temp" ]] || rm -f -- "$temp"
+    [[ -z "$root_backup" ]] || rm -f -- "$root_backup"
+    [[ -z "$root_temp" ]] || rm -f -- "$root_temp"
     exit "$code"
   }
   trap cleanup EXIT
+  root_backup="$(mktemp /etc/caddy/.junpanel-root-old.XXXXXXXX)"
+  cp -p -- /etc/caddy/Caddyfile "$root_backup"
   if ((had_previous)); then backup="$(mktemp /etc/caddy/.junpanel-public-old.XXXXXXXX)"; cp -p -- "$target" "$backup"; fi
   if [[ "$mode" == --disable ]]; then
-    changed=1; rm -f -- "$target"
+    root_action=disable; changed=1; rm -f -- "$target"
   else
     temp="$(mktemp /etc/caddy/.junpanel-public-new.XXXXXXXX)"
     render "$ip" "$port" > "$temp"
     chmod 0644 "$temp"
     changed=1; mv -- "$temp" "$target"; temp=''
   fi
-  runuser -u caddy -- /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  root_temp="$(mktemp /etc/caddy/.junpanel-root-new.XXXXXXXX)"
+  cp -p -- /etc/caddy/Caddyfile "$root_temp"
+  rewrite_root /etc/caddy/Caddyfile "$ip" "$root_action" > "$root_temp" || die '主配置已有不同的 default_sni，已保留原设置；请先人工核对。'
+  runuser -u caddy -- /usr/bin/caddy validate --config "$root_temp" --adapter caddyfile
+  if ! cmp -s -- /etc/caddy/Caddyfile "$root_temp"; then mv -- "$root_temp" /etc/caddy/Caddyfile; root_temp=''; fi
   systemctl reload caddy.service
   changed=0
   if [[ "$mode" == --disable ]]; then

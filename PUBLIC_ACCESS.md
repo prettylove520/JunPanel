@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 依据：[Let's Encrypt IP 证书说明](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability/)、[Caddy tls 文档](https://caddyserver.com/docs/caddyfile/directives/tls)、[Caddy 官方 IP 证书支持记录](https://github.com/caddyserver/caddy/issues/7118)。
 
-脚本只写入 `/etc/caddy/junpanel.d/panel-access.caddy`，保留主配置及其它站点，校验后重载。配置失败时尝试恢复原入口；不要同时编辑 Caddy 配置。它不更改 SSH、Fail2ban、防火墙、应用容器或备份设置。
+脚本管理 `/etc/caddy/junpanel.d/panel-access.caddy`，并按需在主 Caddyfile 的全局选项中补入带 `# JunPanel IP TLS default` 标记的 `default_sni`，让没有发送 SNI 的 IP 浏览器连接能选择对应证书。保留其它站点与全局选项，校验整份候选配置后才替换主文件并重载；失败时尝试恢复主文件与入口片段。若已有不同且不属于面板的 `default_sni`，拒绝自动覆盖。不要同时编辑 Caddy 配置。脚本不更改 SSH、Fail2ban、防火墙、应用容器或备份设置。
 
 ## 访问保护
 
@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 0.1.1 后端仅接受本机 Host / Origin，因此本配置先在 Caddy 中拒绝不匹配、缺失的写请求或 WebSocket Origin，再适配到本机接口；公网会话 Cookie 增加 Secure 属性。不要移除这些检查或改成公网 HTTP 传输登录密码。后端仍只监听本机，0.1.1 界面中的本机连接标签描述的是后端连接方式。
 
-如果服务器位于 NAT / 反向代理之后，IP 证书选择还可能需要 Caddy 的 `default_sni` 定制；本脚本不修改全局配置。此类环境应先人工检查，不能保证直接适配。
+IP 浏览器连接通常不发送 SNI；本机测试已复现没有默认名称时的证书选择失败，脚本现在自动配置 `default_sni`。NAT 环境仍可能需要显式指定正确公网 IP，并确保入站连接最终到达此 Caddy。复杂导入的全局选项或自定义 TLS 策略仍需人工检查；脚本会校验并拒绝不兼容配置。
 
 ## 关闭入口与排查
 
@@ -82,6 +82,8 @@ bash public-access.sh --print 203.0.113.10 8787
 - 检查外部 Origin、缺失 Origin 的写请求 / WebSocket、HTTP Origin 和跨站读取被拒绝。
 - 检查 IPv4 参数与配置注入拒绝，以及 Bash 语法。
 - 使用可重复的 Bash 测试检查 SSH / 路由 / 网卡识别、地址歧义、非公网地址排除及显式覆盖；测试保存在 `tests/ip-detection.sh` 并由 Linux CI 执行。
+- 使用实际 Caddy TLS 握手复现无 SNI 的 IP 证书选择失败；由生产脚本生成 `default_sni` 修复后，无 SNI 和 IP SNI 均通过证书验证，同端口的既有域名 TLS 仍正常。测试使用本机专用证书与显式测试信任，不安装系统根证书、不申请公网证书。
+- `tests/tls-defaults.sh` 检查现有站点与全局选项保留、重复运行、更换 IP、关闭时移除面板拥有的默认项、拒绝覆盖其它默认名称。
 - 用隔离的下载与安装替身检查在线安装器的就绪、已有账号、证书准备中、配置失败、无法识别公网 IP、本机模式、安装失败、两个文件校验失败和下载失败；这些是流程模拟，不是真实服务器部署。
 
 本次未申请真实公网证书，未执行 Debian 上的 systemd 重载 / 失败恢复，也未修改用户的远程服务器。证书签发与服务器部署仍需在实际环境验证。
