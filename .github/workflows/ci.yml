@@ -33,6 +33,7 @@ jobs:
             bash -n "$script"
           done
           bash tests/ip-detection.sh
+          bash tests/tls-defaults.sh
       - name: Linux amd64 and arm64 builds
         run: |
           for arch in amd64 arm64; do
