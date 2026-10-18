@@ -78,7 +78,7 @@ install -d -m 0700 -o root -g root /var/lib/junpanel-agent /srv/junpanel/.trash
 systemctl stop junpanel-web.service junpanel-agent.service >/dev/null 2>&1 || true
 install -m 0755 -o root -g root "$BIN" /opt/junpanel/junpanel.next
 mv /opt/junpanel/junpanel.next /opt/junpanel/junpanel
-printf 'JunPanel 0.1.4\n' > /opt/junpanel/.junpanel-install
+printf 'JunPanel 0.1.5\n' > /opt/junpanel/.junpanel-install
 chmod 0644 /opt/junpanel/.junpanel-install
 if [[ ! -e /var/lib/junpanel-web/account.json ]]; then runuser -u junpanel-web -- /opt/junpanel/junpanel setup --data /var/lib/junpanel-web; fi
 [[ -f /var/lib/junpanel-web/account.json && ! -L /var/lib/junpanel-web/account.json ]] || die '管理员配置异常'
