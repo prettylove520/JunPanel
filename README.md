@@ -51,6 +51,17 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 ### 打开面板
 
+**方式一：公网 IP＋HTTPS 直连，无需 SSH 隧道。** 已完成安装后，在服务器执行下面这一条配置命令，把 `服务器公网IPv4` 换成实际 IP：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- 服务器公网IPv4
+```
+
+随后在浏览器打开 `https://服务器公网IPv4`，使用安装时生成的账号和密码登录。支持现有 0.1.1 安装，使用系统 Caddy 申请和续签 IP 证书；要求 **Caddy 2.10.1 或更新版本、公网 80/443 可达**。不需要域名。证书签发需要时间；脚本会报告入口是否已就绪，失败可查看其提示的日志。建议登录后开启两步验证。[直连说明与关闭方式](PUBLIC_ACCESS.md)
+
+<details>
+<summary>方式二：通过 SSH 隧道访问（无需公开面板）</summary>
+
 安装完后，在**你电脑上**另开一个终端，粘贴安装器显示的 SSH 连接命令并保持运行。在线安装器会根据当前 SSH 连接填写地址、用户与端口；若通过跳板机或内网连接，请改用你平时能登录服务器的地址。手动填写示例：
 
    ```powershell
@@ -59,7 +70,9 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 用你现有的 SSH 密码登录，然后在浏览器打开 [http://127.0.0.1:8787](http://127.0.0.1:8787)。面板登录后可修改面板密码并开启两步验证。
 
-下载、校验和解压都由在线安装器处理。SSH 连接用于远程访问：面板继续只监听本机地址，不自动开放公网入口；保留你现有的 SSH 密码登录方式。
+</details>
+
+默认安装仍只开放本机入口。选择方式一才会启用公网 HTTPS 管理入口；SSH 密码登录方式保持原样。
 
 你的现有 SSH 密码登录方式、22 端口、Fail2ban、nftables、防火墙策略、Swap、自动安全更新和 Docker 日志限制不会由安装器配置或修改。面板不创建定时备份。
 
@@ -155,7 +168,9 @@ sudo bash junpanel/uninstall.sh
 
 网页服务使用 `junpanel-web` 低权限用户；它不加入 docker 组，不直接挂载或访问 Docker socket。独立 root 代理连接系统 Docker，并执行范围固定的管理接口。**代理仍拥有 root 与 Docker 的高权限，网页服务被攻破后也可能滥用代理允许的能力；这一拆分不是强沙箱，也不使 Docker 管理变成低权限操作。** 面板管理员等同于服务器管理员信任级别。
 
-Web 入口固定监听 `127.0.0.1`，不提供公网监听开关；不应经 Caddy 发布面板本身。Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不将登录凭据写入 localStorage。由于浏览器入口为本机 HTTP，Cookie 不带 Secure；远程链路由 SSH 加密。请仅通过可信电脑和本机端口使用。
+网页程序固定监听 `127.0.0.1`；默认通过 SSH 隧道访问。可选的 `public-access.sh` 通过现有系统 Caddy 提供公网 IPv4 HTTPS 入口，校验原始 Origin 后适配本机接口，并给会话 Cookie 添加 Secure；请使用这套完整配置，而非仅增加一条普通反向代理。公网入口启用后任何人都可到达登录页，仍必须通过管理员认证；登录失败锁定为全局共享，公开后也可能被外部请求触发。
+
+Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不将登录凭据写入 localStorage。公网访问使用 HTTPS 和 Secure Cookie；SSH 隧道访问使用本机 HTTP，远程链路由 SSH 加密。请在可信电脑上使用面板。
 
 文件操作使用 Go `os.Root` 限定路径，拒绝 `..` 与逃逸符号链接。它不是针对宿主机 root 的隔离机制，不能防御管理员在目录内预置特殊挂载点或硬链接。容器终端也可能经现有容器的高权限/宿主机挂载影响主机，请只进入可信容器。
 
