@@ -77,6 +77,8 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /files/trash", endpoint(a.fileTrash))
 	m.HandleFunc("GET /trash", endpoint(a.trashList))
 	m.HandleFunc("POST /trash/{id}/restore", endpoint(a.trashRestore))
+	m.HandleFunc("DELETE /trash/{id}", endpoint(a.trashDelete))
+	m.HandleFunc("POST /trash/empty", endpoint(a.trashEmpty))
 	m.HandleFunc("GET /catalog", endpoint(a.catalog))
 	m.HandleFunc("GET /apps", endpoint(a.appList))
 	m.HandleFunc("POST /apps", endpoint(a.appInstall))

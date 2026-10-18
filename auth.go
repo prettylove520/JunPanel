@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -53,19 +54,34 @@ type loginSession struct {
 	Revision   string
 	Born, Seen time.Time
 }
+type attempts struct {
+	Failures    int
+	Locked      time.Time
+	First, Last time.Time
+	Trusted     time.Time
+}
 type authStore struct {
 	sync.Mutex
 	Path     string
 	Demo     bool
 	Account  account
 	Sessions map[string]loginSession
-	Failures int
-	Locked   time.Time
+	Clients  map[string]*attempts
+	Global   attempts
+	OTPStep  int64
 	OTPSetup map[string]string
 }
 
+const (
+	clientFailures = 5
+	globalFailures = 200
+	lockWindow     = 10 * time.Minute
+	maxClients     = 4096
+	trustedFor     = 30 * 24 * time.Hour
+)
+
 func newAuth(path string, demo bool) (*authStore, error) {
-	a := &authStore{Path: path, Demo: demo, Sessions: map[string]loginSession{}, OTPSetup: map[string]string{}}
+	a := &authStore{Path: path, Demo: demo, Sessions: map[string]loginSession{}, Clients: map[string]*attempts{}, OTPSetup: map[string]string{}}
 	if demo {
 		a.Account = newAccount("demo", "JunPanelPreview2026!")
 		return a, nil
@@ -84,40 +100,117 @@ func (a *authStore) reload() error {
 	if a.Account.Revision != "" && a.Account.Revision != v.Revision {
 		a.Sessions = map[string]loginSession{}
 		a.OTPSetup = map[string]string{}
+		a.OTPStep = 0
 	}
 	a.Account = v
 	return nil
 }
-func (a *authStore) login(user, password, otp string) (string, loginSession, error) {
+
+// Failures are counted per client address so one source cannot lock out the
+// administrator. A high global ceiling bounds distributed guessing; addresses
+// that signed in successfully recently are exempt from it.
+func limitKey(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip
+	}
+	if v4 := parsed.To4(); v4 != nil {
+		return v4.String()
+	}
+	return parsed.Mask(net.CIDRMask(64, 128)).String() + "/64"
+}
+func (t *attempts) blocked(now time.Time) bool {
+	if now.Before(t.Locked) {
+		return true
+	}
+	if !t.Locked.IsZero() || now.Sub(t.First) >= lockWindow {
+		t.Failures, t.Locked, t.First = 0, time.Time{}, time.Time{}
+	}
+	return false
+}
+func (t *attempts) fail(now time.Time, limit int) {
+	if t.Failures == 0 {
+		t.First = now
+	}
+	t.Failures++
+	t.Last = now
+	if t.Failures >= limit {
+		t.Locked = now.Add(lockWindow)
+	}
+}
+func (a *authStore) client(ip string, now time.Time) *attempts {
+	key := limitKey(ip)
+	if t, ok := a.Clients[key]; ok {
+		return t
+	}
+	if len(a.Clients) >= maxClients {
+		oldest := ""
+		for k, t := range a.Clients {
+			if !now.Before(t.Locked) && now.Sub(t.Last) >= lockWindow {
+				delete(a.Clients, k)
+			} else if oldest == "" || t.Last.Before(a.Clients[oldest].Last) {
+				oldest = k
+			}
+		}
+		if len(a.Clients) >= maxClients {
+			delete(a.Clients, oldest)
+		}
+	}
+	t := &attempts{}
+	a.Clients[key] = t
+	return t
+}
+func (a *authStore) throttled(ip string, now time.Time) (*attempts, error) {
+	t := a.client(ip, now)
+	global := a.Global.blocked(now) && now.Sub(t.Trusted) >= trustedFor
+	if t.blocked(now) || global {
+		return t, bad(429, "尝试过多，请 10 分钟后再试")
+	}
+	return t, nil
+}
+func (a *authStore) succeeded(t *attempts, now time.Time) {
+	*t = attempts{Last: now, Trusted: now}
+}
+func (a *authStore) failed(t *attempts, now time.Time) {
+	t.fail(now, clientFailures)
+	a.Global.fail(now, globalFailures)
+}
+
+// Accept each time step at most once so an observed code cannot be replayed.
+func (a *authStore) checkOTP(code string, now time.Time) (int64, bool) {
+	step, ok := otpStep(a.Account.TOTP, code, now)
+	return step, ok && step > a.OTPStep
+}
+func (a *authStore) login(ip, user, password, otp string) (string, loginSession, error) {
 	a.Lock()
 	defer a.Unlock()
 	if e := a.reload(); e != nil {
 		return "", loginSession{}, e
 	}
 	now := time.Now()
-	if now.Before(a.Locked) {
-		return "", loginSession{}, bad(429, "尝试过多，请 10 分钟后再试")
-	}
-	if !a.Locked.IsZero() {
-		a.Failures = 0
-		a.Locked = time.Time{}
+	limit, e := a.throttled(ip, now)
+	if e != nil {
+		return "", loginSession{}, e
 	}
 	if len(user) > 64 || len(password) > 1024 {
 		return "", loginSession{}, bad(400, "账号或密码长度错误")
 	}
 	good := hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash))
 	good = hmac.Equal([]byte(user), []byte(a.Account.User)) && good
+	var step int64
 	if a.Account.TOTP != "" {
-		good = validOTP(a.Account.TOTP, otp, now) && good
+		var fresh bool
+		step, fresh = a.checkOTP(otp, now)
+		good = fresh && good
 	}
 	if !good {
-		a.Failures++
-		if a.Failures >= 5 {
-			a.Locked = now.Add(10 * time.Minute)
-		}
-		return "", loginSession{}, bad(401, "账号、密码或动态码错误")
+		a.failed(limit, now)
+		return "", loginSession{}, bad(401, "账号、密码或动态码错误（每个动态码只能使用一次）")
 	}
-	a.Failures = 0
+	a.succeeded(limit, now)
+	if step > 0 {
+		a.OTPStep = step
+	}
 	for key, s := range a.Sessions {
 		if now.Sub(s.Seen) > 30*time.Minute || now.Sub(s.Born) > 8*time.Hour {
 			delete(a.Sessions, key)
@@ -170,8 +263,12 @@ func (a *authStore) change(old, new, otp string) error {
 	if !hmac.Equal([]byte(derive(old, a.Account.Salt)), []byte(a.Account.Hash)) {
 		return bad(403, "当前密码错误")
 	}
-	if a.Account.TOTP != "" && !validOTP(a.Account.TOTP, otp, time.Now()) {
-		return bad(403, "动态码错误")
+	var step int64
+	if a.Account.TOTP != "" {
+		var fresh bool
+		if step, fresh = a.checkOTP(otp, time.Now()); !fresh {
+			return bad(403, "动态码错误或已使用，请等待下一个动态码")
+		}
 	}
 	if utf8.RuneCountInString(new) < 8 || utf8.RuneCountInString(new) > 256 {
 		return bad(400, "新密码需为 8–256 字符")
@@ -184,26 +281,36 @@ func (a *authStore) change(old, new, otp string) error {
 	a.Account = v
 	a.Sessions = map[string]loginSession{}
 	a.OTPSetup = map[string]string{}
+	if step > 0 {
+		a.OTPStep = step
+	}
 	return nil
 }
 func validOTP(secret, code string, at time.Time) bool {
+	_, ok := otpStep(secret, code, at)
+	return ok
+}
+
+// otpStep reports the 30-second time step the code belongs to, allowing one step of clock drift.
+func otpStep(secret, code string, at time.Time) (int64, bool) {
 	key, e := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
 	if e != nil || len(code) != 6 {
-		return false
+		return 0, false
 	}
 	for delta := -1; delta <= 1; delta++ {
+		step := at.Unix()/30 + int64(delta)
 		var b [8]byte
-		binary.BigEndian.PutUint64(b[:], uint64(at.Unix()/30+int64(delta)))
+		binary.BigEndian.PutUint64(b[:], uint64(step))
 		h := hmac.New(sha1.New, key)
 		h.Write(b[:])
 		sum := h.Sum(nil)
 		off := sum[len(sum)-1] & 15
 		n := binary.BigEndian.Uint32(sum[off:off+4]) & 0x7fffffff
 		if hmac.Equal([]byte(fmt.Sprintf("%06d", n%1000000)), []byte(code)) {
-			return true
+			return step, true
 		}
 	}
-	return false
+	return 0, false
 }
 func (a *authStore) setupOTP(token, password string) (string, error) {
 	a.Lock()
@@ -244,6 +351,7 @@ func (a *authStore) enableOTP(token, code string) error {
 	a.Account = v
 	a.Sessions = map[string]loginSession{}
 	a.OTPSetup = map[string]string{}
+	a.OTPStep = 0
 	return nil
 }
 func (a *authStore) disableOTP(password, code string) error {
@@ -252,8 +360,8 @@ func (a *authStore) disableOTP(password, code string) error {
 	if e := a.reload(); e != nil {
 		return e
 	}
-	if !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) || !validOTP(a.Account.TOTP, code, time.Now()) {
-		return bad(403, "密码或动态码错误")
+	if _, fresh := a.checkOTP(code, time.Now()); !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) || a.Account.TOTP == "" || !fresh {
+		return bad(403, "密码或动态码错误，动态码只能使用一次")
 	}
 	v := a.Account
 	v.TOTP = ""
@@ -264,6 +372,7 @@ func (a *authStore) disableOTP(password, code string) error {
 	a.Account = v
 	a.Sessions = map[string]loginSession{}
 	a.OTPSetup = map[string]string{}
+	a.OTPStep = 0
 	return nil
 }
 
@@ -273,26 +382,29 @@ func (a *authStore) info() (string, bool) {
 	return a.Account.User, a.Account.TOTP != ""
 }
 
-func (a *authStore) confirm(password, otp string) error {
+func (a *authStore) confirm(ip, password, otp string) error {
 	a.Lock()
 	defer a.Unlock()
 	if e := a.reload(); e != nil {
 		return e
 	}
-	if time.Now().Before(a.Locked) {
-		return bad(429, "尝试过多，请 10 分钟后再试")
+	now := time.Now()
+	limit, e := a.throttled(ip, now)
+	if e != nil {
+		return e
 	}
-	if !a.Locked.IsZero() {
-		a.Failures = 0
-		a.Locked = time.Time{}
+	var step int64
+	fresh := true
+	if a.Account.TOTP != "" {
+		step, fresh = a.checkOTP(otp, now)
 	}
-	if len(password) > 1024 || !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) || a.Account.TOTP != "" && !validOTP(a.Account.TOTP, otp, time.Now()) {
-		a.Failures++
-		if a.Failures >= 5 {
-			a.Locked = time.Now().Add(10 * time.Minute)
-		}
-		return bad(403, "密码或动态码错误")
+	if len(password) > 1024 || !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) || !fresh {
+		a.failed(limit, now)
+		return bad(403, "密码或动态码错误，动态码只能使用一次")
 	}
-	a.Failures = 0
+	a.succeeded(limit, now)
+	if step > 0 {
+		a.OTPStep = step
+	}
 	return nil
 }

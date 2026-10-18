@@ -40,7 +40,7 @@ func testAccount(t *testing.T) (*authStore, string) {
 }
 func TestAuthenticationLifecycle(t *testing.T) {
 	a, pw := testAccount(t)
-	token, s, e := a.login("admin", pw, "")
+	token, s, e := a.login("127.0.0.1", "admin", pw, "")
 	if e != nil || len(token) != 64 || len(s.CSRF) != 64 {
 		t.Fatalf("login: %v", e)
 	}
@@ -66,7 +66,7 @@ func TestAuthenticationLifecycle(t *testing.T) {
 	if _, e = a.get(token, true); e == nil {
 		t.Fatal("absolute lifetime bypass")
 	}
-	token, _, _ = a.login("admin", pw, "")
+	token, _, _ = a.login("127.0.0.1", "admin", pw, "")
 	old = a.Sessions[token]
 	old.Seen = time.Now().Add(-31 * time.Minute)
 	a.Sessions[token] = old
@@ -74,7 +74,7 @@ func TestAuthenticationLifecycle(t *testing.T) {
 	if _, e = a.get(token, false); e == nil || a.OTPSetup[token] != "" {
 		t.Fatal("idle expiry / setup cleanup")
 	}
-	token, _, _ = a.login("admin", pw, "")
+	token, _, _ = a.login("127.0.0.1", "admin", pw, "")
 	if e = a.change(pw, "汉字密码仅七字", ""); e == nil {
 		t.Fatal("password minimum counted bytes instead of characters")
 	}
@@ -84,7 +84,7 @@ func TestAuthenticationLifecycle(t *testing.T) {
 	if _, e = a.get(token, false); e == nil {
 		t.Fatal("password change retained session")
 	}
-	token, _, e = a.login("admin", "Jun2026!", "")
+	token, _, e = a.login("127.0.0.1", "admin", "Jun2026!", "")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -96,15 +96,18 @@ func TestAuthenticationLifecycle(t *testing.T) {
 func TestLockoutAndExternalReset(t *testing.T) {
 	a, pw := testAccount(t)
 	for i := 0; i < 5; i++ {
-		if _, _, e := a.login("admin", "incorrect", ""); e == nil {
+		if _, _, e := a.login("127.0.0.1", "admin", "incorrect", ""); e == nil {
 			t.Fatal("accepted invalid password")
 		}
 	}
-	if _, _, e := a.login("admin", pw, ""); e == nil || e.(*fault).Code != 429 {
+	if _, _, e := a.login("127.0.0.1", "admin", pw, ""); e == nil || e.(*fault).Code != 429 {
 		t.Fatal("lockout not enforced")
 	}
-	a.Locked = time.Now().Add(-time.Second)
-	token, _, e := a.login("admin", pw, "")
+	if _, _, e := a.login("203.0.113.9", "admin", pw, ""); e != nil {
+		t.Fatalf("lockout of one address blocked another: %v", e)
+	}
+	a.Clients["127.0.0.1"].Locked = time.Now().Add(-time.Second)
+	token, _, e := a.login("127.0.0.1", "admin", pw, "")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -115,10 +118,54 @@ func TestLockoutAndExternalReset(t *testing.T) {
 		t.Fatal("external reset did not invalidate session")
 	}
 }
-func currentOTP(secret string) string {
+func TestPerAddressAndGlobalLimits(t *testing.T) {
+	a, pw := testAccount(t)
+	if _, _, e := a.login("198.51.100.7", "admin", pw, ""); e != nil {
+		t.Fatal(e)
+	}
+	// Each failure runs the full key derivation, so start just below the ceiling.
+	a.Global = attempts{Failures: globalFailures - 1, First: time.Now()}
+	if _, _, e := a.login("10.0.0.1", "admin", "incorrect", ""); e == nil {
+		t.Fatal("accepted invalid password")
+	}
+	if _, _, e := a.login("192.0.2.200", "admin", pw, ""); e == nil || e.(*fault).Code != 429 {
+		t.Fatal("global ceiling not enforced for a new address")
+	}
+	if _, _, e := a.login("198.51.100.7", "admin", pw, ""); e != nil {
+		t.Fatalf("recently trusted address locked out: %v", e)
+	}
+	if limitKey("2001:db8:1:2:3:4:5:6") != limitKey("2001:db8:1:2:ffff::1") || limitKey("2001:db8:1:2::1") == limitKey("2001:db8:1:3::1") {
+		t.Fatal("IPv6 addresses are not grouped by /64")
+	}
+	for i := 0; i < maxClients+10; i++ {
+		a.client(fmt.Sprintf("2001:db8:%x::1", i), time.Now())
+	}
+	if len(a.Clients) > maxClients {
+		t.Fatal("client table unbounded")
+	}
+	cases := []struct{ remote, forwarded, want string }{
+		{"127.0.0.1:5000", "", "127.0.0.1"},
+		{"127.0.0.1:5000", "203.0.113.5", "203.0.113.5"},
+		{"127.0.0.1:5000", "1.1.1.1, 203.0.113.5", "203.0.113.5"},
+		{"127.0.0.1:5000", "not-an-ip", "127.0.0.1"},
+		{"192.0.2.1:5000", "203.0.113.5", "192.0.2.1"},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("GET", "http://127.0.0.1:8787/", nil)
+		r.RemoteAddr = c.remote
+		if c.forwarded != "" {
+			r.Header.Set("X-Forwarded-For", c.forwarded)
+		}
+		if got := clientIP(r); got != c.want {
+			t.Fatalf("clientIP(%q, %q) = %q", c.remote, c.forwarded, got)
+		}
+	}
+}
+func currentOTP(secret string) string { return otpAt(secret, time.Now()) }
+func otpAt(secret string, at time.Time) string {
 	key, _ := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
 	var counter [8]byte
-	binary.BigEndian.PutUint64(counter[:], uint64(time.Now().Unix()/30))
+	binary.BigEndian.PutUint64(counter[:], uint64(at.Unix()/30))
 	h := hmac.New(sha1.New, key)
 	h.Write(counter[:])
 	sum := h.Sum(nil)
@@ -131,7 +178,7 @@ func TestTOTPEnableDisable(t *testing.T) {
 		t.Fatal("TOTP vector")
 	}
 	a, pw := testAccount(t)
-	token, _, _ := a.login("admin", pw, "")
+	token, _, _ := a.login("127.0.0.1", "admin", pw, "")
 	secret, e := a.setupOTP(token, pw)
 	if e != nil {
 		t.Fatal(e)
@@ -142,13 +189,23 @@ func TestTOTPEnableDisable(t *testing.T) {
 	if _, e = a.get(token, false); e == nil {
 		t.Fatal("TOTP enable retained session")
 	}
-	if _, _, e = a.login("admin", pw, ""); e == nil {
+	if _, _, e = a.login("127.0.0.1", "admin", pw, ""); e == nil {
 		t.Fatal("TOTP optional after enabling")
 	}
-	if _, _, e = a.login("admin", pw, currentOTP(secret)); e != nil {
+	code := currentOTP(secret)
+	if _, _, e = a.login("127.0.0.1", "admin", pw, code); e != nil {
 		t.Fatal(e)
 	}
-	if e = a.disableOTP(pw, currentOTP(secret)); e != nil {
+	if _, _, e = a.login("127.0.0.1", "admin", pw, code); e == nil {
+		t.Fatal("TOTP code replayed at login")
+	}
+	if e = a.confirm("127.0.0.1", pw, code); e == nil {
+		t.Fatal("TOTP code replayed at reauthentication")
+	}
+	if e = a.disableOTP(pw, code); e == nil {
+		t.Fatal("TOTP code replayed to disable")
+	}
+	if e = a.disableOTP(pw, otpAt(secret, time.Now().Add(30*time.Second))); e != nil {
 		t.Fatal(e)
 	}
 	if a.Account.TOTP != "" {
@@ -237,8 +294,8 @@ func TestTerminalTicketBoundToSession(t *testing.T) {
 		t.Fatal(e)
 	}
 	h := w.routes()
-	t1, s1, _ := w.auth.login("admin", pw, "")
-	t2, _, _ := w.auth.login("admin", pw, "")
+	t1, s1, _ := w.auth.login("127.0.0.1", "admin", pw, "")
+	t2, _, _ := w.auth.login("127.0.0.1", "admin", pw, "")
 	headers := map[string]string{"Origin": "http://127.0.0.1:8787", "X-CSRF-Token": s1.CSRF}
 	r := request(h, "POST", "/api/terminal/ticket", `{"container":"`+strings.Repeat("a", 64)+`"}`, headers, &http.Cookie{Name: "junpanel_session", Value: t1})
 	if r.Code != 200 {
@@ -324,6 +381,61 @@ func TestFilesContainmentConflictRecycle(t *testing.T) {
 	}
 	if _, _, e = a.readVirtual("huge", 1<<20); e == nil {
 		t.Fatal("read size bound")
+	}
+}
+func TestTrashPurge(t *testing.T) {
+	a := testAgent(t)
+	h := a.routes()
+	trash := func(name string) trashRecord {
+		t.Helper()
+		if e := os.MkdirAll(filepath.Join(a.cfg.Root, name, "inner"), 0755); e != nil {
+			t.Fatal(e)
+		}
+		os.WriteFile(filepath.Join(a.cfg.Root, name, "inner", "f.txt"), []byte("x"), 0644)
+		r := request(h, "POST", "/files/trash", `{"path":"/`+name+`"}`, nil, nil)
+		if r.Code != 200 {
+			t.Fatal(r.Body.String())
+		}
+		var record trashRecord
+		json.Unmarshal(r.Body.Bytes(), &record)
+		return record
+	}
+	listed := func() int {
+		var rows []trashRecord
+		json.Unmarshal(request(h, "GET", "/trash", "", nil, nil).Body.Bytes(), &rows)
+		return len(rows)
+	}
+	one, two := trash("one"), trash("two")
+	if r := request(h, "DELETE", "/trash/t_zz", "", nil, nil); r.Code != 400 {
+		t.Fatal("invalid trash id accepted")
+	}
+	if r := request(h, "DELETE", "/trash/"+one.ID, "", nil, nil); r.Code != 200 {
+		t.Fatal(r.Body.String())
+	}
+	if _, e := os.Lstat(filepath.Join(a.cfg.Root, ".trash", one.ID+".data")); !os.IsNotExist(e) || listed() != 1 {
+		t.Fatal("permanent delete left data behind")
+	}
+	if r := request(h, "DELETE", "/trash/"+one.ID, "", nil, nil); r.Code != 404 {
+		t.Fatal("deleted record reported again")
+	}
+	// Age the remaining record past retention; only it should be cleaned.
+	meta := filepath.Join(a.cfg.Root, ".trash", two.ID+".json")
+	two.At = time.Now().Add(-trashRetention - time.Hour)
+	b, _ := json.Marshal(two)
+	os.WriteFile(meta, b, 0600)
+	three := trash("three")
+	if n, e := a.emptyTrash(time.Now().Add(-trashRetention)); e != nil || n != 1 || listed() != 1 {
+		t.Fatalf("retention cleanup removed %d: %v", n, e)
+	}
+	if r := request(h, "POST", "/trash/empty", `{}`, nil, nil); r.Code != 200 || !strings.Contains(r.Body.String(), `"removed":1`) {
+		t.Fatal(r.Body.String())
+	}
+	entries, _ := os.ReadDir(filepath.Join(a.cfg.Root, ".trash"))
+	if len(entries) != 0 || listed() != 0 {
+		t.Fatalf("empty left %d entries (%s)", len(entries), three.ID)
+	}
+	if _, e := os.Stat(a.cfg.Root); e != nil {
+		t.Fatal("root removed")
 	}
 }
 func TestCaddyTransactionRollbackAndPreservation(t *testing.T) {
@@ -603,7 +715,7 @@ func TestMetricsCounterReset(t *testing.T) {
 // A real Unix transport test runs on Linux; Windows has no target daemon socket.
 func TestHTTPConcurrentSessionReads(t *testing.T) {
 	a, pw := testAccount(t)
-	token, _, _ := a.login("admin", pw, "")
+	token, _, _ := a.login("127.0.0.1", "admin", pw, "")
 	var done atomic.Int32
 	for i := 0; i < 8; i++ {
 		go func() { a.info(); a.get(token, false); done.Add(1) }()
@@ -632,7 +744,7 @@ func TestWebAgentUnixIntegration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	token, session, e := web.auth.login("admin", pw, "")
+	token, session, e := web.auth.login("127.0.0.1", "admin", pw, "")
 	if e != nil {
 		t.Fatal(e)
 	}

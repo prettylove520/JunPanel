@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -49,6 +50,28 @@ func (w *webServer) cookie(r *http.Request) string {
 		return ""
 	}
 	return c.Value
+}
+
+// clientIP is the peer address, or the address appended by a reverse proxy on
+// this host (Caddy replaces untrusted X-Forwarded-For values with the peer).
+func clientIP(r *http.Request) string {
+	host, _, e := net.SplitHostPort(r.RemoteAddr)
+	if e != nil {
+		host = r.RemoteAddr
+	}
+	peer := net.ParseIP(host)
+	if peer == nil || !peer.IsLoopback() {
+		return host
+	}
+	forwarded := r.Header.Values("X-Forwarded-For")
+	if len(forwarded) == 0 {
+		return host
+	}
+	parts := strings.Split(forwarded[len(forwarded)-1], ",")
+	if ip := net.ParseIP(strings.TrimSpace(parts[len(parts)-1])); ip != nil {
+		return ip.String()
+	}
+	return host
 }
 func (w *webServer) routes() http.Handler { return http.HandlerFunc(w.serve) }
 func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
@@ -126,14 +149,19 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 			fail(out, e)
 			return
 		}
-		token, session, e := w.auth.login(req.User, req.Password, req.OTP)
+		ip := clientIP(r)
+		token, session, e := w.auth.login(ip, req.User, req.Password, req.OTP)
 		if e != nil {
-			log.Printf("login result=failed")
+			result := "failed"
+			if f, ok := e.(*fault); ok && f.Code == 429 {
+				result = "throttled"
+			}
+			log.Printf("login result=%s ip=%s", result, ip)
 			fail(out, e)
 			return
 		}
 		http.SetCookie(out, &http.Cookie{Name: "junpanel_session", Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-		log.Printf("login result=success")
+		log.Printf("login result=success ip=%s", ip)
 		user, totp := w.auth.info()
 		send(out, 200, map[string]any{"csrf": session.CSRF, "user": user, "demo": w.demo, "totp": totp})
 		return
@@ -222,7 +250,8 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 			fail(out, e)
 			return
 		}
-		if e = w.auth.confirm(req.Password, req.OTP); e != nil {
+		if e = w.auth.confirm(clientIP(r), req.Password, req.OTP); e != nil {
+			log.Printf("reauth result=failed ip=%s", clientIP(r))
 			fail(out, e)
 			return
 		}
