@@ -32,6 +32,7 @@ jobs:
           for script in install.sh quick-install.sh public-access.sh build.sh uninstall.sh; do
             bash -n "$script"
           done
+          bash tests/ip-detection.sh
       - name: Linux amd64 and arm64 builds
         run: |
           for arch in amd64 arm64; do
