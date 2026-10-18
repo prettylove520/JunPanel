@@ -5,3 +5,4 @@
 /state/
 account.json
 *.log
+/dist/
