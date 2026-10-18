@@ -22,7 +22,17 @@
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-install.sh | bash
 ```
 
-自动完成下载、校验、解压、环境检查与安装；安装结束显示面板账号、随机密码和访问说明。在线安装器当前固定下载 v0.1.1，并用脚本内固定的 SHA-256 验证完整安装包，校验失败不会执行安装。已有安装也可用同一命令更新，沿用保存的端口和账号；请先等待后台任务结束。
+自动完成下载、校验、解压、环境检查、面板安装、**公网 IPv4 识别和 HTTPS 管理入口配置**。结束时集中显示账号、随机密码和登录链接：证书及面板响应检查通过后可直接打开 `https://服务器IP`，无需再填 IP 或执行另一条配置命令。公网登录页会公开，仍需管理员认证；建议开启两步验证。HTTPS 入口要求现有 Caddy 至少 2.10.1、公网 80/443 可达。
+
+在线安装器固定下载 v0.1.1 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
+
+IP 识别不访问第三方 IP 查询服务：优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。NAT、仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接。证书尚未就绪会标注“准备中”，不会提示已经可登录。
+
+如果只希望使用 SSH 隧道，显式选择本机模式：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-install.sh | JUNPANEL_ACCESS=local bash
+```
 
 如需先查看安装脚本，可在浏览器打开 [quick-install.sh](https://github.com/prettylove520/JunPanel/blob/main/quick-install.sh)。网络无法连接 GitHub 时可使用下面的手动安装方式。
 
@@ -51,13 +61,15 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 ### 打开面板
 
-**方式一：公网 IP＋HTTPS 直连，无需 SSH 隧道。** 已完成安装后，在服务器执行下面这一条配置命令，把 `服务器公网IPv4` 换成实际 IP：
+**在线安装完成后，直接打开终端最后显示的“登录链接”**，使用同一处显示的账号与密码登录。无需手填 IP 或重复配置。
+
+**已有旧安装，只配置访问入口：** 在服务器执行下面这一条命令，自动识别 IP、配置 HTTPS 并显示登录链接：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- 服务器公网IPv4
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash
 ```
 
-随后在浏览器打开 `https://服务器公网IPv4`，使用安装时生成的账号和密码登录。支持现有 0.1.1 安装，使用系统 Caddy 申请和续签 IP 证书；要求 **Caddy 2.10.1 或更新版本、公网 80/443 可达**。不需要域名。证书签发需要时间；脚本会报告入口是否已就绪，失败可查看其提示的日志。建议登录后开启两步验证。[直连说明与关闭方式](PUBLIC_ACCESS.md)
+随后使用脚本显示的链接和原有面板账号登录。支持现有 0.1.1 安装，使用系统 Caddy 申请和续签 IP 证书；要求 **Caddy 2.10.1 或更新版本、公网 80/443 可达**。不需要域名。证书签发需要时间；脚本会报告入口是否已就绪，失败可查看其提示的日志。[直连说明与关闭方式](PUBLIC_ACCESS.md)
 
 <details>
 <summary>方式二：通过 SSH 隧道访问（无需公开面板）</summary>
@@ -72,7 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 </details>
 
-默认安装仍只开放本机入口。选择方式一才会启用公网 HTTPS 管理入口；SSH 密码登录方式保持原样。
+在线安装默认配置公网 HTTPS 管理入口；选择 `JUNPANEL_ACCESS=local` 会关闭面板专用的公网入口并保留本机访问。完整安装包内的手动 `install.sh` 仍只安装本机服务。SSH 密码登录方式保持原样。
 
 你的现有 SSH 密码登录方式、22 端口、Fail2ban、nftables、防火墙策略、Swap、自动安全更新和 Docker 日志限制不会由安装器配置或修改。面板不创建定时备份。
 
@@ -168,7 +180,7 @@ sudo bash junpanel/uninstall.sh
 
 网页服务使用 `junpanel-web` 低权限用户；它不加入 docker 组，不直接挂载或访问 Docker socket。独立 root 代理连接系统 Docker，并执行范围固定的管理接口。**代理仍拥有 root 与 Docker 的高权限，网页服务被攻破后也可能滥用代理允许的能力；这一拆分不是强沙箱，也不使 Docker 管理变成低权限操作。** 面板管理员等同于服务器管理员信任级别。
 
-网页程序固定监听 `127.0.0.1`；默认通过 SSH 隧道访问。可选的 `public-access.sh` 通过现有系统 Caddy 提供公网 IPv4 HTTPS 入口，校验原始 Origin 后适配本机接口，并给会话 Cookie 添加 Secure；请使用这套完整配置，而非仅增加一条普通反向代理。公网入口启用后任何人都可到达登录页，仍必须通过管理员认证；登录失败锁定为全局共享，公开后也可能被外部请求触发。
+网页程序固定监听 `127.0.0.1`；在线安装器使用 `public-access.sh` 通过现有系统 Caddy 提供公网 IPv4 HTTPS 入口，校验原始 Origin 后适配本机接口，并给会话 Cookie 添加 Secure；请使用这套完整配置，而非仅增加一条普通反向代理。可显式选择本机模式并通过 SSH 隧道访问。公网入口启用后任何人都可到达登录页，仍必须通过管理员认证；登录失败锁定为全局共享，公开后也可能被外部请求触发。
 
 Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不将登录凭据写入 localStorage。公网访问使用 HTTPS 和 Secure Cookie；SSH 隧道访问使用本机 HTTP，远程链路由 SSH 加密。请在可信电脑上使用面板。
 

@@ -1,12 +1,28 @@
 # 使用服务器 IP 直接访问 JunPanel
 
-已安装 JunPanel 0.1.1 后，在服务器的 SSH 窗口执行一次，把最后的参数换成服务器的公网 IPv4：
+新版在线安装器已自动识别 IP、配置 HTTPS，并在最后显示账号、密码和登录链接。正常安装不需要再执行本文的入口配置命令。
+
+已有 JunPanel 0.1.1，仅需启用或重新检查入口时，在服务器的 SSH 窗口执行一次：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash
+```
+
+脚本会自动识别服务器公网 IPv4，配置入口并等待 HTTPS 检查，随后显示实际登录链接。使用原有面板账号和密码登录，不需要再建立 SSH 隧道。root 用户也可使用 `bash` 代替 `sudo bash`。本脚本不安装面板；如果尚未安装，先执行 README 中的一条命令安装。
+
+## 自动识别与安装结果
+
+识别顺序为：显式指定的 `JUNPANEL_PUBLIC_IP`、已配置的公网入口、当前 SSH 连接的服务器地址、默认路由源地址、唯一的公网网卡地址。路由查询只读取本机路由表，不向查询地址发送数据；不调用外部 IP 查询服务。内网、回环、链路本地、共享地址、文档示例和多播地址不会作为自动登录地址。
+
+多个公网地址无法确定、NAT 或仅内网环境下，不会随意选择一个 IP。可显式传入已知公网 IPv4：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- 服务器公网IPv4
 ```
 
-之后直接打开 `https://服务器公网IPv4`，使用原有面板账号和密码登录，不需要再建立 SSH 隧道。root 用户也可使用 `bash` 代替 `sudo bash`。本脚本不安装面板；如果尚未安装，先执行 README 中的一条命令安装。
+脚本最多等待约一分钟检查 HTTPS。只有证书有效且面板 `/api/meta` 正常响应时才提示检查通过；仍在签发或网络不通时显示“登录链接（准备中）”并返回状态码 2，保留已经校验并加载的 Caddy 配置供后续重试。在线安装器会保留该状态，不把它当成可立即登录。
+
+在线安装器最后汇总账号、初始密码和真实登录链接；已有账号不会重置密码。安装输出临时保存在私有临时目录用于汇总密码，结束时删除，不写入公开日志或长期密码文件。
 
 ## 前置条件
 
@@ -36,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --disable
 ```
 
-重新运行带 IP 的命令可更改直连 IP。更改面板后端端口后，也需重新运行该命令。卸载面板前建议先关闭公网入口。
+重新运行带 IP 的命令可更改直连 IP；不传 IP 时优先沿用已配置的公网入口。更改面板后端端口后，也需重新运行入口配置。卸载面板前建议先关闭公网入口。
 
 证书尚未就绪、入口无法打开时，在服务器查看：
 
@@ -65,5 +81,7 @@ bash public-access.sh --print 203.0.113.10 8787
 - 检查公网响应 Cookie 带 Secure、HttpOnly、SameSite=Strict。
 - 检查外部 Origin、缺失 Origin 的写请求 / WebSocket、HTTP Origin 和跨站读取被拒绝。
 - 检查 IPv4 参数与配置注入拒绝，以及 Bash 语法。
+- 使用可重复的 Bash 测试检查 SSH / 路由 / 网卡识别、地址歧义、非公网地址排除及显式覆盖；测试保存在 `tests/ip-detection.sh` 并由 Linux CI 执行。
+- 用隔离的下载与安装替身检查在线安装器的就绪、已有账号、证书准备中、配置失败、无法识别公网 IP、本机模式、安装失败、两个文件校验失败和下载失败；这些是流程模拟，不是真实服务器部署。
 
 本次未申请真实公网证书，未执行 Debian 上的 systemd 重载 / 失败恢复，也未修改用户的远程服务器。证书签发与服务器部署仍需在实际环境验证。
