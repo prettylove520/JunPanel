@@ -42,13 +42,13 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 	var value any
 	switch path {
 	case "/overview":
-		value = map[string]any{"host": demoHost(), "host_error": "", "containers": demoContainers(), "docker_error": "", "sites": demoSites(), "apps": demoApps(), "caddy_state": "active", "jobs": demoJobs(), "time": time.Now(), "version": version, "demo": true}
+		value = map[string]any{"host": demoHost(), "host_error": "", "containers": demoContainers(), "docker_error": "", "sites": demoSites(), "external_hosts": []string{"legacy.example.com"}, "apps": demoApps(), "caddy_state": "active", "jobs": demoJobs(), "time": time.Now(), "version": version, "demo": true}
 	case "/containers":
 		value = demoContainers()
 	case "/projects":
 		value = grouped(demoContainers())
 	case "/sites":
-		value = map[string]any{"sites": demoSites(), "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
+		value = map[string]any{"sites": demoSites(), "external_hosts": []string{"legacy.example.com"}, "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
 	case "/catalog":
 		value = appCatalog
 	case "/apps":

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -142,7 +143,39 @@ func (a *agent) caddyHosts() ([]string, error) {
 	for host := range hosts {
 		out = append(out, host)
 	}
+	sort.Strings(out)
 	return out, nil
+}
+
+// Existing Caddy sites remain outside the panel's editable registry.
+func (a *agent) externalHosts(managed []site, hosts []string) []string {
+	owned := map[string]bool{}
+	for _, s := range managed {
+		for _, domain := range s.Domains {
+			owned[strings.ToLower(domain)] = true
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(a.cfg.Fragments, "panel-access.caddy")); err == nil && strings.HasPrefix(string(data), "# JunPanel public HTTPS access - managed by public-access.sh\n") {
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 2 && fields[1] == "{" && strings.HasPrefix(fields[0], "https://") {
+				if u, err := url.Parse(fields[0]); err == nil {
+					owned[strings.ToLower(u.Hostname())] = true
+				}
+				break
+			}
+		}
+	}
+	out := []string{}
+	for _, host := range hosts {
+		h := strings.ToLower(host)
+		ip := net.ParseIP(h)
+		if owned[h] || h == "localhost" || (ip != nil && (ip.IsLoopback() || ip.IsUnspecified())) {
+			continue
+		}
+		out = append(out, host)
+	}
+	return out
 }
 func (a *agent) applySites(sites []site) error {
 	raw, e := os.ReadFile(a.cfg.Caddy)
@@ -212,7 +245,7 @@ func (a *agent) siteList(w http.ResponseWriter, r *http.Request) error {
 		message = he.Error()
 	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"sites": sites, "existing_hosts": hosts, "error": message, "state": strings.TrimSpace(state), "root": a.cfg.Root})
+	send(w, 200, map[string]any{"sites": sites, "existing_hosts": hosts, "external_hosts": a.externalHosts(sites, hosts), "error": message, "state": strings.TrimSpace(state), "root": a.cfg.Root})
 	return nil
 }
 func (a *agent) siteSave(w http.ResponseWriter, r *http.Request) error {

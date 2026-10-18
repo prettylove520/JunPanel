@@ -107,10 +107,24 @@ func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 	if de != nil {
 		dockerErr = de.Error()
 	}
-	sites, _ := a.readSites()
-	apps, _ := a.readApps()
+	a.mu.Lock()
+	sites, se := a.readSites()
+	apps, ae := a.readApps()
+	hosts, he := a.caddyHosts()
+	external := a.externalHosts(sites, hosts)
+	a.mu.Unlock()
+	sitesErr, appsErr, caddyErr := "", "", ""
+	if se != nil {
+		sitesErr = "面板网站登记读取失败：" + se.Error()
+	}
+	if ae != nil {
+		appsErr = "应用登记读取失败：" + ae.Error()
+	}
+	if he != nil {
+		caddyErr = he.Error()
+	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "apps": publicApps(apps), "caddy_state": state, "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
+	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
 	return nil
 }
 func decodeObject(b []byte, v any) error {
