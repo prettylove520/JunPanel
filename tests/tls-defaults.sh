@@ -2,6 +2,9 @@
 set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 source ./public-access.sh
+file_preview="$(bash ./public-access.sh --print 8.8.8.8 8789)"
+pipe_preview="$(cat ./public-access.sh | bash -s -- --print 8.8.8.8 8789)"
+[[ "$file_preview" == "$pipe_preview" && "$pipe_preview" == *'8.8.8.8'* ]]
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/junpanel-tls-defaults.XXXXXXXX")"
 cleanup_test() { [[ -d "$test_dir" && ! -L "$test_dir" && "${test_dir##*/}" == junpanel-tls-defaults.* ]] && rm -rf -- "$test_dir"; }
 trap cleanup_test EXIT
