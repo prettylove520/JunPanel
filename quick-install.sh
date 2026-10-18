@@ -6,8 +6,8 @@ main() (
   set -Eeuo pipefail
   umask 077
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  local version=0.1.1
-  local expected=d2d34100204c2f6d930939ad234253be4a8126f1d01d6de02e1ba0a0a8b9e302
+  local version=0.1.2
+  local expected=55cbe7b297f8c8a606e7ce2472e1c7c698f24fc8b749e39ab5b29e999b5d27e3
   local public_ref=ccb593f39637aba35e43c9e6132d956114673833
   local public_hash=1347b25e3f22ce4ad7d94d8b8baf5c07b2a36fa799b6ecc932fd5f8a46e9d692
   local archive="JunPanel-$version-linux.tar.gz"
@@ -23,7 +23,7 @@ main() (
     if ((status)); then printf '\n[JunPanel] 安装未完成，请把上面的报错发来排查（不要发送密码）。\n' >&2; fi
     exit "$status"
   }
-  # Suppress the packaged 0.1.1 installer's SSH footer; print the selected access method below.
+  # Suppress the packaged installer's SSH footer; print the selected access method below.
   install_output() {
     local text='' legacy_footer=0
     while IFS= read -r text || [[ -n "$text" ]]; do
