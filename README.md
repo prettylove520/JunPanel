@@ -2,7 +2,7 @@
 
 ![JunPanel](logo-preview.png)
 
-[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v0.1.6](https://github.com/prettylove520/JunPanel/releases/tag/v0.1.6) · [MIT 许可证](LICENSE)
+[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v0.1.7](https://github.com/prettylove520/JunPanel/releases/tag/v0.1.7) · [MIT 许可证](LICENSE)
 
 中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用石墨色与薄荷绿设计，支持深浅主题和手机布局。
 
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 自动完成下载、校验、解压、环境检查、面板安装、**公网 IPv4 识别和 HTTPS 管理入口配置**。结束时集中显示账号、随机密码和登录链接：证书及面板响应检查通过后可直接打开 `https://服务器IP`，无需再填 IP 或执行另一条配置命令。公网登录页会公开，仍需管理员认证；建议开启两步验证。HTTPS 入口要求现有 Caddy 至少 2.10.1、公网 80/443 可达。
 
-在线安装器固定下载 v0.1.6 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
+在线安装器固定下载 v0.1.7 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
 
 IP 识别不访问第三方 IP 查询服务：优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。NAT、仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接。证书尚未就绪会标注“准备中”，不会提示已经可登录。
 
@@ -44,17 +44,17 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 1. 在服务器的 SSH 窗口下载安装包并核对校验和：
 
    ```bash
-   curl -fL -o JunPanel-0.1.6-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v0.1.6/JunPanel-0.1.6-linux.tar.gz
-   curl -fL -o JunPanel-0.1.6-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v0.1.6/JunPanel-0.1.6-SHA256SUMS.txt
-   sha256sum --ignore-missing -c JunPanel-0.1.6-SHA256SUMS.txt
+   curl -fL -o JunPanel-0.1.7-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v0.1.7/JunPanel-0.1.7-linux.tar.gz
+   curl -fL -o JunPanel-0.1.7-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v0.1.7/JunPanel-0.1.7-SHA256SUMS.txt
+   sha256sum --ignore-missing -c JunPanel-0.1.7-SHA256SUMS.txt
    ```
 
-   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v0.1.6)下载到电脑，再通过 `scp` 上传。
+   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v0.1.7)下载到电脑，再通过 `scp` 上传。
 
 2. 在服务器的 SSH 窗口执行：
 
    ```bash
-   tar -xzf JunPanel-0.1.6-linux.tar.gz && sudo bash junpanel/install.sh
+   tar -xzf JunPanel-0.1.7-linux.tar.gz && sudo bash junpanel/install.sh
    ```
 
    安装器自动选择架构、验证程序校验和、检查现有服务、创建随机面板密码并启动两个 systemd 服务。记下终端显示的 `admin` 账号与随机密码。**新安装没有默认密码**。
@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 在线安装默认配置公网 HTTPS 管理入口；选择 `JUNPANEL_ACCESS=local` 会关闭面板专用的公网入口并保留本机访问。完整安装包内的手动 `install.sh` 仍只安装本机服务。SSH 密码登录方式保持原样。
 
-你的现有 SSH 密码登录方式、22 端口、Fail2ban、nftables、防火墙策略、Swap、自动安全更新和 Docker 日志限制不会由安装器配置或修改。面板只提供手动备份，不创建定时备份。
+你的现有 SSH 密码登录方式、22 端口、Fail2ban、nftables、防火墙策略、Swap、自动安全更新和 Docker 日志限制不会由安装器配置或修改。备份和重启可在“计划任务”页按时间表自动执行，面板本身不创建其它定时任务。
 
 安装器会给现有 `/etc/caddy/Caddyfile` 末尾追加一条 `import /etc/caddy/junpanel.d/*.caddy`，校验后重载；保留原有站点块。安装或变更失败时会尝试恢复本次修改，不提供对外部并发编辑的事务保证。安装过程中请勿同时编辑 Caddyfile。
 
@@ -104,6 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 | 文件 | 限定 `/srv/junpanel`；浏览、新建文件夹/文本、上传、下载、UTF-8 编辑、版本冲突检查、重命名/移动、回收站（恢复、永久删除、清空，30 天自动清理）；上传与下载均为流式，单文件上传上限 512 MiB |
 | 数据库 | 应用中心创建的 PostgreSQL/MySQL/WordPress 内部 MariaDB；执行 SQL、创建数据库、备份（流式导出压缩 SQL）；Redis 的 INFO/DBSIZE/PING；再次验证面板密码后查看连接凭据 |
 | 备份 | 手动备份静态网站文件、六种应用的数据、数据库 SQL；列表、下载、校验、删除；网站与应用可一键恢复（恢复前自动创建“恢复前备份”） |
+| 计划任务 | 按时间表自动备份（网站、应用、数据库）或重启应用；每天、每周、每隔 N 小时；保留最近 N 份；立即运行、停用、编辑；最近结果可见 |
 | 容器终端 | 运行中容器的 `/bin/sh` 基础行终端、输入输出、Ctrl+C、断开；一次性连接票据与并发限制 |
 | 任务记录 | 应用/镜像/容器/项目任务结果与有界输出；应用部署与镜像拉取提供进行中的命令输出 |
 | 账号安全 | 单管理员、密码哈希、按来源 IP 登录限速、服务器端会话、闲置/绝对过期、CSRF、同源校验、TOTP 两步验证（动态码一次性使用） |
@@ -129,6 +130,18 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 gunzip -c database-blog-20261020-101500.sql.gz | docker exec -i -e PGPASSWORD=密码 容器 psql -U junpanel -d 库名
 gunzip -c database-blog-20261020-101500.sql.gz | docker exec -i -e MYSQL_PWD=密码 容器 mysql -uroot 库名
 ```
+
+## 计划任务
+
+在左侧 **计划任务** 页创建。只有两类内置任务，**不能执行任意命令**：定时备份（网站文件、应用数据、数据库 SQL，规则同上）和定时重启应用。
+
+- **时间**：每天、每周某天，或每隔 1–168 小时。每天和每周的时间按服务器本地时区计算（页面上会显示时区，例如 `CST +0800`）；间隔从每次开始运行时算起。夏令时切换日不会漏跑或重复跑。
+- **补跑**：到点时面板或服务器停机，恢复后只补跑一次，不会把错过的每一次都补上。刚启动的 20 秒内不会开始任务。
+- **重试**：目标应用正忙，或后台任务已满（最多同时 2 个）时，每 10 分钟重试一次，最多 3 次，然后等下一个时间点。目标已被删除、被保护等永久性错误不重试，结果显示在列表中。
+- **保留份数**：定时备份完成后，只清理**这个计划任务**创建的备份，保留最近 N 份（1–60，默认 7）。手动备份和“恢复前备份”不受影响，也不会被清理。删除计划任务不会删除它已创建的备份，之后这些备份不再自动清理。
+- **同一任务不会重叠**：上一次还没结束就到点，这次会被跳过并记录。应用类备份仍会短暂停止应用，建议安排在夜间；最多 50 个计划任务。
+- 管理代理重启时仍在运行的任务会被标记为“失败（被中断）”，请核对结果；任务输出可在“任务记录”查看，记录保存在代理内存中，重启后清空。
+- 计划保存在 `/var/lib/junpanel-agent/schedules.json`（root 私有）。该文件损坏时管理代理会拒绝启动，而不是静默丢弃计划。
 
 ## 从应用到域名
 
@@ -207,6 +220,7 @@ sudo bash junpanel/uninstall.sh
 | `/var/lib/junpanel-agent` | root 私有登记文件、应用 Compose 配置和数据库凭据 |
 | `/run/junpanel/agent.sock` | root:junpanel、0660 的本机控制通道 |
 | `/srv/junpanel/sites` | 面板静态网站目录，网页文件供 Caddy 读取 |
+| `/var/lib/junpanel-agent/schedules.json` | 计划任务及最近一次运行结果 |
 | `/var/lib/junpanel-agent/backups` | root 私有的备份文件，每份附带记录与 SHA-256 |
 | `/srv/junpanel/.trash` | root 私有回收站，项目移入 30 天后自动永久删除 |
 | `/etc/caddy/junpanel.d/managed.caddy` | 面板拥有的站点片段；请通过网站模块编辑 |

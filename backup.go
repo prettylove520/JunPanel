@@ -32,6 +32,7 @@ type backupMeta struct {
 	Name     string    `json:"name"`
 	Database string    `json:"database,omitempty"`
 	Note     string    `json:"note,omitempty"`
+	Schedule string    `json:"schedule,omitempty"`
 	File     string    `json:"file"`
 	Size     int64     `json:"size"`
 	SHA256   string    `json:"sha256"`
@@ -53,6 +54,9 @@ var appData = map[string][]dataPart{
 	"mysql":     {{"app", "/var/lib/mysql", "data"}},
 	"redis":     {{"app", "/data", "data"}},
 }
+
+// backupTag labels a backup: a note for the list and the schedule that made it.
+type backupTag struct{ Note, Schedule string }
 
 type countWriter struct{ n int64 }
 
@@ -273,7 +277,7 @@ func (a *agent) staticSite(id string) (site, error) {
 	}
 	return site{}, bad(404, "网站不存在")
 }
-func (a *agent) backupSite(ctx context.Context, out io.Writer, s site, note string) (backupMeta, error) {
+func (a *agent) backupSite(ctx context.Context, out io.Writer, s site, tag backupTag) (backupMeta, error) {
 	root, e := a.rootFS()
 	if e != nil {
 		return backupMeta{}, e
@@ -284,7 +288,7 @@ func (a *agent) backupSite(ctx context.Context, out io.Writer, s site, note stri
 		return backupMeta{}, bad(404, "网站目录不存在")
 	}
 	defer sub.Close()
-	return a.writeBackup(backupMeta{Type: "site", Target: s.ID, Name: s.Name, Note: note}, "tar.gz", func(w io.Writer) error {
+	return a.writeBackup(backupMeta{Type: "site", Target: s.ID, Name: s.Name, Note: tag.Note, Schedule: tag.Schedule}, "tar.gz", func(w io.Writer) error {
 		tw := tar.NewWriter(w)
 		files, skipped, e := tarTree(ctx, sub, tw)
 		if e != nil {
@@ -313,7 +317,7 @@ func (a *agent) restoreSite(ctx context.Context, out io.Writer, meta backupMeta)
 		return bad(409, "备份文件无法读取")
 	}
 	fmt.Fprintln(out, "先为当前网站创建恢复前备份…")
-	pre, e := a.backupSite(ctx, out, s, "恢复前自动备份")
+	pre, e := a.backupSite(ctx, out, s, backupTag{Note: "恢复前自动备份"})
 	if e != nil {
 		return bad(502, "恢复前备份失败，已取消恢复，网站未被更改："+e.Error())
 	}
@@ -476,7 +480,7 @@ func copyArchive(tw *tar.Writer, r io.Reader, prefix string) (int, error) {
 
 // backupApp stops the app so its files are consistent, archives its data
 // directories, and starts it again if it was running.
-func (a *agent) backupApp(ctx context.Context, out io.Writer, rec appRecord, note string) (backupMeta, error) {
+func (a *agent) backupApp(ctx context.Context, out io.Writer, rec appRecord, tag backupTag) (backupMeta, error) {
 	parts := appData[rec.Template]
 	if len(parts) == 0 {
 		return backupMeta{}, bad(400, "此应用类型暂不支持备份")
@@ -491,7 +495,7 @@ func (a *agent) backupApp(ctx context.Context, out io.Writer, rec appRecord, not
 			return backupMeta{}, bad(502, "停止应用失败，备份已取消")
 		}
 	}
-	meta, e := a.writeBackup(backupMeta{Type: "app", Target: rec.ID, Name: rec.Name, Note: note}, "tar.gz", func(w io.Writer) error {
+	meta, e := a.writeBackup(backupMeta{Type: "app", Target: rec.ID, Name: rec.Name, Note: tag.Note, Schedule: tag.Schedule}, "tar.gz", func(w io.Writer) error {
 		tw := tar.NewWriter(w)
 		manifest, _ := json.Marshal(map[string]any{"version": 1, "app": rec.ID, "template": rec.Template, "created": time.Now().UTC(), "parts": parts})
 		if e := tw.WriteHeader(&tar.Header{Name: "manifest.json", Mode: 0600, Size: int64(len(manifest)), ModTime: time.Now()}); e != nil {
@@ -594,7 +598,7 @@ func (a *agent) restoreApp(ctx context.Context, out io.Writer, rec appRecord, me
 		return e
 	}
 	fmt.Fprintln(out, "先为当前应用创建恢复前备份…")
-	pre, e := a.backupApp(ctx, out, rec, "恢复前自动备份")
+	pre, e := a.backupApp(ctx, out, rec, backupTag{Note: "恢复前自动备份"})
 	if e != nil {
 		return bad(502, "恢复前备份失败，已取消恢复，应用数据未被更改："+e.Error())
 	}
@@ -713,7 +717,7 @@ func dumpArgs(record appRecord, kind, db string) ([]string, []string, error) {
 	}
 	return nil, nil, bad(400, "Redis 请通过 SSH 使用原生持久化工具，或备份整个应用")
 }
-func (a *agent) backupDatabase(ctx context.Context, out io.Writer, id, db string) (backupMeta, error) {
+func (a *agent) backupDatabase(ctx context.Context, out io.Writer, id, db string, tag backupTag) (backupMeta, error) {
 	record, kind, e := a.databaseRecord(id)
 	if e != nil {
 		return backupMeta{}, e
@@ -726,7 +730,7 @@ func (a *agent) backupDatabase(ctx context.Context, out io.Writer, id, db string
 	if e != nil {
 		return backupMeta{}, e
 	}
-	return a.writeBackup(backupMeta{Type: "database", Target: id, Name: record.Name, Database: db}, "sql.gz", func(w io.Writer) error {
+	return a.writeBackup(backupMeta{Type: "database", Target: id, Name: record.Name, Database: db, Note: tag.Note, Schedule: tag.Schedule}, "sql.gz", func(w io.Writer) error {
 		size := &countWriter{}
 		stderr, e := a.docker.execStream(ctx, c.ID, args, env, io.MultiWriter(w, size))
 		if e != nil {
@@ -762,6 +766,15 @@ func (a *agent) backupList(w http.ResponseWriter, r *http.Request) error {
 	send(w, 200, map[string]any{"backups": out, "free": diskSpace(a.backupDir())["free"], "directory": a.backupDir()})
 	return nil
 }
+
+// backupSpec says what to back up; Tag labels the result.
+type backupSpec struct {
+	Type     string `json:"type"`
+	Target   string `json:"target"`
+	Database string `json:"database"`
+	Tag      backupTag
+}
+
 func (a *agent) backupCreate(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Type     string `json:"type"`
@@ -771,80 +784,83 @@ func (a *agent) backupCreate(w http.ResponseWriter, r *http.Request) error {
 	if e := body(r, &req); e != nil {
 		return e
 	}
-	var j job
-	var e error
-	switch req.Type {
+	j, e := a.startBackup(backupSpec{Type: req.Type, Target: req.Target, Database: req.Database}, nil)
+	if e != nil {
+		return e
+	}
+	send(w, 202, j)
+	return nil
+}
+
+// startBackup validates the request and runs the backup as a job. done, if
+// given, receives the finished backup (or the error) from inside the job.
+func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job, error) {
+	finish := func(out *limitedBuffer, meta backupMeta, e error) error {
+		if e == nil {
+			fmt.Fprintf(out, "备份完成：%s\n", meta.ID)
+		}
+		if done != nil {
+			done(meta, e)
+		}
+		return e
+	}
+	switch spec.Type {
 	case "site":
-		if !siteID.MatchString(req.Target) {
-			return bad(400, "网站标识无效")
+		if !siteID.MatchString(spec.Target) {
+			return job{}, bad(400, "网站标识无效")
 		}
-		s, e := a.staticSite(req.Target)
+		a.mu.Lock()
+		s, e := a.staticSite(spec.Target)
+		a.mu.Unlock()
 		if e != nil {
-			return e
+			return job{}, e
 		}
-		j, e = a.jobs.startWithin(backupTimeout, "备份 · 网站 · "+s.Name, func(ctx context.Context, out *limitedBuffer) error {
-			meta, e := a.backupSite(ctx, out, s, "")
-			if e == nil {
-				fmt.Fprintf(out, "备份完成：%s\n", meta.ID)
-			}
-			return e
+		return a.jobs.startWithin(backupTimeout, "备份 · 网站 · "+s.Name, func(ctx context.Context, out *limitedBuffer) error {
+			meta, e := a.backupSite(ctx, out, s, spec.Tag)
+			return finish(out, meta, e)
 		})
-		if e != nil {
-			return e
-		}
 	case "app":
-		if e = requireName(req.Target); e != nil {
-			return e
+		if e := requireName(spec.Target); e != nil {
+			return job{}, e
 		}
-		rec, e := a.markBusy(req.Target)
+		rec, e := a.markBusy(spec.Target)
 		if e != nil {
-			return e
+			return job{}, e
 		}
-		j, e = a.jobs.startWithin(backupTimeout, "备份 · 应用 · "+rec.Name, func(ctx context.Context, out *limitedBuffer) error {
-			meta, e := a.backupApp(ctx, out, rec, "")
-			if e == nil {
-				fmt.Fprintf(out, "备份完成：%s\n", meta.ID)
-			}
+		j, e := a.jobs.startWithin(backupTimeout, "备份 · 应用 · "+rec.Name, func(ctx context.Context, out *limitedBuffer) error {
+			meta, e := a.backupApp(ctx, out, rec, spec.Tag)
 			if e != nil {
 				a.releaseApp(rec.ID, "上次备份未完成，请检查任务记录")
 			} else {
 				a.releaseApp(rec.ID, "")
 			}
-			return e
+			return finish(out, meta, e)
 		})
 		if e != nil {
 			a.releaseApp(rec.ID, "")
-			return e
+			return job{}, e
 		}
+		return j, nil
 	case "database":
-		if e = requireName(req.Target); e != nil {
-			return e
+		if e := requireName(spec.Target); e != nil {
+			return job{}, e
 		}
-		record, kind, e := a.databaseRecord(req.Target)
+		record, kind, e := a.databaseRecord(spec.Target)
 		if e != nil {
-			return e
+			return job{}, e
 		}
-		if _, _, e = dumpArgs(record, kind, req.Database); e != nil {
-			return e
+		if _, _, e = dumpArgs(record, kind, spec.Database); e != nil {
+			return job{}, e
 		}
 		if _, e = a.databaseContainer(record, kind); e != nil {
-			return e
+			return job{}, e
 		}
-		j, e = a.jobs.startWithin(backupTimeout, "备份 · 数据库 · "+record.Name+" / "+req.Database, func(ctx context.Context, out *limitedBuffer) error {
-			meta, e := a.backupDatabase(ctx, out, req.Target, req.Database)
-			if e == nil {
-				fmt.Fprintf(out, "备份完成：%s\n", meta.ID)
-			}
-			return e
+		return a.jobs.startWithin(backupTimeout, "备份 · 数据库 · "+record.Name+" / "+spec.Database, func(ctx context.Context, out *limitedBuffer) error {
+			meta, e := a.backupDatabase(ctx, out, spec.Target, spec.Database, spec.Tag)
+			return finish(out, meta, e)
 		})
-		if e != nil {
-			return e
-		}
-	default:
-		return bad(400, "备份类型无效")
 	}
-	send(w, 202, j)
-	return nil
+	return job{}, bad(400, "备份类型无效")
 }
 func (a *agent) backupDownload(w http.ResponseWriter, r *http.Request) error {
 	meta, e := a.readBackup(r.PathValue("id"))

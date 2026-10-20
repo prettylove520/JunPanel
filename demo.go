@@ -78,6 +78,11 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = map[string]string{"text": "<!doctype html>\n<html lang=\"zh-CN\">\n<head><meta charset=\"utf-8\"><title>我的网站</title></head>\n<body>\n  <h1>你好，这里是我的个人主页。</h1>\n  <p>此处为JunPanel面板的演示文件。</p>\n</body>\n</html>", "revision": "demo"}
 	case "/trash":
 		value = []trashRecord{}
+	case "/schedules":
+		value = map[string]any{"zone": "CST +0800", "now": time.Now(), "schedules": []schedule{
+			{ID: "sc_" + strings.Repeat("1", 16), Name: "每晚备份博客", Action: "backup", Type: "app", Target: "blog", Keep: 7, Every: "daily", At: "03:00", Enabled: true, Created: time.Now().Add(-9 * 24 * time.Hour), Next: time.Now().Add(9 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-15 * time.Hour), Status: "success", Message: "已备份，保留最近 7 份（已清理 1 份旧备份）"}},
+			{ID: "sc_" + strings.Repeat("2", 16), Name: "每周重启监控", Action: "restart", Target: "kuma", Every: "weekly", Weekday: 1, At: "04:30", Enabled: true, Created: time.Now().Add(-20 * 24 * time.Hour), Next: time.Now().Add(80 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-88 * time.Hour), Status: "failed", Message: "应用操作失败；容器状态可能已变化，请查看任务输出并核对"}},
+		}}
 	case "/backups":
 		value = map[string]any{"directory": "/var/lib/junpanel-agent/backups", "free": 38 << 30, "backups": []backupMeta{
 			{ID: "b_" + strings.Repeat("a", 20), Type: "app", Target: "blog", Name: "我的博客", File: "x.tar.gz", Size: 214 << 20, SHA256: strings.Repeat("a", 64), Created: time.Now().Add(-26 * time.Hour)},

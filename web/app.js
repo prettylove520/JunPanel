@@ -25,6 +25,7 @@ const paths = {
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/>',
   memory: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4m4-4v4m4-4v4m4-4v4M6 18v3m6-3v3m6-3v3"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   disk: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="4"/><path d="m12 10 6 6M6 18h1"/>',
   network: '<path d="M7 3v18m-4-4 4 4 4-4M17 21V3m-4 4 4-4 4 4"/>',
   file: '<path d="M5 2h9l5 5v15H5Zm9 0v6h5M8 12h8m-8 4h8"/>',
@@ -44,6 +45,7 @@ const routes = {
   files: ['站点文件', '在 /srv/junpanel 内管理文件，删除先进入回收站。', 'FILES', 'folder'],
   databases: ['数据库', '管理应用中心创建的数据库，执行查询与备份。', 'DATABASES', 'database'],
   backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'BACKUPS', 'disk'],
+  schedules: ['计划任务', '按时间表自动备份或重启应用，并只保留最近几份备份。', 'SCHEDULES', 'clock'],
   terminal: ['容器终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'TERMINAL', 'terminal'],
   jobs: ['任务记录', '每一次部署与容器操作，都有明确的结果。', 'ACTIVITY', 'activity'],
   security: ['账号与安全', '管理你的登录凭据，了解工作台的权限边界。', 'SECURITY', 'shield'],
@@ -104,7 +106,7 @@ async function navigate(route) { state.route = routes[route] ? route : 'overview
 async function render() {
   clearPage(); const epoch = state.epoch, r = routes[state.route]; $('#breadcrumb').textContent = r[0]; $('#page-title').textContent = r[0]; $('#page-description').textContent = r[1];document.body.dataset.route=state.route; $('#page-eyebrow').textContent = `WORKBENCH / ${r[2]}`; $('#connection-error').hidden = true;
   $$('[data-route]').forEach(n => {const active=n.dataset.route===state.route;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}); $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在读取服务器状态…'));
-  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
+  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, schedules: schedulesPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
   catch(e) { if (epoch !== state.epoch) return; view.replaceChildren(empty('暂时无法读取', e.message), button('重新连接', render, 'secondary','refresh')); }
 }
 function action(...buttons) { $('#page-actions').append(...buttons); }
@@ -313,4 +315,81 @@ function restoreBackup(b) {
     ? '该网站的全部文件将被替换为备份时的内容，备份之后新增或修改的文件会丢失。'
     : '该应用会先停止，其数据卷将被清空并替换为备份时的数据，再重新启动；备份之后写入的数据会丢失。仅适用于同一台服务器上的同一个应用。';
   confirm('恢复备份', `${what}开始前会自动创建一份“恢复前备份”，恢复失败时可用它回滚。`, () => mutation(`/backups/${b.id}/restore`, { confirm: true }), true);
+}
+const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+function frequencyText(s) {
+  if (s.every === 'daily') return `每天 ${s.at}`;
+  if (s.every === 'weekly') return `每${weekdayNames[s.weekday]} ${s.at}`;
+  return `每隔 ${s.hours} 小时`;
+}
+function scheduleWhat(s, apps, sites, databases) {
+  if (s.action === 'restart') return ['重启应用', (apps.find(a => a.id === s.target) || {}).name || s.target];
+  const label = { site: '备份网站文件', app: '备份应用数据', database: '备份数据库' }[s.type] || '备份';
+  const names = { site: (sites.find(x => x.id === s.target) || {}).name, app: (apps.find(a => a.id === s.target) || {}).name, database: (databases.find(d => d.id === s.target) || {}).name };
+  return [label, (names[s.type] || s.target) + (s.type === 'database' ? ` / ${s.database}` : '') + `，保留 ${s.keep} 份`];
+}
+async function schedulesPage() {
+  const [data, sites, apps, databases] = await Promise.all([api('/schedules'), api('/sites'), api('/apps'), api('/databases')]), rows = data.schedules, n = el('div');
+  const siteRows = sites.sites;
+  action(button('刷新', render, 'secondary', 'refresh'), button('新建计划任务', () => scheduleForm(null, data, siteRows, apps, databases), 'primary', 'plus'));
+  n.append(note(`时间按服务器本地时区（${data.zone}）计算。到点时若面板在停机，开机后会补跑一次；应用正忙时会每 10 分钟重试，最多 3 次。定时备份会短暂停止应用。计划任务只支持备份和重启应用，不能执行任意命令。`));
+  if (!rows.length) { n.append(empty('还没有计划任务', '点击“新建计划任务”，让面板按时间表备份网站、应用或数据库。')); return n; }
+  const t = table(['名称', '内容', '频率', '下次运行', '最近一次', '操作']);
+  rows.forEach(s => {
+    const [kind, detail] = scheduleWhat(s, apps, siteRows, databases), what = el('div'), name = el('div'), last = el('div');
+    name.append(el('strong', '', s.name), el('small', 'muted', s.enabled ? '已启用' : '已停用'));
+    what.append(el('strong', '', kind), el('small', 'muted', detail));
+    if (s.last) {
+      const cls = { success: 'ok', failed: 'bad', running: 'blue' }[s.last.status] || '';
+      last.append(tag({ success: '成功', failed: '失败', running: '运行中' }[s.last.status] || s.last.status, cls), el('small', 'muted', `${date(s.last.at)}${s.last.message ? ' · ' + s.last.message : ''}`));
+    } else last.append(el('span', 'muted', '尚未运行'));
+    cells(t.body, name, what, frequencyText(s), s.enabled ? date(s.next) : '—', last, ops(
+      button('立即运行', () => mutation(`/schedules/${s.id}/run`, {}), 'quiet small'),
+      button('编辑', () => scheduleForm(s, data, siteRows, apps, databases), 'quiet small'),
+      button(s.enabled ? '停用' : '启用', () => mutation(`/schedules/${s.id}/toggle`, {}), 'quiet small'),
+      button('删除', () => confirm('删除计划任务', `将删除“${s.name}”。它已创建的备份会保留，之后不再自动清理。`, () => mutation(`/schedules/${s.id}`, undefined, 'DELETE'), true), 'quiet small')));
+  });
+  n.append(t.n);
+  return n;
+}
+function scheduleForm(current, data, sites, apps, databases) {
+  const supported = ['wordpress', 'gitea', 'kuma', 'postgres', 'mysql', 'redis'];
+  const live = apps.filter(a => !a.removed);
+  const targets = {
+    site: sites.filter(s => s.kind === 'static').map(s => [s.id, `${s.name}（${s.domains[0]}）`]),
+    app: live.filter(a => supported.includes(a.template)).map(a => [a.id, a.name]),
+    database: databases.filter(d => d.kind !== 'redis').map(d => [d.id, d.name]),
+    restart: live.map(a => [a.id, a.name]),
+  };
+  const c = current || { action: 'backup', type: 'site', keep: 7, every: 'daily', at: '03:00', weekday: 1, hours: 24 };
+  const name = field('名称', c.name || '', { max: 60, placeholder: '例如：每晚备份博客' });
+  const what = field('任务', c.action === 'restart' ? 'restart' : c.type, { select: [['site', '备份网站文件'], ['app', '备份应用数据（短暂停止应用）'], ['database', '备份数据库（SQL）'], ['restart', '重启应用']] });
+  const target = field('对象', c.target || '', { select: [] });
+  const database = field('数据库名称', c.database || 'junpanel', { max: 63, help: '仅字母、数字及下划线。' });
+  const keep = field('保留份数', String(c.keep || 7), { type: 'number', help: '只清理这个计划任务创建的备份，超出的旧备份会被删除；手动备份不受影响。' });
+  const every = field('频率', c.every, { select: [['daily', '每天'], ['weekly', '每周'], ['interval', '每隔几小时']] });
+  const time = field('时间', c.at || '03:00', { type: 'time', help: `服务器本地时区：${data.zone}` });
+  const weekday = field('星期', String(c.weekday ?? 1), { select: weekdayNames.map((n, i) => [String(i), n]) });
+  const hours = field('间隔（小时）', String(c.hours || 24), { type: 'number', help: '1–168，从每次开始运行时计算。' });
+  const refresh = () => {
+    const kind = what.input.value;
+    target.input.replaceChildren(...targets[kind].map(([v, text]) => { const o = el('option', '', text); o.value = v; return o; }));
+    if (current && (current.action === 'restart' ? 'restart' : current.type) === kind) target.input.value = current.target;
+    database.n.hidden = kind !== 'database'; database.input.required = kind === 'database';
+    keep.n.hidden = kind === 'restart';
+    const d = databases.find(x => x.id === target.input.value); if (kind === 'database' && d && !(current && current.target === d.id)) database.input.value = d.database || 'junpanel';
+    const f = every.input.value;
+    time.n.hidden = f === 'interval'; time.input.required = f !== 'interval';
+    weekday.n.hidden = f !== 'weekly'; hours.n.hidden = f !== 'interval'; hours.input.required = f === 'interval';
+  };
+  what.input.onchange = refresh; target.input.onchange = refresh; every.input.onchange = refresh; refresh();
+  formModal(current ? '编辑计划任务' : '新建计划任务', [name, what, target, database, keep, every, time, weekday, hours], current ? '保存' : '创建', async () => {
+    if (!target.input.value) throw new Error('没有可选的对象');
+    const kind = what.input.value, f = every.input.value;
+    await mutation('/schedules', {
+      id: current ? current.id : '', name: name.val(), action: kind === 'restart' ? 'restart' : 'backup', type: kind === 'restart' ? '' : kind,
+      target: target.input.value, database: kind === 'database' ? database.val() : '', keep: kind === 'restart' ? 0 : Number(keep.val()),
+      every: f, at: f === 'interval' ? '' : time.val(), weekday: f === 'weekly' ? Number(weekday.input.value) : 0, hours: f === 'interval' ? Number(hours.val()) : 0,
+    });
+  });
 }
