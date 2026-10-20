@@ -25,6 +25,7 @@ const paths = {
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/>',
   memory: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4m4-4v4m4-4v4m4-4v4M6 18v3m6-3v3m6-3v3"/>',
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   disk: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="4"/><path d="m12 10 6 6M6 18h1"/>',
   network: '<path d="M7 3v18m-4-4 4 4 4-4M17 21V3m-4 4 4-4 4 4"/>',
@@ -46,6 +47,7 @@ const routes = {
   databases: ['数据库', '管理应用中心创建的数据库，执行查询与备份。', 'DATABASES', 'database'],
   backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'BACKUPS', 'disk'],
   schedules: ['计划任务', '按时间表自动备份或重启应用，并只保留最近几份备份。', 'SCHEDULES', 'clock'],
+  alerts: ['告警', '磁盘、证书、容器和服务出问题时，在面板里提醒，并推送到你的 Webhook。', 'ALERTS', 'bell'],
   terminal: ['容器终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'TERMINAL', 'terminal'],
   jobs: ['任务记录', '每一次部署与容器操作，都有明确的结果。', 'ACTIVITY', 'activity'],
   security: ['账号与安全', '管理你的登录凭据，了解工作台的权限边界。', 'SECURITY', 'shield'],
@@ -106,7 +108,7 @@ async function navigate(route) { state.route = routes[route] ? route : 'overview
 async function render() {
   clearPage(); const epoch = state.epoch, r = routes[state.route]; $('#breadcrumb').textContent = r[0]; $('#page-title').textContent = r[0]; $('#page-description').textContent = r[1];document.body.dataset.route=state.route; $('#page-eyebrow').textContent = `WORKBENCH / ${r[2]}`; $('#connection-error').hidden = true;
   $$('[data-route]').forEach(n => {const active=n.dataset.route===state.route;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}); $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在读取服务器状态…'));
-  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, schedules: schedulesPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
+  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, schedules: schedulesPage, alerts: alertsPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
   catch(e) { if (epoch !== state.epoch) return; view.replaceChildren(empty('暂时无法读取', e.message), button('重新连接', render, 'secondary','refresh')); }
 }
 function action(...buttons) { $('#page-actions').append(...buttons); }
@@ -141,11 +143,12 @@ function inventorySites(data) {
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
 async function overviewPage() {
-  const data = await api('/overview'); state.sites = inventorySites(data); state.apps = data.apps || []; $('#site-badge').textContent = inventorySites(data).length; const n = el('div','overview-page');
+  const data = await api('/overview'); state.sites = inventorySites(data); state.apps = data.apps || []; $('#site-badge').textContent = inventorySites(data).length; setAlertBadge(data.alerts_active); const n = el('div','overview-page');
   function paint(d) {
     d.docker = {available: !d.docker_error, total: (d.containers || []).length, running: (d.containers || []).filter(c => c.state === 'running').length};
     const visibleSites=inventorySites(d); $('#site-badge').textContent=d.sites_error || d.caddy_error?'—':visibleSites.length; n.replaceChildren();
     for(const problem of [d.host_error,d.sites_error,d.apps_error,d.caddy_error])if(problem)n.append(note(problem,true));
+    setAlertBadge(d.alerts_active); if(d.alerts_active>0){const banner=note(`有 ${d.alerts_active} 条告警尚未解决。`,true),open=button('查看告警',()=>navigate('alerts'),'quiet small');banner.append(open);n.append(banner);}
     if(d.docker_error)n.append(note(d.docker_error,true)); const h = d.host; h.disk = h.disk || {}; const mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, disk = h.disk.total ? h.disk.used / h.disk.total * 100 : 0;
     const server = el('div','server-line'), left = el('div','server-line-left'), texts = el('div'); texts.append(el('div','server-name',h.hostname || '服务器'),el('div','server-subtitle',`${h.os || 'Linux'} · ${h.cores} 核 · 已运行 ${uptime(h.uptime)}`)); const serverMark=el('div','server-square'),serverLogo=el('img');serverLogo.src='/logo.svg';serverLogo.alt='';serverMark.append(serverLogo);left.append(serverMark,texts); const tags = el('div','server-tags'); tags.append(tag(accessLabel(),'ok'),tag(d.demo ? '模拟数据' : '实时数据','blue')); const hero=el('div','server-welcome');hero.append(el('span','eyebrow','YOUR SERVER, IN FOCUS'),el('h2','','服务有序，部署从容。'),el('p','',d.demo?'这里是 JunPanel 的交互演示，所有指标与站点均为模拟数据。':'从资源状态到应用上线，今天的服务器工作从这里开始。'));const connection=el('div','server-connection');connection.append(left,tags);server.append(hero,connection,serverArt());
     const metrics=el('div','metric-grid'); metrics.append(metric('CPU 使用率',percent(h.cpu),`负载 ${(h.load || []).map(v=>Number(v).toFixed(2)).join(' / ')}`,'cpu',h.cpu),metric('内存',bytes(h.mem_used),`共 ${bytes(h.mem_total)} · 使用 ${percent(mem)}`,'memory',mem),metric('系统磁盘',bytes(h.disk.used),`共 ${bytes(h.disk.total)} · 剩余 ${bytes(h.disk.free)}`,'disk',disk),metric('实时网络',`↓ ${bytes(h.rx)}/s`,`↑ ${bytes(h.tx)}/s · 已排除容器虚拟接口`,'network'));
@@ -392,4 +395,65 @@ function scheduleForm(current, data, sites, apps, databases) {
       every: f, at: f === 'interval' ? '' : time.val(), weekday: f === 'weekly' ? Number(weekday.input.value) : 0, hours: f === 'interval' ? Number(hours.val()) : 0,
     });
   });
+}
+function setAlertBadge(count) { const b = $('#alert-badge'); if (!b) return; b.hidden = !count; b.textContent = count || ''; }
+const alertKinds = { triggered: ['告警', 'bad'], reminder: ['仍未解决', 'warn'], resolved: ['已恢复', 'ok'] };
+async function alertsPage() {
+  const [data, certs] = await Promise.all([api('/alerts'), api('/certificates')]), cfg = data.config, n = el('div');
+  setAlertBadge(data.active.length);
+  action(button('立即检查', async () => { await api('/alerts/check', {}); toast('检查完成'); await render(); }, 'secondary', 'refresh'));
+
+  const current = panel('当前告警', tag(data.active.length ? `${data.active.length} 条` : '一切正常', data.active.length ? 'bad' : 'ok'));
+  if (!data.active.length) current.append(el('p', 'muted', '没有未解决的告警。面板每 30 秒检查一次。'));
+  data.active.forEach(a => {
+    const row = el('div', 'resource-row'), left = el('div', 'resource-left'), text = el('div', 'resource-name');
+    text.append(el('strong', '', a.title), el('small', '', a.detail), el('small', '', `开始于 ${date(a.since)}`)); left.append(text);
+    row.append(left, tag(a.severity === 'critical' ? '严重' : '警告', a.severity === 'critical' ? 'bad' : 'warn')); current.append(row);
+  });
+  n.append(current);
+
+  const form = el('form'), delivery = data.delivery;
+  const format = field('通知格式', cfg.format, { select: Object.entries(data.formats) });
+  const url = field('Webhook 地址', '', { required: false, placeholder: cfg.url_set ? `已设置（${cfg.url_host}），留空则保持不变` : 'https://…', help: '地址常含密钥，保存后不再显示。企业微信、钉钉、飞书填机器人地址；钉钉的“加签”不支持，请用“自定义关键词”并包含“JunPanel”。' });
+  const notify = field('发送通知', cfg.notify ? '1' : '0', { select: [['1', '开启'], ['0', '关闭（只在面板里显示）']] });
+  const disk = field('磁盘空间', cfg.disk_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] }), diskPercent = field('磁盘告警阈值（已用 %）', String(cfg.disk_percent), { type: 'number' });
+  const cert = field('证书到期', cfg.cert_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] }), certDays = field('证书提前提醒（天）', String(cfg.cert_days), { type: 'number', help: '有效期不足 30 天的短期证书（如 IP 证书）只在最后 1/5 有效期内提醒。' });
+  const container = field('容器停止', cfg.container_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] });
+  const service = field('Docker 与 Caddy 服务', cfg.service_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] });
+  const repeat = field('未解决时的重复提醒间隔（小时）', String(cfg.repeat_hours), { type: 'number' });
+  const error = el('div', 'form-error'), save = button('保存设置', () => form.requestSubmit(), 'primary');
+  const test = button('发送测试通知', async () => { await api('/alerts/test', {}); toast('测试通知已发送，请到接收端确认'); }, 'secondary');
+  form.append(format.n, url.n, notify.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, repeat.n, error);
+  form.onsubmit = async e => {
+    e.preventDefault(); error.textContent = ''; save.disabled = true;
+    try {
+      await api('/alerts/config', { format: format.input.value, url: url.val(), clear_url: false, notify: notify.input.value === '1', disk_on: disk.input.value === '1', disk_percent: Number(diskPercent.val()), cert_on: cert.input.value === '1', cert_days: Number(certDays.val()), container_on: container.input.value === '1', service_on: service.input.value === '1', repeat_hours: Number(repeat.val()) });
+      toast('设置已保存'); await render();
+    } catch (err) { error.textContent = err.message; } finally { save.disabled = false; }
+  };
+  const settings = panel('通知与规则', el('div', 'table-ops'));
+  settings.querySelector('.table-ops').append(test, save);
+  const hint = el('p', 'muted', '提示：手动执行 docker stop 的容器会提醒一次；面板内的停止、重启、备份操作不会。退出码为 0 的正常退出不提醒。');
+  hint.style.margin = '0 0 16px';
+  if (delivery) { const last = note(`最近一次通知（${date(delivery.at)}）：${delivery.message}`, !delivery.ok); last.style.marginBottom = '12px'; settings.append(last); }
+  settings.append(hint, form);
+  n.append(settings);
+
+  const certPanel = panel('证书', tag(certs.found ? `${certs.certificates.length} 张` : '未找到 Caddy 证书目录', certs.found ? 'blue' : 'warn'));
+  if (certs.certificates.length) {
+    const t = table(['域名', '签发者', '到期时间', '剩余', '状态']);
+    certs.certificates.forEach(c => cells(t.body, c.name, c.issuer, date(c.not_after), c.days_left < 0 ? '已过期' : `${c.days_left} 天`, tag(c.warn ? '即将到期' : '正常', c.warn ? 'bad' : 'ok')));
+    certPanel.append(t.n);
+  } else certPanel.append(el('p', 'muted', certs.found ? 'Caddy 当前没有为已配置的网站保存证书。' : '读取 /var/lib/caddy 下的证书失败，可能 Caddy 使用了自定义数据目录。'));
+  n.append(certPanel);
+
+  const historyPanel = panel('最近事件');
+  if (!data.history.length) historyPanel.append(el('p', 'muted', '还没有告警事件。'));
+  else {
+    const t = table(['时间', '类型', '内容']);
+    data.history.slice(0, 30).forEach(h => { const what = el('div'); what.append(el('strong', '', h.title), el('small', 'muted', h.detail || '')); const [label, cls] = alertKinds[h.kind] || [h.kind, '']; cells(t.body, date(h.time), tag(label, cls), what); });
+    historyPanel.append(t.n);
+  }
+  n.append(historyPanel);
+  return n;
 }

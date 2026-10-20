@@ -273,6 +273,9 @@ func (a *agent) containerAction(w http.ResponseWriter, r *http.Request) error {
 	if _, e := a.docker.find(id); e != nil {
 		return e
 	}
+	if req.Action == "stop" || req.Action == "restart" {
+		a.expectStop(id)
+	}
 	j, e := a.jobs.start("容器 · "+req.Action, func(ctx context.Context, out *limitedBuffer) error {
 		if e := a.docker.action(id, req.Action); e != nil {
 			return e
@@ -352,6 +355,11 @@ func (a *agent) projectAction(w http.ResponseWriter, r *http.Request) error {
 	}
 	if len(targets) == 0 || len(targets) > 30 {
 		return bad(400, "只支持包含 1–30 个常规容器的已有项目")
+	}
+	if req.Action == "stop" || req.Action == "restart" {
+		for _, c := range targets {
+			a.expectStop(c.ID)
+		}
 	}
 	j, e := a.jobs.start("项目 · "+name, func(ctx context.Context, out *limitedBuffer) error {
 		for i, c := range targets {

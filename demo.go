@@ -78,6 +78,26 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = map[string]string{"text": "<!doctype html>\n<html lang=\"zh-CN\">\n<head><meta charset=\"utf-8\"><title>我的网站</title></head>\n<body>\n  <h1>你好，这里是我的个人主页。</h1>\n  <p>此处为JunPanel面板的演示文件。</p>\n</body>\n</html>", "revision": "demo"}
 	case "/trash":
 		value = []trashRecord{}
+	case "/alerts":
+		value = map[string]any{
+			"config":  alertView{Format: "wecom", URLSet: true, URLHost: "qyapi.weixin.qq.com", Notify: true, DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, RepeatHours: 12},
+			"formats": alertFormats,
+			"active": []activeAlert{
+				{Key: "disk:/", Title: "磁盘空间不足：/", Detail: "已用 92%，剩余 6.4 GB（阈值 90%）", Severity: "warning", Since: time.Now().Add(-3 * time.Hour)},
+				{Key: "container:x", Title: "容器已停止：blog-app-1", Detail: "退出码 137（Exited (137) 12 minutes ago），镜像 wordpress:php8.3-apache", Severity: "critical", Since: time.Now().Add(-12 * time.Minute)},
+			},
+			"history": []alertEvent{
+				{Time: time.Now().Add(-12 * time.Minute), Key: "container:x", Kind: "triggered", Title: "容器已停止：blog-app-1", Detail: "退出码 137"},
+				{Time: time.Now().Add(-3 * time.Hour), Key: "disk:/", Kind: "triggered", Title: "磁盘空间不足：/", Detail: "已用 92%"},
+				{Time: time.Now().Add(-30 * time.Hour), Key: "cert:blog.example.com", Kind: "resolved", Title: "证书即将过期：blog.example.com", Detail: "已恢复正常"},
+			},
+			"delivery": deliveryResult{At: time.Now().Add(-12 * time.Minute), OK: true, Message: "已发送"},
+		}
+	case "/certificates":
+		value = map[string]any{"found": true, "certificates": []map[string]any{
+			{"name": "blog.example.com", "issuer": "R12", "not_after": time.Now().Add(61 * 24 * time.Hour), "days_left": 61, "warn": false},
+			{"name": "git.example.com", "issuer": "R12", "not_after": time.Now().Add(11 * 24 * time.Hour), "days_left": 11, "warn": true},
+		}}
 	case "/schedules":
 		value = map[string]any{"zone": "CST +0800", "now": time.Now(), "schedules": []schedule{
 			{ID: "sc_" + strings.Repeat("1", 16), Name: "每晚备份博客", Action: "backup", Type: "app", Target: "blog", Keep: 7, Every: "daily", At: "03:00", Enabled: true, Created: time.Now().Add(-9 * 24 * time.Hour), Next: time.Now().Add(9 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-15 * time.Hour), Status: "success", Message: "已备份，保留最近 7 份（已清理 1 份旧备份）"}},

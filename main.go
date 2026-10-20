@@ -20,7 +20,7 @@ import (
 
 //go:embed web/*
 var assets embed.FS
-var version = "0.1.7"
+var version = "0.1.8"
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
@@ -36,6 +36,7 @@ func main() {
 	port := f.Int("port", 8787, "本机端口")
 	root := f.String("root", "/srv/junpanel", "站点与文件根目录")
 	caddy := f.String("caddy", "/etc/caddy/Caddyfile", "现有 Caddyfile")
+	caddyData := f.String("caddy-data", "/var/lib/caddy/.local/share/caddy", "Caddy 数据目录（读取证书到期时间）")
 	fragments := f.String("fragments", "/etc/caddy/junpanel.d", "面板 Caddy 片段目录")
 	demo := f.Bool("demo", false, "仅模拟数据的本机预览")
 	f.Parse(os.Args[2:])
@@ -70,7 +71,7 @@ func main() {
 		fmt.Printf("管理员：%s\n初始密码：%s\n首次登录后请在设置中修改密码。\n", account.User, password)
 		return
 	case "agent":
-		cfg := agentConfig{State: *state, Root: *root, Caddy: *caddy, Fragments: *fragments, Socket: *sock}
+		cfg := agentConfig{State: *state, Root: *root, Caddy: *caddy, Fragments: *fragments, Socket: *sock, CaddyData: *caddyData}
 		a, e := newAgent(cfg)
 		if e != nil {
 			log.Fatal(e)
@@ -97,6 +98,7 @@ func main() {
 		a.startMetrics(metricsStop)
 		a.startTrashCleanup(metricsStop)
 		a.startScheduler(metricsStop)
+		a.startAlerts(metricsStop)
 		serve(&http.Server{Handler: a.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, MaxHeaderBytes: 32768}, listener)
 	case "server":
 		if *port < 1024 || *port > 65535 {
