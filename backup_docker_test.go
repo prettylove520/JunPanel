@@ -2,10 +2,12 @@ package main
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +21,17 @@ func dockerAgent(t *testing.T) *agent {
 	if os.Getenv("JUNPANEL_DOCKER_TEST") != "1" {
 		t.Skip("set JUNPANEL_DOCKER_TEST=1 to run against a real Docker engine")
 	}
-	return testAgent(t)
+	a := testAgent(t)
+	// The agent normally runs as root with HOME=/root; tests run as whoever invokes them.
+	a.stream = func(ctx context.Context, dir string, out io.Writer, _ []string, name string, args ...string) error {
+		return dockerCLI(ctx, dir, out, name, args...)
+	}
+	return a
+}
+func dockerCLI(ctx context.Context, dir string, out io.Writer, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, out, out
+	return cmd.Run()
 }
 func freePort(t *testing.T) int {
 	t.Helper()
@@ -60,7 +72,9 @@ func installApp(t *testing.T, a *agent, id, template string) appRecord {
 	}
 	waitJob(t, a, r.Body.Bytes(), 8*time.Minute)
 	t.Cleanup(func() {
-		command(2*time.Minute, "docker", "compose", "--project-name", "junpanel-"+id, "down", "--volumes", "--timeout", "3")
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		dockerCLI(ctx, "", io.Discard, "docker", "compose", "--project-name", "junpanel-"+id, "down", "--volumes", "--timeout", "3")
 	})
 	rows, _ := a.readApps()
 	for _, rec := range rows {
