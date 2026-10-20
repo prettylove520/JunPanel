@@ -78,6 +78,10 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = map[string]string{"text": "<!doctype html>\n<html lang=\"zh-CN\">\n<head><meta charset=\"utf-8\"><title>我的网站</title></head>\n<body>\n  <h1>你好，这里是我的个人主页。</h1>\n  <p>此处为JunPanel面板的演示文件。</p>\n</body>\n</html>", "revision": "demo"}
 	case "/trash":
 		value = []trashRecord{}
+	case "/upgrade":
+		value = map[string]any{"current": version, "available": true, "supported": true, "can_upgrade": true, "auto_check": true, "blockers": []string{}, "log": "", "checked_at": time.Now().Add(-40 * time.Minute),
+			"latest":    map[string]any{"version": "9.9.9", "notes": "演示数据：这里会显示新版本的更新说明。"},
+			"notes_url": "https://github.com/prettylove520/JunPanel/releases", "release_url": "https://github.com/prettylove520/JunPanel/releases"}
 	case "/alerts":
 		value = map[string]any{
 			"config":  alertView{Format: "wecom", URLSet: true, URLHost: "qyapi.weixin.qq.com", Notify: true, DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, RepeatHours: 12},

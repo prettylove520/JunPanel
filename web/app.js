@@ -47,6 +47,7 @@ const routes = {
   databases: ['数据库', '管理应用中心创建的数据库，执行查询与备份。', 'DATABASES', 'database'],
   backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'BACKUPS', 'disk'],
   schedules: ['计划任务', '按时间表自动备份或重启应用，并只保留最近几份备份。', 'SCHEDULES', 'clock'],
+  upgrade: ['版本升级', '检查新版本，校验后在面板内一键升级。', 'UPGRADE', 'refresh'],
   alerts: ['告警', '磁盘、证书、容器和服务出问题时，在面板里提醒，并推送到你的 Webhook。', 'ALERTS', 'bell'],
   terminal: ['容器终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'TERMINAL', 'terminal'],
   jobs: ['任务记录', '每一次部署与容器操作，都有明确的结果。', 'ACTIVITY', 'activity'],
@@ -108,7 +109,7 @@ async function navigate(route) { state.route = routes[route] ? route : 'overview
 async function render() {
   clearPage(); const epoch = state.epoch, r = routes[state.route]; $('#breadcrumb').textContent = r[0]; $('#page-title').textContent = r[0]; $('#page-description').textContent = r[1];document.body.dataset.route=state.route; $('#page-eyebrow').textContent = `WORKBENCH / ${r[2]}`; $('#connection-error').hidden = true;
   $$('[data-route]').forEach(n => {const active=n.dataset.route===state.route;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}); $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在读取服务器状态…'));
-  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, schedules: schedulesPage, alerts: alertsPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
+  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, schedules: schedulesPage, alerts: alertsPage, upgrade: upgradePage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
   catch(e) { if (epoch !== state.epoch) return; view.replaceChildren(empty('暂时无法读取', e.message), button('重新连接', render, 'secondary','refresh')); }
 }
 function action(...buttons) { $('#page-actions').append(...buttons); }
@@ -143,12 +144,13 @@ function inventorySites(data) {
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
 async function overviewPage() {
-  const data = await api('/overview'); state.sites = inventorySites(data); state.apps = data.apps || []; $('#site-badge').textContent = inventorySites(data).length; setAlertBadge(data.alerts_active); const n = el('div','overview-page');
+  const data = await api('/overview'); state.sites = inventorySites(data); state.apps = data.apps || []; $('#site-badge').textContent = inventorySites(data).length; setAlertBadge(data.alerts_active); setUpgradeBadge(data.update_available); const n = el('div','overview-page');
   function paint(d) {
     d.docker = {available: !d.docker_error, total: (d.containers || []).length, running: (d.containers || []).filter(c => c.state === 'running').length};
     const visibleSites=inventorySites(d); $('#site-badge').textContent=d.sites_error || d.caddy_error?'—':visibleSites.length; n.replaceChildren();
     for(const problem of [d.host_error,d.sites_error,d.apps_error,d.caddy_error])if(problem)n.append(note(problem,true));
-    setAlertBadge(d.alerts_active); if(d.alerts_active>0){const banner=note(`有 ${d.alerts_active} 条告警尚未解决。`,true),open=button('查看告警',()=>navigate('alerts'),'quiet small');banner.append(open);n.append(banner);}
+    setAlertBadge(d.alerts_active); setUpgradeBadge(d.update_available); if(d.update_available){const info=note(`有新版本 v${d.update_available} 可以升级（当前 v${d.version}）。`),go=button('查看并升级',()=>navigate('upgrade'),'quiet small');info.append(go);n.append(info);}
+    if(d.alerts_active>0){const banner=note(`有 ${d.alerts_active} 条告警尚未解决。`,true),open=button('查看告警',()=>navigate('alerts'),'quiet small');banner.append(open);n.append(banner);}
     if(d.docker_error)n.append(note(d.docker_error,true)); const h = d.host; h.disk = h.disk || {}; const mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, disk = h.disk.total ? h.disk.used / h.disk.total * 100 : 0;
     const server = el('div','server-line'), left = el('div','server-line-left'), texts = el('div'); texts.append(el('div','server-name',h.hostname || '服务器'),el('div','server-subtitle',`${h.os || 'Linux'} · ${h.cores} 核 · 已运行 ${uptime(h.uptime)}`)); const serverMark=el('div','server-square'),serverLogo=el('img');serverLogo.src='/logo.svg';serverLogo.alt='';serverMark.append(serverLogo);left.append(serverMark,texts); const tags = el('div','server-tags'); tags.append(tag(accessLabel(),'ok'),tag(d.demo ? '模拟数据' : '实时数据','blue')); const hero=el('div','server-welcome');hero.append(el('span','eyebrow','YOUR SERVER, IN FOCUS'),el('h2','','服务有序，部署从容。'),el('p','',d.demo?'这里是 JunPanel 的交互演示，所有指标与站点均为模拟数据。':'从资源状态到应用上线，今天的服务器工作从这里开始。'));const connection=el('div','server-connection');connection.append(left,tags);server.append(hero,connection,serverArt());
     const metrics=el('div','metric-grid'); metrics.append(metric('CPU 使用率',percent(h.cpu),`负载 ${(h.load || []).map(v=>Number(v).toFixed(2)).join(' / ')}`,'cpu',h.cpu),metric('内存',bytes(h.mem_used),`共 ${bytes(h.mem_total)} · 使用 ${percent(mem)}`,'memory',mem),metric('系统磁盘',bytes(h.disk.used),`共 ${bytes(h.disk.total)} · 剩余 ${bytes(h.disk.free)}`,'disk',disk),metric('实时网络',`↓ ${bytes(h.rx)}/s`,`↑ ${bytes(h.tx)}/s · 已排除容器虚拟接口`,'network'));
@@ -456,4 +458,70 @@ async function alertsPage() {
   }
   n.append(historyPanel);
   return n;
+}
+function setUpgradeBadge(ver) { const b = $('#upgrade-badge'); if (!b) return; b.hidden = !ver; b.textContent = ver ? '新' : ''; }
+async function upgradePage() {
+  const d = await api('/upgrade'), n = el('div'), latest = d.latest;
+  setUpgradeBadge(d.available ? latest.version : '');
+  action(button('立即检查', async () => { await api('/upgrade/check', {}); toast('检查完成'); await render(); }, 'secondary', 'refresh'));
+  const versions = panel('版本', tag(d.available ? '有新版本' : '已是最新', d.available ? 'blue' : 'ok'));
+  const rows = [['当前版本', `v${d.current}`], ['最新版本', latest ? `v${latest.version}` : '尚未检查'], ['上次检查', d.checked_at && d.checked_at !== '0001-01-01T00:00:00Z' ? date(d.checked_at) : '—']];
+  const list = el('dl', 'details'); rows.forEach(([k, v]) => { list.append(el('dt', '', k), el('dd', '', v)); }); versions.append(list);
+  if (d.check_error) versions.append(note(`检查更新失败：${d.check_error}`, true));
+  const auto = field('自动检查更新', d.auto_check ? '1' : '0', { select: [['1', '开启（每 6 小时）'], ['0', '关闭']], help: '检查只读取 GitHub 上公开的版本信息，不会发送你的服务器信息。关闭后仍可手动检查。' });
+  auto.input.onchange = async () => { try { await api('/upgrade/config', { auto_check: auto.input.value === '1' }); toast('设置已保存'); } catch (e) { toast(e.message, true); } };
+  versions.append(auto.n); n.append(versions);
+
+  if (d.run) {
+    const cls = { running: 'blue', done: 'ok', failed: 'bad' }[d.run.state] || '', label = { running: '进行中', done: '已完成', failed: '失败' }[d.run.state] || d.run.state;
+    const run = panel(`最近一次升级（v${d.run.target}）`, tag(label, cls));
+    run.append(el('p', 'muted', `${d.run.message || ''}${d.run.started ? ' · 开始于 ' + date(d.run.started) : ''}`));
+    if (d.log && d.run.state !== 'done') run.append(el('pre', 'log-view', d.log));
+    n.append(run);
+  }
+  if (!d.available) { n.append(note(latest ? '当前已是最新版本。' : '还没有检查过更新，点击右上角“立即检查”。')); return n; }
+
+  const up = panel(`新版本 v${latest.version}`, tag('可升级', 'blue'));
+  if (latest.notes) { const notes = el('pre', 'log-view', latest.notes); up.append(notes); }
+  up.append(el('p', 'muted', `完整的发布说明：${d.notes_url}`));
+  up.append(note('升级会下载安装包并用发布时固定的 SHA-256 校验，通过后才安装；面板和管理代理会重启约 1 分钟，现有应用和 Caddy 不受影响，登录会话会清空，账号、数据、备份与计划任务保留。安装失败会自动回滚。'));
+  if (!d.supported) up.append(note(d.unsupported_reason, true));
+  d.blockers.forEach(b => up.append(note(b + '。请等它结束后再升级。', true)));
+  const go = button(`升级到 v${latest.version}`, () => startUpgrade(latest.version), 'primary', 'refresh');
+  go.disabled = !d.can_upgrade; up.append(go); n.append(up);
+  return n;
+}
+function startUpgrade(target) {
+  const password = field('当前密码', '', { type: 'password', required: true }), fields = [password];
+  const otp = state.totp ? field('动态码', '', { max: 6, placeholder: '6 位数字' }) : null;
+  if (otp) fields.push(otp);
+  formModal(`升级到 v${target}`, fields, '开始升级', async () => {
+    const result = await api('/upgrade', { password: password.input.value, otp: otp ? otp.val() : '' });
+    closeModal(); watchUpgrade(target, result.id);
+  }, { note: '为安全起见需要再次验证密码。升级期间面板会重启，请不要关闭此页面。', warning: true, danger: true });
+}
+function watchUpgrade(target, jobId) {
+  const out = el('pre', 'log-view', '正在下载并校验安装包…'), content = el('div');
+  content.append(el('p', 'muted', `正在升级到 v${target}，面板重启期间连接会短暂中断，属于正常现象。`), out);
+  openModal(`升级到 v${target}`, content, [button('关闭', closeModal)]);
+  const started = Date.now(); let phase = 1;
+  const timer = setInterval(async () => {
+    try {
+      if (phase === 1) {
+        let jobs; try { jobs = await api('/jobs'); } catch { phase = 2; out.textContent += '\n管理代理正在重启…'; return; }
+        const j = jobs.find(x => x.id === jobId); if (!j) { phase = 2; return; }
+        out.textContent = j.output || '正在下载并校验安装包…';
+        if (j.state === 'failed') { clearInterval(timer); out.textContent += `\n升级失败：${j.error}`; return; }
+        if (j.state === 'success') { phase = 2; out.textContent += '\n安装器已启动，等待面板重启…'; }
+      } else {
+        const r = await fetch('/api/meta', { signal: AbortSignal.timeout(4000), cache: 'no-store' }).catch(() => null);
+        const meta = r && r.ok ? await r.json().catch(() => null) : null;
+        if (meta && meta.version === target) { clearInterval(timer); out.textContent += `\n已升级到 v${target}，正在重新加载…`; setTimeout(() => location.reload(), 1500); return; }
+        if (Date.now() - started > 8 * 60 * 1000) { clearInterval(timer); out.textContent += '\n等待超时。请刷新页面后到“版本升级”页查看结果和安装日志；如果面板打不开，请通过 SSH 查看 journalctl -u junpanel-agent -u junpanel-web。'; }
+      }
+    } catch (e) { out.textContent += `\n${e.message}`; }
+  }, 2500);
+  // The password dialog closed just before this one opened, and its 'close' event is delivered
+  // asynchronously, so only start listening after that has passed.
+  setTimeout(() => modal.addEventListener('close', () => clearInterval(timer), { once: true }), 200);
 }

@@ -99,6 +99,7 @@ func main() {
 		a.startTrashCleanup(metricsStop)
 		a.startScheduler(metricsStop)
 		a.startAlerts(metricsStop)
+		a.startUpdateChecks(metricsStop)
 		serve(&http.Server{Handler: a.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, MaxHeaderBytes: 32768}, listener)
 	case "server":
 		if *port < 1024 || *port > 65535 {

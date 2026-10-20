@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -261,6 +262,33 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		r.Method = "GET"
 		r.URL.Path = "/api/apps/" + req.ID + "/credentials"
 		r.Body = nil
+		r.ContentLength = 0
+		r.Header.Del("Content-Length")
+		r.Header.Del("Content-Type")
+	}
+	// Installing a new version restarts the panel with root rights, so it needs the
+	// password again, and the agent's start endpoint is reachable only through here.
+	if strings.HasPrefix(path.Clean(r.URL.Path), "/api/upgrade/start") {
+		fail(out, bad(404, "接口不存在"))
+		return
+	}
+	if r.URL.Path == "/api/upgrade" && r.Method == "POST" {
+		var req struct {
+			Password string `json:"password"`
+			OTP      string `json:"otp"`
+		}
+		if e = body(r, &req); e != nil {
+			fail(out, e)
+			return
+		}
+		if e = w.auth.confirm(clientIP(r), req.Password, req.OTP); e != nil {
+			log.Printf("reauth result=failed ip=%s", clientIP(r))
+			fail(out, e)
+			return
+		}
+		log.Printf("upgrade requested ip=%s", clientIP(r))
+		r.URL.Path = "/api/upgrade/start"
+		r.Body = http.NoBody
 		r.ContentLength = 0
 		r.Header.Del("Content-Length")
 		r.Header.Del("Content-Type")
