@@ -131,7 +131,10 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		send(out, 200, map[string]any{"demo": w.demo, "version": version})
 		return
 	}
-	r.Body = http.MaxBytesReader(out, r.Body, 12<<20)
+	r.Body = http.MaxBytesReader(out, r.Body, bodyLimit(r.Method, r.URL.Path))
+	if r.Method == "POST" && r.URL.Path == "/api/files/upload" {
+		http.NewResponseController(out).SetReadDeadline(time.Now().Add(30 * time.Minute))
+	}
 	if r.URL.Path == "/api/login" && r.Method == "POST" {
 		select {
 		case w.logins <- struct{}{}:

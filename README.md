@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 在线安装默认配置公网 HTTPS 管理入口；选择 `JUNPANEL_ACCESS=local` 会关闭面板专用的公网入口并保留本机访问。完整安装包内的手动 `install.sh` 仍只安装本机服务。SSH 密码登录方式保持原样。
 
-你的现有 SSH 密码登录方式、22 端口、Fail2ban、nftables、防火墙策略、Swap、自动安全更新和 Docker 日志限制不会由安装器配置或修改。面板不创建定时备份。
+你的现有 SSH 密码登录方式、22 端口、Fail2ban、nftables、防火墙策略、Swap、自动安全更新和 Docker 日志限制不会由安装器配置或修改。面板只提供手动备份，不创建定时备份。
 
 安装器会给现有 `/etc/caddy/Caddyfile` 末尾追加一条 `import /etc/caddy/junpanel.d/*.caddy`，校验后重载；保留原有站点块。安装或变更失败时会尝试恢复本次修改，不提供对外部并发编辑的事务保证。安装过程中请勿同时编辑 Caddyfile。
 
@@ -101,13 +101,34 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 | 应用中心 | 独立编写的 WordPress、Gitea、Uptime Kuma、PostgreSQL、MySQL、Redis 六种精选模板；安装、启停、重启、重新部署、卸载保留数据、恢复部署、绑定域名 |
 | Docker | 现有容器列表与状态、启停重启、最近日志、镜像列表、镜像拉取及非强制删除 |
 | Compose | 从 Docker 标签识别现有项目，分组展示容器；对现有非一次性容器执行整组启停重启 |
-| 文件 | 限定 `/srv/junpanel`；浏览、新建文件夹/文本、上传、下载、UTF-8 编辑、版本冲突检查、重命名/移动、回收站（恢复、永久删除、清空，30 天自动清理） |
-| 数据库 | 应用中心创建的 PostgreSQL/MySQL/WordPress 内部 MariaDB；执行 SQL、创建数据库、手动导出；Redis 的 INFO/DBSIZE/PING；再次验证面板密码后查看连接凭据 |
+| 文件 | 限定 `/srv/junpanel`；浏览、新建文件夹/文本、上传、下载、UTF-8 编辑、版本冲突检查、重命名/移动、回收站（恢复、永久删除、清空，30 天自动清理）；上传与下载均为流式，单文件上传上限 512 MiB |
+| 数据库 | 应用中心创建的 PostgreSQL/MySQL/WordPress 内部 MariaDB；执行 SQL、创建数据库、备份（流式导出压缩 SQL）；Redis 的 INFO/DBSIZE/PING；再次验证面板密码后查看连接凭据 |
+| 备份 | 手动备份静态网站文件、六种应用的数据、数据库 SQL；列表、下载、校验、删除；网站与应用可一键恢复（恢复前自动创建“恢复前备份”） |
 | 容器终端 | 运行中容器的 `/bin/sh` 基础行终端、输入输出、Ctrl+C、断开；一次性连接票据与并发限制 |
 | 任务记录 | 应用/镜像/容器/项目任务结果与有界输出；应用部署与镜像拉取提供进行中的命令输出 |
 | 账号安全 | 单管理员、密码哈希、按来源 IP 登录限速、服务器端会话、闲置/绝对过期、CSRF、同源校验、TOTP 两步验证（动态码一次性使用） |
 
 本版不提供全盘文件管理、宿主机 Web Shell、任意 Compose 编辑/导入、Docker 网络/卷编辑、现有外部数据库纳管、SQL 文件导入、Redis 任意键编辑或整套生产级数据库迁移工具。GitHub 自动部署、告警、多用户授权和更多应用模板可在此结构上扩展，当前界面没有占位操作入口。
+
+## 备份与恢复
+
+在左侧 **备份** 页创建，作为后台任务运行，进度见“任务记录”。备份保存在服务器的 `/var/lib/junpanel-agent/backups`（root 私有），每份带 SHA-256，下载和恢复前都会校验，文件被改动会拒绝使用。**备份与应用数据在同一块磁盘，不是异地备份，请下载后另行保存。** 创建备份前会检查磁盘至少有 512 MiB 空闲；写入失败会删除不完整的文件。
+
+| 类型 | 内容 | 恢复 |
+| --- | --- | --- |
+| 网站文件 | 静态网站目录（`.tar.gz`），不含符号链接 | 解出到临时目录后整体切换，原目录被替换 |
+| 应用数据 | 应用的数据目录（WordPress 为网站文件和 MariaDB 两处），`.tar.gz` | 移除容器与数据卷，重建后写回数据，再启动 |
+| 数据库 | 单个数据库的 SQL（`.sql.gz`），不限 8 MiB | 不在面板内恢复，请用数据库原生工具导入 |
+
+- **应用备份会短暂停止应用**，以得到一致的数据；完成后自动启动，原来就是停止的则保持停止。这是物理拷贝，恢复要求同一应用、同一镜像主版本。
+- **恢复会覆盖现有数据。** 开始前会自动创建一份“恢复前备份”，恢复中途失败时用它回滚；任务输出和应用状态会给出它的编号。应用恢复期间该应用处于“进行中”，不能同时执行其它操作。
+- 备份不包含应用凭据，也不包含 Compose 配置，只能恢复到面板里仍存在的同一个应用。服务器重装后需要先在面板中以同样的标识重新安装应用（数据库密码由初始化数据决定，请保存好原来的连接信息）。
+- 数据库 SQL 导入示例（PostgreSQL / MySQL，`容器` 为容器名，先解压）：
+
+```bash
+gunzip -c database-blog-20261020-101500.sql.gz | docker exec -i -e PGPASSWORD=密码 容器 psql -U junpanel -d 库名
+gunzip -c database-blog-20261020-101500.sql.gz | docker exec -i -e MYSQL_PWD=密码 容器 mysql -uroot 库名
+```
 
 ## 从应用到域名
 
@@ -186,6 +207,7 @@ sudo bash junpanel/uninstall.sh
 | `/var/lib/junpanel-agent` | root 私有登记文件、应用 Compose 配置和数据库凭据 |
 | `/run/junpanel/agent.sock` | root:junpanel、0660 的本机控制通道 |
 | `/srv/junpanel/sites` | 面板静态网站目录，网页文件供 Caddy 读取 |
+| `/var/lib/junpanel-agent/backups` | root 私有的备份文件，每份附带记录与 SHA-256 |
 | `/srv/junpanel/.trash` | root 私有回收站，项目移入 30 天后自动永久删除 |
 | `/etc/caddy/junpanel.d/managed.caddy` | 面板拥有的站点片段；请通过网站模块编辑 |
 
@@ -203,8 +225,8 @@ Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不�
 
 - 管理界面中文优先，个别容器/数据库的原生命令输出保留原文。
 - 任务最多并行 2 个、保留 80 项，输出保留末尾 128 KiB；任务和指标历史不写入长期数据库。代理重启后会提示核对被中断的应用操作。
-- 文本编辑 1 MiB，文件上传 4 MiB、下载 8 MiB，目录最多 5000 项。回收站保留在本机，不是备份；移入 30 天后自动永久删除，也可在回收站中手动永久删除或清空。
-- 数据库查询与导出结果上限 8 MiB，过大时拒绝，避免把截断结果当成完整导出。大规模导入导出、整站迁移请用原生工具。
+- 文本编辑 1 MiB，文件单个上传最大 512 MiB（流式写入，读取超时 30 分钟），下载不限大小，目录最多 5000 项。回收站保留在本机，不是备份；移入 30 天后自动永久删除，也可在回收站中手动永久删除或清空。
+- 数据库查询结果上限 8 MiB，过大时拒绝，避免把截断结果当成完整结果。数据库备份是流式导出，不受此限；导入、整站迁移请用原生工具。
 - 现有 Compose 项目按标签识别，整组操作逐个执行，不重新解释外部 Compose 文件或保证依赖顺序；遇到失败会停止并提示部分完成。一次性容器不参与整组操作。
 - 安装器面向 Debian + 标准 systemd `caddy.service`、`caddy` 用户（home 为 `/var/lib/caddy`）、`/usr/bin/caddy`、`/etc/caddy/Caddyfile`、现有 Docker/Compose。自定义 Caddy 环境文件、主配置中的环境变量、非标准路径会拒绝自动安装；其它导入文件中的环境变量同样需要人工核对后，为代理及 Caddy 校验命令配置一致的环境。
 - Caddy 管理 API 必须可由现有 `systemctl reload caddy` 正常使用；`admin off` 等定制需先自行处理。安装前可先确认现有 reload 能工作。

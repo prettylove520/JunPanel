@@ -78,6 +78,12 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = map[string]string{"text": "<!doctype html>\n<html lang=\"zh-CN\">\n<head><meta charset=\"utf-8\"><title>我的网站</title></head>\n<body>\n  <h1>你好，这里是我的个人主页。</h1>\n  <p>此处为JunPanel面板的演示文件。</p>\n</body>\n</html>", "revision": "demo"}
 	case "/trash":
 		value = []trashRecord{}
+	case "/backups":
+		value = map[string]any{"directory": "/var/lib/junpanel-agent/backups", "free": 38 << 30, "backups": []backupMeta{
+			{ID: "b_" + strings.Repeat("a", 20), Type: "app", Target: "blog", Name: "我的博客", File: "x.tar.gz", Size: 214 << 20, SHA256: strings.Repeat("a", 64), Created: time.Now().Add(-26 * time.Hour)},
+			{ID: "b_" + strings.Repeat("b", 20), Type: "site", Target: "s_" + strings.Repeat("1", 20), Name: "个人主页", File: "y.tar.gz", Size: 3 << 20, SHA256: strings.Repeat("b", 64), Created: time.Now().Add(-50 * time.Hour), Note: "恢复前自动备份"},
+			{ID: "b_" + strings.Repeat("c", 20), Type: "database", Target: "blog", Name: "我的博客", Database: "wordpress", File: "z.sql.gz", Size: 18 << 20, SHA256: strings.Repeat("c", 64), Created: time.Now().Add(-72 * time.Hour)},
+		}}
 	default:
 		if strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/logs") {
 			value = map[string]string{"text": fmt.Sprintf("[演示日志 · 模拟数据]\n%s GET / 200 2ms\n%s 健康检查正常\n", time.Now().Add(-10*time.Second).Format(time.RFC3339), time.Now().Format(time.RFC3339))}

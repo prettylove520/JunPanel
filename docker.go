@@ -57,18 +57,19 @@ func (d *dockerClient) wire(method, path string, value any, max int) ([]byte, er
 	}
 	return raw, nil
 }
-func (d *dockerClient) call(method, path string, value any) ([]byte, error) {
+
+// negotiate returns the versioned API prefix, probing the engine once.
+func (d *dockerClient) negotiate() (string, error) {
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.API == "" {
 		raw, e := d.wire("GET", "/version", nil, 64<<10)
 		if e != nil {
-			d.mu.Unlock()
-			return nil, e
+			return "", e
 		}
 		var v struct{ ApiVersion, MinAPIVersion string }
 		if e = decodeObject(raw, &v); e != nil {
-			d.mu.Unlock()
-			return nil, e
+			return "", e
 		}
 		parse := func(s string) int {
 			if !regexp.MustCompile(`^1\.\d{2,3}$`).MatchString(s) {
@@ -79,20 +80,23 @@ func (d *dockerClient) call(method, path string, value any) ([]byte, error) {
 		}
 		max, min := parse(v.ApiVersion), parse(v.MinAPIVersion)
 		if max < 41 {
-			d.mu.Unlock()
-			return nil, bad(502, "需要 Docker API 1.41 或更高版本")
+			return "", bad(502, "需要 Docker API 1.41 或更高版本")
 		}
 		if max > 56 {
 			max = 56
 		}
 		if min > max {
-			d.mu.Unlock()
-			return nil, bad(502, "Docker 最低 API 版本超出面板支持范围")
+			return "", bad(502, "Docker 最低 API 版本超出面板支持范围")
 		}
 		d.API = fmt.Sprintf("/v1.%d", max)
 	}
-	prefix := d.API
-	d.mu.Unlock()
+	return d.API, nil
+}
+func (d *dockerClient) call(method, path string, value any) ([]byte, error) {
+	prefix, e := d.negotiate()
+	if e != nil {
+		return nil, e
+	}
 	return d.wire(method, prefix+path, value, 8<<20)
 }
 
@@ -403,7 +407,7 @@ func (a *agent) imagePull(w http.ResponseWriter, r *http.Request) error {
 	j, e := a.jobs.start("拉取镜像 · "+req.Image, func(ctx context.Context, out *limitedBuffer) error {
 		cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
-		e := streamCommand(cmdCtx, "", out, nil, "docker", "pull", req.Image)
+		e := a.stream(cmdCtx, "", out, nil, "docker", "pull", req.Image)
 		if e != nil {
 			return bad(502, "镜像拉取失败，请检查名称与网络")
 		}

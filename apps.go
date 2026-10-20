@@ -262,7 +262,7 @@ func (a *agent) appInstall(w http.ResponseWriter, r *http.Request) error {
 }
 func (a *agent) launchApp(record appRecord, action string) (job, error) {
 	return a.jobs.start("应用 · "+record.Name+" · "+action, func(ctx context.Context, out *limitedBuffer) error {
-		args := []string{"compose", "--project-directory", a.appDir(record.ID), "--file", filepath.Join(a.appDir(record.ID), "compose.json"), "--project-name", "junpanel-" + record.ID}
+		args := a.composeBase(record.ID)
 		switch action {
 		case "deploy", "restore":
 			args = append(args, "up", "--detach", "--no-build", "--pull", "missing")
@@ -278,7 +278,7 @@ func (a *agent) launchApp(record appRecord, action string) (job, error) {
 			return bad(400, "应用操作无效")
 		}
 		fmt.Fprintln(out, "正在调用现有 Docker Compose；镜像下载可能需要几分钟。")
-		e := streamCommand(ctx, a.appDir(record.ID), out, []string{record.Password, record.DBPassword}, "docker", args...)
+		e := a.stream(ctx, a.appDir(record.ID), out, []string{record.Password, record.DBPassword}, "docker", args...)
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		rows, loadErr := a.readApps()

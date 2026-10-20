@@ -2,9 +2,9 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"mime"
@@ -131,15 +131,30 @@ func (a *agent) fileRead(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (a *agent) fileDownload(w http.ResponseWriter, r *http.Request) error {
-	b, st, e := a.readVirtual(r.URL.Query().Get("path"), 8<<20)
+	name, e := virtualPath(r.URL.Query().Get("path"))
 	if e != nil {
 		return e
 	}
+	root, e := a.rootFS()
+	if e != nil {
+		return e
+	}
+	defer root.Close()
+	f, e := root.Open(name)
+	if e != nil {
+		return bad(404, "文件不存在或越过管理目录")
+	}
+	defer f.Close()
+	st, e := f.Stat()
+	if e != nil || !st.Mode().IsRegular() {
+		return bad(400, "仅支持普通文件")
+	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": st.Name()}))
-	w.Write(b)
+	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
 	return nil
 }
+
 func (a *agent) writeVirtual(name string, b []byte, expected string, overwrite bool) error {
 	if len(b) > 4<<20 {
 		return bad(413, "单文件上传上限 4 MiB")
@@ -230,21 +245,56 @@ func (a *agent) fileSave(w http.ResponseWriter, r *http.Request) error {
 	send(w, 200, map[string]any{"ok": true, "revision": fileDigest([]byte(req.Text))})
 	return nil
 }
-func (a *agent) fileUpload(w http.ResponseWriter, r *http.Request) error {
-	var req struct {
-		Path string `json:"path"`
-		Data string `json:"data"`
-	}
-	if e := body(r, &req); e != nil {
+
+const maxUpload = 512 << 20
+
+// writeStream stores an upload without buffering it and never overwrites.
+func (a *agent) writeStream(name string, src io.Reader) error {
+	clean, e := virtualPath(name)
+	if e != nil {
 		return e
 	}
-	b, e := base64.StdEncoding.DecodeString(req.Data)
+	if clean == "." {
+		return bad(400, "不能写入根目录")
+	}
+	root, e := a.rootFS()
 	if e != nil {
-		return bad(400, "文件编码无效")
+		return e
+	}
+	defer root.Close()
+	if _, e = root.Lstat(clean); e == nil {
+		return bad(409, "同名文件已存在；请先重命名或选择其它名称")
+	}
+	temp := path.Join(path.Dir(clean), ".junpanel-"+randomID(24))
+	f, e := root.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if e != nil {
+		return bad(400, "目录不存在或不可写")
+	}
+	defer root.Remove(temp)
+	_, e = io.Copy(f, src)
+	if e == nil {
+		e = f.Sync()
+	}
+	if ce := f.Close(); e == nil {
+		e = ce
+	}
+	if e != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(e, &tooLarge) {
+			return bad(413, "单文件上传上限 512 MiB")
+		}
+		return bad(500, "写入文件失败，请检查磁盘空间")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if e = a.writeVirtual(req.Path, b, "", false); e != nil {
+	if e = root.Link(temp, clean); e != nil {
+		return bad(409, "目标已存在或无法创建文件，未覆盖")
+	}
+	return nil
+}
+func (a *agent) fileUpload(w http.ResponseWriter, r *http.Request) error {
+	http.NewResponseController(w).SetReadDeadline(time.Now().Add(30 * time.Minute))
+	if e := a.writeStream(r.URL.Query().Get("path"), r.Body); e != nil {
 		return e
 	}
 	send(w, 200, map[string]any{"ok": true})
