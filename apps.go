@@ -367,6 +367,9 @@ func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
 		if e = a.storeApps(rows); e != nil {
 			return job{}, e
 		}
+		if action != "start" {
+			a.expectApp(record.ID)
+		}
 		j, e := a.launchAppThen(record, action, done)
 		if e != nil {
 			rows[i].Busy = false

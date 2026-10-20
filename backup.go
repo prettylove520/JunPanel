@@ -490,6 +490,7 @@ func (a *agent) backupApp(ctx context.Context, out io.Writer, rec appRecord, tag
 		return backupMeta{}, e
 	}
 	if running {
+		a.expectApp(rec.ID)
 		fmt.Fprintln(out, "正在停止应用，以保证数据一致…")
 		if e = a.compose(ctx, out, rec, "stop", "--timeout", "15"); e != nil {
 			return backupMeta{}, bad(502, "停止应用失败，备份已取消")
@@ -606,6 +607,7 @@ func (a *agent) restoreApp(ctx context.Context, out io.Writer, rec appRecord, me
 	failed := func(step string, e error) error {
 		return bad(502, fmt.Sprintf("%s失败：%s。恢复前备份 %s 保存了恢复前的数据", step, e.Error(), pre.ID))
 	}
+	a.expectApp(rec.ID)
 	fmt.Fprintln(out, "正在移除旧容器与数据卷…")
 	if e = a.compose(ctx, out, rec, "down", "--timeout", "15"); e != nil {
 		return failed("移除旧容器", e)

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type agentConfig struct{ State, Root, Caddy, Fragments, Socket string }
+type agentConfig struct{ State, Root, Caddy, Fragments, Socket, CaddyData string }
 type agent struct {
 	cfg            agentConfig
 	docker         *dockerClient
@@ -27,6 +27,21 @@ type agent struct {
 	schedMu        sync.Mutex
 	schedRunning   map[string]time.Time
 	schedTries     map[string]int
+	host           string
+	diskFn         func(string) map[string]uint64
+	webhook        *http.Client
+	alertRun       sync.Mutex
+	alertMu        sync.Mutex
+	sendMu         sync.Mutex
+	pending        []*pendingBatch
+	streak         map[string]int
+	okStreak       map[string]int
+	expMu          sync.Mutex
+	expected       map[string]time.Time
+	certMu         sync.Mutex
+	certAt         time.Time
+	certList       []certInfo
+	certErr        error
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -39,7 +54,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 			return nil, e
 		}
 	}
-	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}}
+	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}}
 	rows, e := a.readApps()
 	if e != nil {
 		return nil, e
@@ -114,6 +129,11 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /schedules/{id}/toggle", endpoint(a.scheduleToggle))
 	m.HandleFunc("POST /schedules/{id}/run", endpoint(a.scheduleRunNow))
 	m.HandleFunc("DELETE /schedules/{id}", endpoint(a.scheduleDelete))
+	m.HandleFunc("GET /alerts", endpoint(a.alertList))
+	m.HandleFunc("POST /alerts/config", endpoint(a.alertSave))
+	m.HandleFunc("POST /alerts/test", endpoint(a.alertTest))
+	m.HandleFunc("POST /alerts/check", endpoint(a.alertCheck))
+	m.HandleFunc("GET /certificates", endpoint(a.certHandler))
 	m.HandleFunc("GET /jobs", endpoint(func(w http.ResponseWriter, r *http.Request) error { send(w, 200, a.jobs.list()); return nil }))
 	m.HandleFunc("GET /terminal", a.terminal)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +181,7 @@ func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 		caddyErr = he.Error()
 	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
+	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "alerts_active": a.activeAlertCount(), "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
 	return nil
 }
 func decodeObject(b []byte, v any) error {
