@@ -42,6 +42,15 @@ type agent struct {
 	certAt         time.Time
 	certList       []certInfo
 	certErr        error
+	upMu           sync.Mutex
+	upCheck        sync.Mutex
+	upHTTP         *http.Client
+	upRaw          string
+	upAPI          string
+	upDL           string
+	upPage         string
+	upMax          int64
+	upSystemd      string
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -54,7 +63,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 			return nil, e
 		}
 	}
-	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}}
+	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}, upHTTP: upgradeClient(), upRaw: "https://raw.githubusercontent.com/" + updateRepo + "/main", upAPI: "https://api.github.com/repos/" + updateRepo, upDL: "https://github.com/" + updateRepo + "/releases/download", upPage: "https://github.com/" + updateRepo, upMax: maxDownload, upSystemd: "/usr/bin/systemd-run"}
 	rows, e := a.readApps()
 	if e != nil {
 		return nil, e
@@ -82,6 +91,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	if e = a.recoverSchedules(); e != nil {
 		return nil, e
 	}
+	a.refreshRun(a.now())
 	return a, nil
 }
 func (a *agent) routes() http.Handler {
@@ -134,6 +144,10 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /alerts/test", endpoint(a.alertTest))
 	m.HandleFunc("POST /alerts/check", endpoint(a.alertCheck))
 	m.HandleFunc("GET /certificates", endpoint(a.certHandler))
+	m.HandleFunc("GET /upgrade", endpoint(a.upgradeStatus))
+	m.HandleFunc("POST /upgrade/check", endpoint(a.upgradeCheck))
+	m.HandleFunc("POST /upgrade/config", endpoint(a.upgradeConfig))
+	m.HandleFunc("POST /upgrade/start", endpoint(a.upgradeStart))
 	m.HandleFunc("GET /jobs", endpoint(func(w http.ResponseWriter, r *http.Request) error { send(w, 200, a.jobs.list()); return nil }))
 	m.HandleFunc("GET /terminal", a.terminal)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +195,7 @@ func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 		caddyErr = he.Error()
 	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "alerts_active": a.activeAlertCount(), "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
+	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "alerts_active": a.activeAlertCount(), "update_available": a.updateAvailable(), "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
 	return nil
 }
 func decodeObject(b []byte, v any) error {
