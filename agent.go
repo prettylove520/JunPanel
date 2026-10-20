@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +20,7 @@ type agent struct {
 	mu             sync.Mutex
 	metrics        *hostSampler
 	runner         func(time.Duration, string, ...string) (string, error)
+	stream         func(ctx context.Context, dir string, out io.Writer, secrets []string, name string, args ...string) error
 	capture        func(time.Duration, string, ...string) (string, error)
 	processConfigs func() ([]caddyConfig, error)
 }
@@ -32,10 +35,17 @@ func newAgent(cfg agentConfig) (*agent, error) {
 			return nil, e
 		}
 	}
-	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command}
+	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand}
 	rows, e := a.readApps()
 	if e != nil {
 		return nil, e
+	}
+	if e = os.MkdirAll(filepath.Join(cfg.State, "backups"), 0700); e != nil {
+		return nil, e
+	}
+	partial, _ := filepath.Glob(filepath.Join(cfg.State, "backups", "*.partial"))
+	for _, p := range partial {
+		os.Remove(p)
 	}
 	changed := false
 	for i := range rows {
@@ -87,17 +97,29 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /databases", endpoint(a.databaseList))
 	m.HandleFunc("POST /databases/{id}/query", endpoint(a.databaseQuery))
 	m.HandleFunc("POST /databases/{id}/create", endpoint(a.databaseCreate))
-	m.HandleFunc("GET /databases/{id}/export", endpoint(a.databaseExport))
+	m.HandleFunc("GET /backups", endpoint(a.backupList))
+	m.HandleFunc("POST /backups", endpoint(a.backupCreate))
+	m.HandleFunc("GET /backups/{id}/download", endpoint(a.backupDownload))
+	m.HandleFunc("DELETE /backups/{id}", endpoint(a.backupDelete))
+	m.HandleFunc("POST /backups/{id}/restore", endpoint(a.backupRestore))
 	m.HandleFunc("GET /jobs", endpoint(func(w http.ResponseWriter, r *http.Request) error { send(w, 200, a.jobs.list()); return nil }))
 	m.HandleFunc("GET /terminal", a.terminal)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+		r.Body = http.MaxBytesReader(w, r.Body, bodyLimit(r.Method, r.URL.Path))
 		if r.Method != "GET" {
 			log.Printf("agent_request method=%s path=%s", r.Method, r.URL.Path)
 		}
 		m.ServeHTTP(w, r)
 	})
+}
+
+// bodyLimit allows large raw uploads on one route and small JSON elsewhere.
+func bodyLimit(method, path string) int64 {
+	if method == "POST" && (path == "/files/upload" || path == "/api/files/upload") {
+		return maxUpload
+	}
+	return 12 << 20
 }
 func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 	host, e := a.metrics.read()

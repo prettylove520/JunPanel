@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"mime"
 	"net/http"
 	"regexp"
 	"strings"
@@ -245,42 +244,5 @@ func (a *agent) databaseCreate(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	send(w, 200, map[string]string{"text": text, "database": req.Name})
-	return nil
-}
-func (a *agent) databaseExport(w http.ResponseWriter, r *http.Request) error {
-	db := r.URL.Query().Get("database")
-	if !dbIdentifier.MatchString(db) {
-		return bad(400, "数据库名无效")
-	}
-	record, kind, e := a.databaseRecord(r.PathValue("id"))
-	if e != nil {
-		return e
-	}
-	if kind == "redis" {
-		return bad(400, "Redis 导出请通过 SSH 使用原生持久化工具")
-	}
-	c, e := a.databaseContainer(record, kind)
-	if e != nil {
-		return e
-	}
-	var args, env []string
-	if kind == "postgres" {
-		args = []string{"pg_dump", "--username", "junpanel", "--dbname", db, "--no-owner", "--no-privileges"}
-		env = []string{"PGPASSWORD=" + record.Password}
-	} else {
-		bin := "mysqldump"
-		if kind == "mariadb" {
-			bin = "mariadb-dump"
-		}
-		args = []string{bin, "--user=root", "--single-transaction", "--skip-lock-tables", db}
-		env = []string{"MYSQL_PWD=" + record.Password}
-	}
-	text, e := a.docker.exec(c.ID, args, env)
-	if e != nil {
-		return e
-	}
-	w.Header().Set("Content-Type", "application/sql; charset=utf-8")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": record.ID + "-" + db + ".sql"}))
-	w.Write([]byte(text))
 	return nil
 }

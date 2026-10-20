@@ -27,6 +27,11 @@ type jobQueue struct {
 
 func newQueue() *jobQueue { return &jobQueue{items: map[string]*job{}, slots: make(chan struct{}, 2)} }
 func (q *jobQueue) start(title string, fn func(context.Context, *limitedBuffer) error) (job, error) {
+	return q.startWithin(12*time.Minute, title, fn)
+}
+
+// startWithin runs a task with its own deadline, for long jobs such as backups.
+func (q *jobQueue) startWithin(timeout time.Duration, title string, fn func(context.Context, *limitedBuffer) error) (job, error) {
 	select {
 	case q.slots <- struct{}{}:
 	default:
@@ -52,7 +57,7 @@ func (q *jobQueue) start(title string, fn func(context.Context, *limitedBuffer) 
 	q.Unlock()
 	go func() {
 		defer func() { <-q.slots }()
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		out := j.buffer
 		var e error

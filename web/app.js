@@ -42,7 +42,8 @@ const routes = {
   containers: ['Docker 容器', '查看现有容器、日志与镜像，处理日常启停。', 'CONTAINERS', 'box'],
   projects: ['Compose 项目', '按项目整理现有容器，一起启动、停止或重启。', 'PROJECTS', 'layers'],
   files: ['站点文件', '在 /srv/junpanel 内管理文件，删除先进入回收站。', 'FILES', 'folder'],
-  databases: ['数据库', '管理应用中心创建的数据库，执行查询与手动导出。', 'DATABASES', 'database'],
+  databases: ['数据库', '管理应用中心创建的数据库，执行查询与备份。', 'DATABASES', 'database'],
+  backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'BACKUPS', 'disk'],
   terminal: ['容器终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'TERMINAL', 'terminal'],
   jobs: ['任务记录', '每一次部署与容器操作，都有明确的结果。', 'ACTIVITY', 'activity'],
   security: ['账号与安全', '管理你的登录凭据，了解工作台的权限边界。', 'SECURITY', 'shield'],
@@ -103,7 +104,7 @@ async function navigate(route) { state.route = routes[route] ? route : 'overview
 async function render() {
   clearPage(); const epoch = state.epoch, r = routes[state.route]; $('#breadcrumb').textContent = r[0]; $('#page-title').textContent = r[0]; $('#page-description').textContent = r[1];document.body.dataset.route=state.route; $('#page-eyebrow').textContent = `WORKBENCH / ${r[2]}`; $('#connection-error').hidden = true;
   $$('[data-route]').forEach(n => {const active=n.dataset.route===state.route;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}); $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在读取服务器状态…'));
-  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
+  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
   catch(e) { if (epoch !== state.epoch) return; view.replaceChildren(empty('暂时无法读取', e.message), button('重新连接', render, 'secondary','refresh')); }
 }
 function action(...buttons) { $('#page-actions').append(...buttons); }
@@ -201,10 +202,10 @@ const joinPath=(p,name)=>(p==='/'?'':p)+'/'+name;
 async function filesPage() {
   const path=state.filePath, data=await api(`/files?path=${encodeURIComponent(path)}`), rows=data.entries || data, n=el('div');
   action(button('回收站',showTrash,'secondary','trash'),button('新建',()=>{const type=field('类型','file',{select:[['file','文本文件'],['folder','文件夹']]}),name=field('名称','',{max:200});formModal('新建文件或文件夹',[type,name],'创建',async()=>{if(/[\/\\]/.test(name.val()))throw new Error('请输入单个文件名');const p=joinPath(path,name.val());await mutation(type.val()==='folder'?'/files/mkdir':'/files/save',type.val()==='folder'?{path:p}:{path:p,text:'',revision:''});});},'secondary','plus'),button('上传文件',()=>uploadInput.click(),'primary','plus'));
-  const uploadInput=el('input');uploadInput.type='file';uploadInput.hidden=true;uploadInput.onchange=async()=>{const f=uploadInput.files[0];if(!f)return;if(f.size>4*1024*1024){toast('单文件上传上限 4 MB',true);return;}try{const buffer=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<buffer.length;i+=8192)binary+=String.fromCharCode(...buffer.subarray(i,i+8192));await mutation('/files/upload',{path:joinPath(path,f.name),data:btoa(binary)});}catch(e){toast(e.message,true);}};n.append(uploadInput);
+  const uploadInput=el('input');uploadInput.type='file';uploadInput.hidden=true;uploadInput.onchange=async()=>{const f=uploadInput.files[0];if(!f)return;if(f.size>512*1024*1024){toast('单文件上传上限 512 MB',true);uploadInput.value='';return;}try{await uploadFile(joinPath(path,f.name),f);toast('上传完成');await render();}catch(e){toast(e.message,true);}finally{uploadInput.value='';}};n.append(uploadInput);
   const crumb=el('div','file-breadcrumb');crumb.append(button('/srv/junpanel',()=>{state.filePath='/';return render();},'quiet small','folder'));let current='';path.split('/').filter(Boolean).forEach(part=>{current+='/'+part;const dest=current;crumb.append(el('span','muted','/'),button(part,()=>{state.filePath=dest;return render();},'quiet small'));});n.append(crumb);
   const t=table(['名称','大小','修改时间','权限','操作']); if(path!=='/')cells(t.body,button('.. 上一级',()=>{state.filePath=path.slice(0,path.lastIndexOf('/'))||'/';return render();},'quiet small'),'', '', '', '');
-  rows.forEach(f=>{const p=f.path || joinPath(path,f.name),isDir=f.directory ?? f.dir ?? f.is_dir; const name=button(f.name,()=>{if(f.link)throw new Error('符号链接不在界面中展开');if(isDir){state.filePath=p;return render();}return editFile(p);},'quiet small',isDir?'folder':'file');name.classList.add('file-name');const controls=[];if(!isDir&&!f.link){const download=link(`/api/files/download?path=${encodeURIComponent(p)}`,'下载');download.removeAttribute('target');controls.push(download);}controls.push(button('重命名',()=>{const v=field('新路径',p,{help:'可移动到管理目录中的其它位置；不会覆盖已有目标。'});formModal('重命名 / 移动',[v],'保存',()=>mutation('/files/rename',{path:p,to:v.val()}));},'quiet small'),button('删除',()=>confirm(`移入回收站 · ${f.name}`,'文件将移动到本机回收站，可在工作台中恢复。站点根目录不可移动。',()=>mutation('/files/trash',{path:p}),true),'quiet small'));cells(t.body,name,isDir?'文件夹':bytes(f.size),date(f.modified || f.mod_time),el('code','',f.mode || '—'),ops(...controls));});n.append(t.n,note('文件操作限定在 /srv/junpanel。文本编辑上限 1 MB，上传上限 4 MB，下载上限 8 MB。'));return n;
+  rows.forEach(f=>{const p=f.path || joinPath(path,f.name),isDir=f.directory ?? f.dir ?? f.is_dir; const name=button(f.name,()=>{if(f.link)throw new Error('符号链接不在界面中展开');if(isDir){state.filePath=p;return render();}return editFile(p);},'quiet small',isDir?'folder':'file');name.classList.add('file-name');const controls=[];if(!isDir&&!f.link){const download=link(`/api/files/download?path=${encodeURIComponent(p)}`,'下载');download.removeAttribute('target');controls.push(download);}controls.push(button('重命名',()=>{const v=field('新路径',p,{help:'可移动到管理目录中的其它位置；不会覆盖已有目标。'});formModal('重命名 / 移动',[v],'保存',()=>mutation('/files/rename',{path:p,to:v.val()}));},'quiet small'),button('删除',()=>confirm(`移入回收站 · ${f.name}`,'文件将移动到本机回收站，可在工作台中恢复。站点根目录不可移动。',()=>mutation('/files/trash',{path:p}),true),'quiet small'));cells(t.body,name,isDir?'文件夹':bytes(f.size),date(f.modified || f.mod_time),el('code','',f.mode || '—'),ops(...controls));});n.append(t.n,note('文件操作限定在 /srv/junpanel。文本编辑上限 1 MB，单文件上传上限 512 MB，下载不限大小。'));return n;
 }
 async function editFile(path) { const data=await api(`/files/content?path=${encodeURIComponent(path)}`),text=field(path,data.text || '',{area:true,rows:20,required:false});text.input.classList.add('code-editor');text.input.spellcheck=false;formModal('编辑文本文件',[text],'保存文件',()=>mutation('/files/save',{path,text:text.input.value,revision:data.revision}),{large:true,note:'保存前会检查文件是否被其它操作修改，避免覆盖更新。'}); }
 async function showTrash() { const rows=await api('/trash'),n=el('div');n.append(el('p','muted','回收站中的项目保留 30 天后自动永久删除。'));if(!rows.length)n.append(empty('回收站为空'));rows.forEach(r=>{const item=el('div','resource-row'),left=el('div','resource-left'),text=el('div','resource-name'),ops=el('div','table-ops'),name=r.path || r.original;text.append(el('strong','',name),el('small','muted',date(r.at)));left.append(text);ops.append(button('恢复',()=>mutation(`/trash/${r.id}/restore`,{}),'secondary small'),button('永久删除',()=>confirm('永久删除',`将永久删除 ${name}，无法恢复。`,async()=>{await api(`/trash/${r.id}`,undefined,'DELETE');toast('已永久删除');await showTrash();},true),'quiet small'));item.append(left,ops);n.append(item);});const actions=[button('关闭',closeModal)];if(rows.length)actions.unshift(button('清空回收站',()=>confirm('清空回收站',`将永久删除回收站中的全部 ${rows.length} 项，无法恢复。`,async()=>{const v=await api('/trash/empty',{});closeModal();toast(`已永久删除 ${v.removed} 项`);},true),'danger'));openModal('回收站',n,actions); }
@@ -213,8 +214,8 @@ function credentialForm(app) {
  formModal(`${app.name} · 连接信息`,[password,otp],'验证并查看',async()=>{const data=await api('/credentials',{id:app.id,password:password.input.value,otp:otp.val()});password.input.value='';const n=el('div');n.append(note(data.note));[['地址',data.host],['端口',String(data.port)],['用户',data.user],['数据库',data.database]].filter(v=>v[1]).forEach(([a,b])=>n.append(line(a,b)));if(data.password){const secret=field('数据库密码',data.password,{type:'password',required:false});secret.input.readOnly=true;n.append(secret.n);const toggle=button('显示 / 隐藏',()=>{secret.input.type=secret.input.type==='password'?'text':'password';},'secondary small');const copy=button('复制密码',async()=>{await navigator.clipboard.writeText(data.password);toast('密码已复制，请妥善保管剪贴板');},'secondary small');n.append(ops(toggle,copy));}openModal(`${app.name} · 连接信息`,n,[button('关闭',closeModal)]);},{note:'连接凭据需要再次验证管理员身份，仅在当前弹窗中展示。'});
 }
 async function databasesPage() {
-  const rows=await api('/databases');action(button('刷新',render,'secondary','refresh'));if(!rows.length)return empty('还没有受管数据库','在应用中心安装 PostgreSQL、MySQL、Redis 或 WordPress 后，会出现在这里。');const n=el('div'),layout=el('div','database-layout'),left=el('div','database-selector'),main=el('div','panel');n.append(note('此处使用受管应用的管理员凭据。SQL 可更改或删除数据，请核对语句；工作台不配置自动备份。',true),layout);layout.append(left,main);
-  const choose=d=>{left.replaceChildren();rows.forEach(row=>{const b=el('button',`database-card${row.id===d.id?' selected':''}`);b.append(icon('database'),el('strong','',row.name),el('small','muted',`${row.kind} · ${row.port || '容器内部'}`));b.onclick=()=>choose(row);left.append(b);});main.replaceChildren();main.append(el('h2','',d.name));const db=field('数据库名称',d.database || 'junpanel',{max:63}),sql=field(d.kind==='redis'?'只读命令':'SQL 语句',d.kind==='redis'?'INFO':'SELECT 1;',{area:d.kind!=='redis',rows:8,select:d.kind==='redis'?[['INFO','INFO'],['DBSIZE','DBSIZE'],['PING','PING']]:undefined});if(d.kind!=='redis')sql.input.classList.add('code-editor');const result=el('pre','log-view','执行结果将显示在这里。'),tools=el('div','database-controls'),run=button('执行',async()=>{run.disabled=true;try{const value=await api(`/databases/${d.id}/query`,{database:db.val(),sql:d.kind==='redis'?'':sql.input.value,command:d.kind==='redis'?sql.val():''});result.textContent=value.text || '执行成功（无输出）';}finally{run.disabled=false;}},'primary','play');tools.append(run,button('连接信息',()=>credentialForm(d),'secondary','lock'));if(d.kind!=='redis'){tools.append(button('新建数据库',()=>{const name=field('数据库名称','',{max:63,help:'仅字母、数字及下划线，以字母或下划线开头。'});formModal('新建数据库',[name],'创建',()=>mutation(`/databases/${d.id}/create`,{name:name.val()}));},'secondary'));const exportButton=button('手动导出',()=>{if(!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(db.val()))throw new Error('数据库名称格式无效');const a=link(`/api/databases/${d.id}/export?database=${encodeURIComponent(db.val())}`,'导出');a.removeAttribute('target');document.body.append(a);a.click();a.remove();},'secondary');tools.append(exportButton);}if(d.kind!=='redis')main.append(db.n);main.append(sql.n,tools,result,el('p','help','查询结果与手动导出均限制 8 MB。大规模导入导出请使用数据库原生工具。'));};choose(rows.find(d=>d.id===state.dbId)||rows[0]);return n;
+  const rows=await api('/databases');action(button('刷新',render,'secondary','refresh'));if(!rows.length)return empty('还没有受管数据库','在应用中心安装 PostgreSQL、MySQL、Redis 或 WordPress 后，会出现在这里。');const n=el('div'),layout=el('div','database-layout'),left=el('div','database-selector'),main=el('div','panel');n.append(note('此处使用受管应用的管理员凭据。SQL 可更改或删除数据，请核对语句；可在“备份”页创建备份。',true),layout);layout.append(left,main);
+  const choose=d=>{left.replaceChildren();rows.forEach(row=>{const b=el('button',`database-card${row.id===d.id?' selected':''}`);b.append(icon('database'),el('strong','',row.name),el('small','muted',`${row.kind} · ${row.port || '容器内部'}`));b.onclick=()=>choose(row);left.append(b);});main.replaceChildren();main.append(el('h2','',d.name));const db=field('数据库名称',d.database || 'junpanel',{max:63}),sql=field(d.kind==='redis'?'只读命令':'SQL 语句',d.kind==='redis'?'INFO':'SELECT 1;',{area:d.kind!=='redis',rows:8,select:d.kind==='redis'?[['INFO','INFO'],['DBSIZE','DBSIZE'],['PING','PING']]:undefined});if(d.kind!=='redis')sql.input.classList.add('code-editor');const result=el('pre','log-view','执行结果将显示在这里。'),tools=el('div','database-controls'),run=button('执行',async()=>{run.disabled=true;try{const value=await api(`/databases/${d.id}/query`,{database:db.val(),sql:d.kind==='redis'?'':sql.input.value,command:d.kind==='redis'?sql.val():''});result.textContent=value.text || '执行成功（无输出）';}finally{run.disabled=false;}},'primary','play');tools.append(run,button('连接信息',()=>credentialForm(d),'secondary','lock'));if(d.kind!=='redis'){tools.append(button('新建数据库',()=>{const name=field('数据库名称','',{max:63,help:'仅字母、数字及下划线，以字母或下划线开头。'});formModal('新建数据库',[name],'创建',()=>mutation(`/databases/${d.id}/create`,{name:name.val()}));},'secondary'));tools.append(button('备份此数据库',async()=>{if(!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(db.val()))throw new Error('数据库名称格式无效');await mutation('/backups',{type:'database',target:d.id,database:db.val()});},'secondary'));}if(d.kind!=='redis')main.append(db.n);main.append(sql.n,tools,result,el('p','help','查询结果限制 8 MB。数据库备份是流式导出的压缩 SQL，不受此限制，需用数据库原生工具导入。'));};choose(rows.find(d=>d.id===state.dbId)||rows[0]);return n;
 }
 function decode64(s, decoder = new TextDecoder()) { const b=Uint8Array.from(atob(s),x=>x.charCodeAt(0));return decoder.decode(b,{stream:true}); }
 function encode64(s) { const b=new TextEncoder().encode(s);let binary='';for(let i=0;i<b.length;i+=8192)binary+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(binary); }
@@ -244,3 +245,72 @@ $('.local-indicator').children[1].textContent=accessLabel();
 $('.sidebar-caption').textContent=location.host;
 $('.login-boundary').lastChild.textContent=location.protocol==='https:'?'HTTPS 加密连接 · 管理员认证':'本机入口 · 远程访问请使用 SSH 隧道';
 (async()=>{try{const meta=await api('/meta');state.demo=meta.demo;$('#sidebar-version').textContent=meta.version;$('#demo-hint').hidden=!meta.demo;if(meta.demo){$('#login-user').value='demo';$('#login-password').value='JunPanelPreview2026!';}try{await enter(await api('/session'));}catch{showLogin();}}catch(e){$('#login-error').textContent=e.message;}})();
+function uploadFile(target, file) {
+  return new Promise((resolve, reject) => {
+    const progress = el('div', 'toast', `正在上传 ${file.name} 0%`), xhr = new XMLHttpRequest();
+    $('#toasts').append(progress);
+    const finish = () => progress.remove();
+    xhr.open('POST', `/api/files/upload?path=${encodeURIComponent(target)}`);
+    xhr.setRequestHeader('X-CSRF-Token', state.csrf);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.timeout = 31 * 60 * 1000;
+    xhr.upload.onprogress = e => { if (e.lengthComputable) progress.textContent = `正在上传 ${file.name} ${Math.floor(e.loaded / e.total * 100)}%`; };
+    xhr.onload = () => {
+      finish(); let value = {}; try { value = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(value);
+      if (xhr.status === 401) showLogin();
+      reject(new Error(value.error || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => { finish(); reject(new Error('上传中断，请检查网络后重试')); };
+    xhr.ontimeout = () => { finish(); reject(new Error('上传超时')); };
+    xhr.send(file);
+  });
+}
+const backupTypes = { site: '网站文件', app: '应用数据', database: '数据库' };
+async function backupsPage() {
+  const data = await api('/backups'), rows = data.backups, n = el('div');
+  action(button('刷新', render, 'secondary', 'refresh'), button('新建备份', newBackup, 'primary', 'plus'));
+  n.append(note(`备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份，请及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
+  if (!rows.length) { n.append(empty('还没有备份', '点击“新建备份”，为网站文件、应用数据或数据库留一份副本。')); return n; }
+  const t = table(['时间', '类型', '对象', '大小', '说明', '操作']);
+  rows.forEach(b => {
+    const what = el('div'), download = link(`/api/backups/${b.id}/download`, '下载'), buttons = [download];
+    what.append(el('strong', '', b.name), el('small', 'muted', b.type === 'database' ? `${b.target} / ${b.database}` : b.target));
+    download.removeAttribute('target');
+    if (b.type !== 'database') buttons.push(button('恢复', () => restoreBackup(b), 'quiet small'));
+    buttons.push(button('删除', () => confirm('删除备份', '将永久删除这份备份文件，无法恢复。', () => mutation(`/backups/${b.id}`, undefined, 'DELETE'), true), 'quiet small'));
+    cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), b.note || '手动备份', ops(...buttons));
+  });
+  n.append(t.n);
+  return n;
+}
+async function newBackup() {
+  const [sites, apps, databases] = await Promise.all([api('/sites'), api('/apps'), api('/databases')]);
+  const supported = ['wordpress', 'gitea', 'kuma', 'postgres', 'mysql', 'redis'];
+  const options = {
+    site: sites.sites.filter(s => s.kind === 'static').map(s => [s.id, `${s.name}（${s.domains[0]}）`]),
+    app: apps.filter(a => !a.removed && supported.includes(a.template)).map(a => [a.id, a.name]),
+    database: databases.filter(d => d.kind !== 'redis').map(d => [d.id, d.name]),
+  };
+  const type = field('备份内容', 'site', { select: [['site', '网站文件'], ['app', '应用数据（备份时短暂停止应用）'], ['database', '数据库导出（SQL）']] });
+  const target = field('备份对象', '', { select: [] });
+  const database = field('数据库名称', 'junpanel', { max: 63, help: '仅字母、数字及下划线。' });
+  const fill = () => {
+    const kind = type.input.value, list = options[kind];
+    target.input.replaceChildren(...list.map(([v, text]) => { const o = el('option', '', text); o.value = v; return o; }));
+    database.n.hidden = kind !== 'database'; database.input.required = kind === 'database';
+    pick();
+  };
+  const pick = () => { const d = databases.find(x => x.id === target.input.value); if (d && type.input.value === 'database') database.input.value = d.database || 'junpanel'; };
+  type.input.onchange = fill; target.input.onchange = pick; fill();
+  formModal('新建备份', [type, target, database], '开始备份', async () => {
+    if (!target.input.value) throw new Error('没有可备份的对象');
+    await mutation('/backups', { type: type.input.value, target: target.input.value, database: type.input.value === 'database' ? database.val() : '' });
+  }, { note: '备份作为后台任务运行，可在任务记录查看进度。应用备份会短暂停止应用以保证数据一致，完成后自动启动。' });
+}
+function restoreBackup(b) {
+  const what = b.type === 'site'
+    ? '该网站的全部文件将被替换为备份时的内容，备份之后新增或修改的文件会丢失。'
+    : '该应用会先停止，其数据卷将被清空并替换为备份时的数据，再重新启动；备份之后写入的数据会丢失。仅适用于同一台服务器上的同一个应用。';
+  confirm('恢复备份', `${what}开始前会自动创建一份“恢复前备份”，恢复失败时可用它回滚。`, () => mutation(`/backups/${b.id}/restore`, { confirm: true }), true);
+}
