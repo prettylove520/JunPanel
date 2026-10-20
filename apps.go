@@ -261,7 +261,15 @@ func (a *agent) appInstall(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (a *agent) launchApp(record appRecord, action string) (job, error) {
-	return a.jobs.start("应用 · "+record.Name+" · "+action, func(ctx context.Context, out *limitedBuffer) error {
+	return a.launchAppThen(record, action, nil)
+}
+
+// launchAppThen runs the action as a job and reports its outcome to done, if given.
+func (a *agent) launchAppThen(record appRecord, action string, done func(error)) (job, error) {
+	return a.jobs.start("应用 · "+record.Name+" · "+action, func(ctx context.Context, out *limitedBuffer) (result error) {
+		if done != nil {
+			defer func() { done(result) }()
+		}
 		args := a.composeBase(record.ID)
 		switch action {
 		case "deploy", "restore":
@@ -317,46 +325,55 @@ func (a *agent) appAction(w http.ResponseWriter, r *http.Request) error {
 	if e := body(r, &req); e != nil {
 		return e
 	}
-	if req.Action != "start" && req.Action != "stop" && req.Action != "restart" && req.Action != "deploy" && req.Action != "remove" && req.Action != "restore" {
-		return bad(400, "操作无效")
+	j, e := a.appActionJob(r.PathValue("id"), req.Action, nil)
+	if e != nil {
+		return e
+	}
+	send(w, 202, j)
+	return nil
+}
+
+// appActionJob validates an app action, marks the app busy and starts the job.
+func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
+	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" {
+		return job{}, bad(400, "操作无效")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	rows, e := a.readApps()
 	if e != nil {
-		return e
+		return job{}, e
 	}
 	for i, record := range rows {
-		if record.ID != r.PathValue("id") {
+		if record.ID != id {
 			continue
 		}
 		if record.Busy {
-			return bad(409, "此应用已有操作进行中")
+			return job{}, bad(409, "此应用已有操作进行中")
 		}
-		if record.Removed && req.Action != "restore" {
-			return bad(409, "应用已卸载，请先恢复部署")
+		if record.Removed && action != "restore" {
+			return job{}, bad(409, "应用已卸载，请先恢复部署")
 		}
 		containers, e := a.docker.list()
 		if e != nil {
-			return e
+			return job{}, e
 		}
 		for _, c := range containers {
 			if c.Project == "junpanel-"+record.ID && c.Protected {
-				return bad(403, "应用中有受保护容器，操作已拒绝")
+				return job{}, bad(403, "应用中有受保护容器，操作已拒绝")
 			}
 		}
 		rows[i].Busy = true
 		if e = a.storeApps(rows); e != nil {
-			return e
+			return job{}, e
 		}
-		j, e := a.launchApp(record, req.Action)
+		j, e := a.launchAppThen(record, action, done)
 		if e != nil {
 			rows[i].Busy = false
 			a.storeApps(rows)
-			return e
+			return job{}, e
 		}
-		send(w, 202, j)
-		return nil
+		return j, nil
 	}
-	return bad(404, "应用不存在")
+	return job{}, bad(404, "应用不存在")
 }

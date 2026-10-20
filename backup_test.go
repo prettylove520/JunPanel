@@ -457,6 +457,9 @@ type fakeEngine struct {
 	volumes  []string
 }
 
+func (f *fakeEngine) dockerClient() *dockerClient {
+	return &dockerClient{HTTP: &http.Client{Transport: f.transport()}}
+}
 func (f *fakeEngine) transport() roundTripFunc {
 	return func(r *http.Request) (*http.Response, error) {
 		f.mu.Lock()

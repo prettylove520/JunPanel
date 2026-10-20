@@ -303,3 +303,52 @@ func TestDockerWordPressBackupAndRestore(t *testing.T) {
 		t.Fatalf("site files not restored: %q %v", out, e)
 	}
 }
+
+func TestDockerScheduledBackupAndRestart(t *testing.T) {
+	a := dockerAgent(t)
+	h := a.routes()
+	rec := installApp(t, a, "sc-redis", "redis")
+	redisCommand(t, a, rec, "SET", "scheduled", "kept")
+
+	backup := createSchedule(t, h, map[string]any{"name": "缓存备份", "action": "backup", "type": "app", "target": "sc-redis", "keep": 1, "every": "daily", "at": "03:00"})
+	for i := 0; i < 2; i++ {
+		if r := request(h, "POST", "/schedules/"+backup.ID+"/run", `{}`, nil, nil); r.Code != 202 {
+			t.Fatalf("run %d: %d %s", i, r.Code, r.Body.String())
+		}
+		done := waitSchedule(t, a, backup.ID)
+		if done.Last.Status != "success" {
+			t.Fatalf("run %d: %+v", i, done.Last)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	backups := listBackups(t, h)
+	if len(backups) != 1 || backups[0].Schedule != backup.ID || backups[0].Type != "app" {
+		t.Fatalf("retention with a real app: %+v", backups)
+	}
+	if got := redisCommand(t, a, rec, "GET", "scheduled"); got != "kept" {
+		t.Fatalf("data after scheduled backups: %q", got)
+	}
+
+	started := func() string {
+		out, e := exec.Command("docker", "inspect", "--format", "{{.State.StartedAt}}", a.running(t, rec, "app").ID).Output()
+		if e != nil {
+			t.Fatal(e)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	before := started()
+	time.Sleep(1100 * time.Millisecond)
+	restart := createSchedule(t, h, map[string]any{"name": "缓存重启", "action": "restart", "target": "sc-redis", "every": "interval", "hours": 24})
+	if r := request(h, "POST", "/schedules/"+restart.ID+"/run", `{}`, nil, nil); r.Code != 202 {
+		t.Fatalf("%d %s", r.Code, r.Body.String())
+	}
+	if done := waitSchedule(t, a, restart.ID); done.Last.Status != "success" {
+		t.Fatalf("%+v", done.Last)
+	}
+	if after := started(); after == before {
+		t.Fatal("container was not restarted")
+	}
+	if got := redisCommand(t, a, rec, "GET", "scheduled"); got != "kept" {
+		t.Fatalf("data after restart: %q", got)
+	}
+}

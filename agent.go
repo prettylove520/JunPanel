@@ -23,6 +23,10 @@ type agent struct {
 	stream         func(ctx context.Context, dir string, out io.Writer, secrets []string, name string, args ...string) error
 	capture        func(time.Duration, string, ...string) (string, error)
 	processConfigs func() ([]caddyConfig, error)
+	now            func() time.Time
+	schedMu        sync.Mutex
+	schedRunning   map[string]time.Time
+	schedTries     map[string]int
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -35,7 +39,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 			return nil, e
 		}
 	}
-	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand}
+	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}}
 	rows, e := a.readApps()
 	if e != nil {
 		return nil, e
@@ -59,6 +63,9 @@ func newAgent(cfg agentConfig) (*agent, error) {
 		if e = a.storeApps(rows); e != nil {
 			return nil, e
 		}
+	}
+	if e = a.recoverSchedules(); e != nil {
+		return nil, e
 	}
 	return a, nil
 }
@@ -102,6 +109,11 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /backups/{id}/download", endpoint(a.backupDownload))
 	m.HandleFunc("DELETE /backups/{id}", endpoint(a.backupDelete))
 	m.HandleFunc("POST /backups/{id}/restore", endpoint(a.backupRestore))
+	m.HandleFunc("GET /schedules", endpoint(a.scheduleList))
+	m.HandleFunc("POST /schedules", endpoint(a.scheduleSave))
+	m.HandleFunc("POST /schedules/{id}/toggle", endpoint(a.scheduleToggle))
+	m.HandleFunc("POST /schedules/{id}/run", endpoint(a.scheduleRunNow))
+	m.HandleFunc("DELETE /schedules/{id}", endpoint(a.scheduleDelete))
 	m.HandleFunc("GET /jobs", endpoint(func(w http.ResponseWriter, r *http.Request) error { send(w, 200, a.jobs.list()); return nil }))
 	m.HandleFunc("GET /terminal", a.terminal)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
