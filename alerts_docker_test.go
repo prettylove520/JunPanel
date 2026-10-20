@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -40,6 +41,17 @@ func TestDockerContainerAlerts(t *testing.T) {
 		}
 	})
 	idOf := func(name string) string { return docker("inspect", "--format", "{{.Id}}", name) }
+	// "docker kill" returns once the signal is sent, not when the container has exited,
+	// so wait for the state to change before checking.
+	waitRunning := func(name string, want bool) {
+		t.Helper()
+		for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+			if docker("inspect", "--format", "{{.State.Running}}", name) == fmt.Sprint(want) {
+				return
+			}
+		}
+		t.Fatalf("%s did not reach running=%v", name, want)
+	}
 	killed, stopped := idOf(names[0]), idOf(names[1])
 	tick := func() *alertState {
 		t.Helper()
@@ -54,6 +66,7 @@ func TestDockerContainerAlerts(t *testing.T) {
 		t.Fatalf("alert on a healthy container: %v", st.Active)
 	}
 	docker("kill", names[0])
+	waitRunning(names[0], false)
 	st := tick()
 	if st.Active["container:"+killed] == nil || hook.count() != 1 || !strings.Contains(hook.last(), "jp-alert-killed") || !strings.Contains(hook.last(), "退出码 137") {
 		t.Fatalf("killed container: %v posts=%d %s", st.Active, hook.count(), hook.last())
@@ -69,6 +82,7 @@ func TestDockerContainerAlerts(t *testing.T) {
 		t.Fatalf("a panel stop was reported: %v posts=%d", st.Active, hook.count())
 	}
 	docker("start", names[0])
+	waitRunning(names[0], true)
 	tick()
 	st = tick()
 	if st.Active["container:"+killed] != nil || hook.count() != 2 || !strings.Contains(hook.last(), "已恢复") {
