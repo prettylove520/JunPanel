@@ -25,7 +25,11 @@ jobs:
       - name: Tests with race detection
         run: go test -race -cover ./...
       - name: Backup tests against the real Docker engine
-        run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerAppBackupAndRestore|TestDockerDatabaseBackupStreams|TestDockerScheduledBackupAndRestart|TestDockerContainerAlerts' ./...
+        run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerAppBackupAndRestore|TestDockerDatabaseBackupStreams|TestDockerScheduledBackupAndRestart|TestDockerContainerAlerts|TestDockerStackLifecycle|TestDockerVolumesAndNetworks|TestDockerAppUpgrade|TestDockerMemosTemplate|TestDockerDatabaseRestore' ./...
+      - name: Compose checks that switch to the nobody user
+        run: |
+          go test -c -o /tmp/junpanel.test .
+          sudo /tmp/junpanel.test -test.count=1 -test.run 'TestStackParsedWithoutRoot'
       - name: Go static checks
         run: go vet ./...
       - name: Browser and installer syntax
@@ -41,6 +45,7 @@ jobs:
           sudo apt-get install -y caddy >/dev/null
           sudo systemctl stop caddy || true
           JUNPANEL_CADDY_TEST=1 bash tests/domain-access.sh
+          JUNPANEL_CADDY_TEST=1 go test -count=1 -run 'TestSiteOptionsInRealCaddy|TestAuthDirective' .
       - name: Linux amd64 and arm64 builds
         run: |
           for arch in amd64 arm64; do

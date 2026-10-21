@@ -64,6 +64,12 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = map[string]any{"sites": demoPublicSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
 	case "/access":
 		value = map[string]any{"entries": []map[string]string{{"kind": "domain", "address": "panel.example.com"}, {"kind": "ip", "address": "203.0.113.10"}}, "managed": true, "running": false, "supported": true}
+	case "/stacks":
+		value = map[string]any{"root": "/srv/junpanel/stacks", "stacks": []map[string]any{{"name": "uptime", "services": []string{"kuma"}, "containers": []map[string]any{{"id": strings.Repeat("9", 64), "name": "uptime-kuma-1", "image": "louislam/uptime-kuma:1", "state": "running", "status": "Up 3 hours"}}, "running": 1, "updated": time.Now().Add(-5 * time.Hour), "busy": false}}}
+	case "/volumes":
+		value = []map[string]any{{"name": "junpanel-blog_db", "driver": "local", "created": time.Now().Add(-72 * time.Hour).Format(time.RFC3339), "project": "junpanel-blog", "panel_app": true, "size": 214 << 20, "in_use": true, "containers": 1}, {"name": "old-cache", "driver": "local", "created": time.Now().Add(-400 * time.Hour).Format(time.RFC3339), "project": "", "panel_app": false, "size": 12 << 20, "in_use": false, "containers": 0}}
+	case "/networks":
+		value = []map[string]any{{"id": strings.Repeat("1", 64), "name": "bridge", "driver": "bridge", "scope": "local", "internal": false, "subnets": []string{"172.17.0.0/16"}, "containers": 0, "builtin": true, "project": ""}, {"id": strings.Repeat("2", 64), "name": "junpanel-blog_default", "driver": "bridge", "scope": "local", "internal": false, "subnets": []string{"172.18.0.0/16"}, "containers": 2, "builtin": false, "project": "junpanel-blog"}, {"id": strings.Repeat("3", 64), "name": "backend", "driver": "bridge", "scope": "local", "internal": true, "subnets": []string{"172.19.0.0/16"}, "containers": 0, "builtin": false, "project": ""}}
 	case "/catalog":
 		value = appCatalog
 	case "/apps":

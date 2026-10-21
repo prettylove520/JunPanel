@@ -51,15 +51,20 @@ const routes = {
   certs: ['证书', 'Caddy 自动签发和续期的 HTTPS 证书。', 'cert', 'sites'],
   databases: ['数据库', '管理应用商店安装的数据库，执行查询、建库与备份。', 'database', 'databases'],
   containers: ['容器', '系统 Docker 中的全部容器，包括安装面板之前创建的容器。', 'box', 'containers'],
-  projects: ['编排', '按 Docker Compose 项目整理容器，一起启动、停止或重启。', 'layers', 'containers'],
+  projects: ['编排', '编写 docker-compose 文件并部署，也可以整组管理已有的 Compose 项目。', 'layers', 'containers'],
   images: ['镜像', '本机 Docker 镜像。仍被容器使用的镜像不能删除。', 'image', 'containers'],
+  networks: ['网络', 'Docker 网络。仍有容器（包括已停止的）连接时不能删除。', 'network', 'containers'],
+  volumes: ['卷', 'Docker 数据卷，保存容器的持久数据。删除后数据无法恢复。', 'disk', 'containers'],
   terminal: ['终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'terminal', 'containers'],
   files: ['文件', '管理 /srv/junpanel 内的文件，删除的文件先进入回收站。', 'folder', 'files'],
   schedules: ['计划任务', '按时间表自动备份或重启应用，只保留最近几份备份。', 'clock', 'schedules'],
   backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'disk', 'backups'],
   alerts: ['告警', '磁盘、证书、容器和服务出问题时提醒你，并推送到 Webhook。', 'bell', 'alerts'],
-  jobs: ['任务日志', '每一次部署、备份和容器操作的执行记录。', 'activity', 'jobs'],
+  jobs: ['任务', '每一次部署、备份和容器操作的执行记录。', 'activity', 'logs'],
+  audit: ['操作日志', '谁在什么时间、从哪里做了什么修改，以及结果。', 'file', 'logs'],
+  logins: ['登录日志', '登录、退出和再次验证密码失败的记录。', 'lock', 'logs'],
   security: ['安全', '管理员密码、两步验证与面板的权限边界。', 'shield', 'settings'],
+  access: ['公网入口', '用域名或服务器 IP 通过 HTTPS 访问面板。', 'globe', 'settings'],
   upgrade: ['版本升级', '检查新版本，校验后在面板内一键升级。', 'refresh', 'settings'],
 };
 // Sidebar menu, in 1Panel order. [group, label, icon, badge id]
@@ -73,7 +78,7 @@ const menu = [
   ['schedules', '计划任务', 'clock'],
   ['backups', '备份', 'disk'],
   ['alerts', '告警', 'bell', 'alert-badge'],
-  ['jobs', '任务日志', 'activity', 'job-badge'],
+  ['logs', '日志', 'activity', 'job-badge'],
   ['settings', '面板设置', 'settings', 'upgrade-badge'],
 ];
 const groupRoutes = g => Object.keys(routes).filter(r => routes[r][3] === g);
@@ -81,7 +86,7 @@ const groupLabel = g => (menu.find(m => m[0] === g) || [])[1] || '';
 (function buildNav() {
   const nav = $('#nav');
   menu.forEach(([g, label, symbol, badge]) => {
-    if (g === 'jobs') nav.append(el('div', 'nav-divider'));
+    if (g === 'logs') nav.append(el('div', 'nav-divider'));
     const b = el('button', 'nav-link'); b.type = 'button'; b.dataset.group = g; b.dataset.route = groupRoutes(g)[0];
     b.append(icon(symbol), el('span', '', label));
     if (badge) { const n = el('span', `nav-badge${badge === 'site-badge' ? ' count' : ''}`); n.id = badge; n.hidden = true; b.append(n); }
@@ -174,7 +179,7 @@ function drawChrome() {
   $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
   $('#page-description').textContent = r[1]; $('#page-bar').hidden = state.route === 'overview';
 }
-const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, security: securityPage, upgrade: upgradePage });
+const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, security: securityPage, access: accessPage, upgrade: upgradePage });
 async function render() {
   clearPage(); const epoch = state.epoch; drawChrome(); $('#connection-error').hidden = true;
   $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在加载…'));
@@ -190,7 +195,7 @@ function ops(...buttons) { const n = el('div','table-ops'); n.append(...buttons)
 function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'), texts = el('div'); texts.append(el('strong','',title), el('small','muted',sub)); n.append(icon(symbol),texts); return n; }
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
-function appLogo(key) { return el('div', `app-logo ${key}`, ({wordpress:'W',gitea:'G',kuma:'U',postgres:'P',mysql:'M',redis:'R'})[key] || 'A'); }
+function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); if (t.color) n.style.background = t.color; return n; }
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).
@@ -282,25 +287,30 @@ async function sitesPage() {
   if(data.caddy_sources?.length){const sources=panel('Caddy 配置来源',tag(`${data.caddy_sources.length} 份配置`,'blue'));sources.classList.add('existing-site-list');sources.append(el('p','muted','从系统主配置及运行中的 Caddy 进程发现。这里只读取配置文件；原有实例不由面板重载，磁盘配置可能与当前内存配置不同。'));for(const source of data.caddy_sources){const row=el('div','resource-row'),text=el('div');text.append(el('strong','resource-name',source.config),el('small','muted',`PID ${source.pids?.length?source.pids.join(', '):'未关联'} · ${source.error?'读取失败':`${source.hosts?.length || 0} 个主机匹配`} · ${source.primary?'面板连接的主配置':'原有实例，只读'}`));if(source.error)text.append(el('p','form-error',source.error));row.append(text,tag(source.error?'读取失败':'已读取',source.error?'bad':'ok'));sources.append(row);}n.append(sources);}
   if(data.external_hosts?.length){const existing=panel('原有 Caddy 网站',tag(`${data.external_hosts.length} 个域名`,'blue'));existing.classList.add('existing-site-list');existing.append(el('p','muted','已汇总系统主配置和其他运行中 Caddy 实例的配置。按域名去重；配置存在不代表网站已通过健康检查。'));for(const host of data.external_hosts){const r=el('div','resource-row'),t=el('div');t.append(el('strong','resource-name',host),el('small','muted','来源：'+((data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config).join(' · ') || '系统 Caddy')));r.append(t,tag('只读','blue'));existing.append(r);}n.append(existing);}
   if(!rows.length){n.append(note(data.external_hosts?.length?'上方是已识别的原有网站。你还没有通过 JunPanel 新建网站；原有网站配置继续保留。':'尚未通过 JunPanel 创建网站，可创建静态网站或反向代理。'));return n;}
-  const t=table(['网站 / 域名','类型','目录 / 上游','状态','管理']); rows.forEach(s=>{const name=el('div','site-title');name.append(el('strong','',s.name),siteDomains(s));const controls=[button('编辑',()=>siteForm(s),'quiet small'),button(s.enabled?'停用':'启用',()=>confirm(`${s.enabled?'停用':'启用'} ${s.name}`, '配置通过校验后，将重载现有 Caddy。',()=>mutation(`/sites/${s.id}/toggle`,{})),'quiet small')];if(s.kind==='static')controls.unshift(button('文件',()=>{state.filePath=`/sites/${s.id}`;return navigate('files');},'quiet small'));controls.push(button('移除',()=>confirm(`移除 ${s.name}`,'仅移除站点配置并重载 Caddy；静态文件会保留。',()=>mutation(`/sites/${s.id}`,undefined,'DELETE'),true),'quiet small'));cells(t.body,name,s.kind==='static'?'静态网站':'反向代理',el('code','',s.kind==='static'?s.root:s.upstream),tag(s.readonly?'原有配置':s.enabled?'已启用':'已停用',s.readonly?'blue':s.enabled?'ok':''),ops(...controls));});n.append(t.n);return n;
+  const t=table(['网站 / 域名','类型','目录 / 上游','状态','管理']); rows.forEach(s=>{const name=el('div','site-title');name.append(el('strong','',s.name),siteDomains(s));const controls=[button('编辑',()=>siteForm(s),'quiet small'),button(s.enabled?'停用':'启用',()=>confirm(`${s.enabled?'停用':'启用'} ${s.name}`, '配置通过校验后，将重载现有 Caddy。',()=>mutation(`/sites/${s.id}/toggle`,{})),'quiet small')];if(s.kind==='static')controls.unshift(button('文件',()=>{state.filePath=`/sites/${s.id}`;return navigate('files');},'quiet small'));controls.push(button('移除',()=>confirm(`移除 ${s.name}`,'仅移除站点配置并重载 Caddy；静态文件会保留。',()=>mutation(`/sites/${s.id}`,undefined,'DELETE'),true),'quiet small'));const status=el('div','table-ops');status.append(tag(s.readonly?'原有配置':s.enabled?'已启用':'已停用',s.readonly?'blue':s.enabled?'ok':''));if(s.auth)status.append(tag('需要密码','blue'));if(s.allow_ips?.length)status.append(tag(`限 ${s.allow_ips.length} 个地址`,'blue'));cells(t.body,name,{static:'静态网站',proxy:'反向代理',redirect:'跳转网站'}[s.kind] || s.kind,el('code','',s.kind==='static'?s.root:s.kind==='redirect'?`→ ${s.target}${s.keep_path?'（保留路径）':''} · ${s.permanent?301:302}`:s.upstream),status,ops(...controls));});n.append(t.n);return n;
 }
 function siteForm(site, app) {
-  const name=field('网站名称',site?.name || app?.name || '',{max:60}), domains=field('域名',site?.domains.join('\n') || '',{area:true,rows:2,placeholder:'example.com\nwww.example.com',help:'每行一个域名，中文域名请先转换为 Punycode。'}), kind=field('网站类型',site?.kind || 'proxy',{select:[['static','静态网站'],['proxy','反向代理']]}), upstream=field('上游地址',site?.upstream || (app?`http://127.0.0.1:${app.port}`:'http://127.0.0.1:8080'),{help:'完整的 http(s)://主机:端口；不包含路径。'});
-  if(site)kind.input.disabled=true;const refresh=()=>{upstream.n.hidden=kind.val()!=='proxy';upstream.input.required=kind.val()==='proxy';};kind.input.onchange=refresh;refresh();
-  formModal(site?'编辑网站':'创建网站',[name,domains,kind,upstream],'保存并应用',async()=>{await mutation('/sites',{id:site?.id || '',name:name.val(),domains:domains.val().split(/[\s,]+/).filter(Boolean),kind:kind.val(),upstream:kind.val()==='proxy'?upstream.val():''});},{note:'面板会检查域名冲突，校验 Caddy 配置，再重载服务。失败时尝试还原本次配置。'});
+  const name=field('网站名称',site?.name || app?.name || '',{max:60}), domains=field('域名',site?.domains.join('\n') || '',{area:true,rows:2,placeholder:'example.com\nwww.example.com',help:'每行一个域名，中文域名请先转换为 Punycode。'}), kind=field('网站类型',site?.kind || 'proxy',{select:[['static','静态网站'],['proxy','反向代理'],['redirect','跳转网站']]}), upstream=field('上游地址',site?.upstream || (app?`http://127.0.0.1:${app.port}`:'http://127.0.0.1:8080'),{help:'完整的 http(s)://主机:端口；不包含路径。'});
+  const target=field('跳转到',site?.target || '',{placeholder:'https://www.example.com',help:'完整的 http(s):// 网址。'}), code=field('跳转方式',site?.permanent?'301':'302',{select:[['302','临时跳转（302）'],['301','永久跳转（301，浏览器会记住）']]}), keep=field('访问路径',site && !site.keep_path?'0':'1',{select:[['1','保留（/a/b 跳到 目标/a/b）'],['0','不保留（都跳到目标地址）']]});
+  const authUser=field('访问用户名',site?.auth_user || '',{required:false,max:32,placeholder:'留空表示不需要密码'}), authPass=field('访问密码','',{type:'password',required:false,max:72,placeholder:site?.auth?'留空则保持原密码':'至少 8 位',help:'打开网站时浏览器会要求输入这个用户名和密码。'});
+  const allow=field('只允许这些 IP 访问',(site?.allow_ips || []).join('\n'),{area:true,rows:2,required:false,placeholder:'留空表示不限制，例如 203.0.113.5 或 10.0.0.0/8',help:'每行一个 IP 或网段。经过线路机等中转访问时，这里看到的是中转机的 IP。'}), compress=field('压缩传输',site?.no_compress?'0':'1',{select:[['1','开启（推荐）'],['0','关闭']]});
+  if(site)kind.input.disabled=true;
+  const refresh=()=>{const k=kind.val();upstream.n.hidden=k!=='proxy';upstream.input.required=k==='proxy';[target,code,keep].forEach(f=>f.n.hidden=k!=='redirect');target.input.required=k==='redirect';[authUser,authPass,allow,compress].forEach(f=>f.n.hidden=k==='redirect');};kind.input.onchange=refresh;refresh();
+  formModal(site?'编辑网站':'创建网站',[name,domains,kind,upstream,target,code,keep,authUser,authPass,allow,compress],'保存并应用',async()=>{const k=kind.val(),redirect=k==='redirect';await mutation('/sites',{id:site?.id || '',name:name.val(),domains:domains.val().split(/[\s,]+/).filter(Boolean),kind:k,upstream:k==='proxy'?upstream.val():'',target:redirect?target.val():'',permanent:code.input.value==='301',keep_path:keep.input.value==='1',auth_user:redirect?'':authUser.val(),auth_password:redirect?'':authPass.input.value,allow_ips:redirect?[]:allow.val().split(/[\s,]+/).filter(Boolean),no_compress:!redirect&&compress.input.value==='0'});},{note:'面板会检查域名冲突，校验 Caddy 配置，再重载服务。失败时尝试还原本次配置。'});
 }
 async function appsPage() {
   const [catalog,apps]=await Promise.all([api('/catalog'),api('/apps')]);state.catalog=catalog;state.apps=apps;const n=el('div');action(button('刷新',render,'secondary','refresh'));
   if(state.route==='apps') {
-    n.append(note('数据库凭据随机生成，保存在管理代理的私有目录。'));
-    const chips=el('div','chips'),grid=el('div','catalog-grid');let category='全部';const draw=()=>{chips.replaceChildren(...['全部','网站应用','开发工具','运维工具','数据库'].map(c=>{const b=button(c,()=>{category=c;draw();},'quiet small');b.classList.add('chip');b.classList.toggle('active',category===c);return b;}));grid.replaceChildren();catalog.filter(t=>category==='全部'||t.category===category).forEach(t=>{const card=el('section','app-card'),head=el('div','app-card-head'),title=el('div');title.append(el('h3','',t.name),el('small','muted',t.category));head.append(appLogo(t.key),title);const bottom=el('div','app-card-bottom');bottom.append(el('code','',t.image),button('安装',()=>installApp(t),'primary small'));card.append(head,el('p','muted',t.summary),bottom);grid.append(card);});};draw();n.append(chips,grid);
+    n.append(note('数据库凭据随机生成，保存在管理代理的私有目录。标有“可备份”的应用可以在“备份”页备份和恢复，升级前也会自动备份。'));
+    const categories=['全部',...new Set(catalog.map(t=>t.category))];
+    const chips=el('div','chips'),grid=el('div','catalog-grid');let category='全部';const draw=()=>{chips.replaceChildren(...categories.map(c=>{const b=button(c,()=>{category=c;draw();},'quiet small');b.classList.add('chip');b.classList.toggle('active',category===c);return b;}));grid.replaceChildren();catalog.filter(t=>category==='全部'||t.category===category).forEach(t=>{const card=el('section','app-card'),head=el('div','app-card-head'),title=el('div');title.append(el('h3','',t.name),el('small','muted',t.category));head.append(appLogo(t),title);if(t.backup)head.append(tag('可备份','ok'));const bottom=el('div','app-card-bottom');bottom.append(el('code','',t.image),button('安装',()=>installApp(t),'primary small'));card.append(head,el('p','muted',t.summary),bottom);grid.append(card);});};draw();n.append(chips,grid);
   } else {
     if(!apps.length){const e=empty('还没有安装应用','到“全部应用”中选择一个开始部署。');e.append(button('去安装',()=>navigate('apps'),'primary'));n.append(e);}
-    const grid=el('div','installed-grid');apps.forEach(a=>{const t=catalog.find(t=>t.key===a.template),card=el('section','installed-card'),head=el('div','installed-header'),name=el('div');name.append(el('h3','',a.name),el('small','muted',t?.name || a.template));head.append(appLogo(a.template),name,tag(a.busy?'任务中':a.removed?'已卸载':a.docker_available===false?'状态未知':`${a.running || 0}/${a.containers || 0} 运行`,a.busy?'blue':a.removed?'':a.running?'ok':'warn'));card.append(head,el('div','installed-meta',`项目 ${a.project} · 本机端口 ${a.port}`));if(a.last_error)card.append(el('p','error-text',a.last_error));const controls=el('div','installed-actions');controls.append(button('连接信息',()=>credentialForm(a),'quiet small'));if(a.removed)controls.append(button('恢复部署',()=>appAction(a,'restore'),'quiet small'));else{if(!a.database)controls.append(button('绑定域名',()=>siteForm(null,a),'quiet small'));else controls.append(button('管理数据库',()=>navigate('databases'),'quiet small'));[['启动','start'],['停止','stop'],['重启','restart'],['重新部署','deploy'],['卸载','remove']].forEach(([text,v])=>controls.append(button(text,()=>appAction(a,v),'quiet small')));}$$('button',controls).forEach(b=>b.disabled=!!a.busy);card.append(controls);grid.append(card);});if(apps.length)n.append(grid,note('重新部署使用本地已有镜像，不会自动拉取新版本。'));
+    const grid=el('div','installed-grid');apps.forEach(a=>{const t=catalog.find(t=>t.key===a.template),card=el('section','installed-card'),head=el('div','installed-header'),name=el('div');name.append(el('h3','',a.name),el('small','muted',t?.name || a.template));head.append(appLogo(t || {key:a.template}),name,tag(a.busy?'任务中':a.removed?'已卸载':a.docker_available===false?'状态未知':`${a.running || 0}/${a.containers || 0} 运行`,a.busy?'blue':a.removed?'':a.running?'ok':'warn'));card.append(head,el('div','installed-meta',`项目 ${a.project} · 本机端口 ${a.port}`));if(a.last_error)card.append(el('p','error-text',a.last_error));const controls=el('div','installed-actions');controls.append(button('连接信息',()=>credentialForm(a),'quiet small'));if(a.removed)controls.append(button('恢复部署',()=>appAction(a,'restore'),'quiet small'));else{if(!a.database)controls.append(button('绑定域名',()=>siteForm(null,a),'quiet small'));else controls.append(button('管理数据库',()=>navigate('databases'),'quiet small'));[['升级','upgrade'],['启动','start'],['停止','stop'],['重启','restart'],['重新部署','deploy'],['卸载','remove']].forEach(([text,v])=>controls.append(button(text,()=>appAction(a,v,t),'quiet small')));}$$('button',controls).forEach(b=>b.disabled=!!a.busy);card.append(controls);grid.append(card);});if(apps.length)n.append(grid,note('“重新部署”使用本地已有镜像；“升级”会拉取镜像的最新版本并重建容器。'));
   }return n;
 }
-function installApp(t) { const id=field('应用标识',t.key,{max:32,help:'2–32 位小写字母、数字与中划线，以字母开头。'}),name=field('显示名称',t.name,{max:60}),port=field('本机端口',String(t.port),{type:'number',help:'仅绑定 127.0.0.1。请为每个应用使用独立端口。'});port.input.min=1024;port.input.max=65535;formModal(`安装 ${t.name}`,[name,id,port],'开始部署',()=>mutation('/apps',{id:id.val(),name:name.val(),template:t.key,port:Number(port.val())}),{note:'将使用现有 Docker Compose 下载并启动应用；可在任务日志中查看结果。'}); }
-function appAction(a,action) { const label={start:'启动',stop:'停止',restart:'重启',deploy:'重新部署',remove:'卸载',restore:'恢复部署'}[action];confirm(`${label} ${a.name}`,action==='remove'?'将停止并移除该应用的容器和网络，保留数据卷及私有项目配置。':`将通过现有 Docker Compose ${label}该应用。`,()=>mutation(`/apps/${a.id}/action`,{action}),action==='remove'||action==='stop'); }
+function installApp(t) { const id=field('应用标识',t.key,{max:32,help:'2–32 位小写字母、数字与中划线，以字母开头。'}),name=field('显示名称',t.name,{max:60}),port=field('本机端口',String(t.port),{type:'number',help:'仅绑定 127.0.0.1。请为每个应用使用独立端口。'});port.input.min=1024;port.input.max=65535;formModal(`安装 ${t.name}`,[name,id,port],'开始部署',()=>mutation('/apps',{id:id.val(),name:name.val(),template:t.key,port:Number(port.val())}),{note:'将使用现有 Docker Compose 下载并启动应用；可在任务日志中查看结果。'+(t.note?' '+t.note:'')}); }
+function appAction(a,action,t) { const label={start:'启动',stop:'停止',restart:'重启',deploy:'重新部署',remove:'卸载',restore:'恢复部署',upgrade:'升级'}[action];const text=action==='remove'?'将停止并移除该应用的容器和网络，保留数据卷及私有项目配置。':action==='upgrade'?(t?.backup===false?'将拉取镜像的最新版本并重建容器。此应用不保存数据，不需要备份。':'将先备份应用数据（应用会短暂停止），再拉取镜像的最新版本并重建容器。备份失败时不会升级；升级后有问题可以在“备份”页恢复。'):`将通过现有 Docker Compose ${label}该应用。`;confirm(`${label} ${a.name}`,text,()=>mutation(`/apps/${a.id}/action`,{action}),action==='remove'||action==='stop'); }
 function containerStatus(c) { return tag(({running:'运行中',exited:'已停止',created:'已创建',paused:'已暂停',restarting:'重启中',dead:'异常'})[c.state] || c.state,c.state==='running'?'ok':c.state==='exited'?'':'warn'); }
 async function containersPage() {
   const n=el('div');
@@ -308,7 +318,58 @@ async function containersPage() {
 }
 async function imagesPage() { const rows=await api('/images'),n=el('div'),t=table(['镜像','ID','大小','创建时间','操作']);action(button('刷新',render,'secondary','refresh'),button('拉取镜像',()=>{const f=field('镜像名','',{placeholder:'nginx:stable-alpine',max:250});formModal('拉取镜像',[f],'开始拉取',()=>mutation('/images/pull',{image:f.val()}));},'primary','plus'));rows.forEach(i=>cells(t.body,(i.tags || []).join('\n')||'<无标签>',el('code','',i.id.slice(0,12)),bytes(i.size),date(i.created*1000),ops(button('删除',()=>confirm('删除镜像','将使用非强制方式删除镜像；仍被容器使用的镜像会拒绝删除。',()=>mutation(`/images/${i.id}`,undefined,'DELETE'),true),'quiet small'))));n.append(rows.length?t.n:empty('没有镜像'));return n; }
 async function showLogs(c) { const n=el('div'),tools=el('div','log-toolbar'),tail=field('显示行数','200',{select:[['50','最近 50 行'],['100','最近 100 行'],['200','最近 200 行'],['500','最近 500 行']]}),out=el('pre','log-view','正在读取…');const load=async()=>{const r=await api(`/containers/${c.id}/logs?tail=${tail.val()}`);out.textContent=r.logs || r.text || '暂无日志';out.scrollTop=out.scrollHeight;};tools.append(tail.n,button('刷新',load,'secondary small','refresh'));tail.input.onchange=()=>load().catch(e=>toast(e.message,true));n.append(tools,out);openModal(`${c.name} · 日志`,n,[button('关闭',closeModal)],true);try{await load();}catch(e){out.textContent=e.message;} }
-async function projectsPage() { const groups=await api('/projects'),n=el('div','project-grid');action(button('刷新',render,'secondary','refresh'));if(!groups.length)return empty('没有 Compose 项目','通过 Docker Compose 标签识别已有项目。');groups.forEach(p=>{const card=panel(p.name,tag(`${p.running} / ${p.containers.length} 运行`,p.running?'ok':'')),members=el('div','project-members');(p.containers || []).forEach(c=>{const r=el('div','resource-row');r.append(el('span','',c.name),containerStatus(c));members.append(r);});const controls=el('div','project-controls');[['启动','start'],['停止','stop'],['重启','restart']].forEach(([label,action])=>controls.append(button(label,()=>confirm(`${label}项目 ${p.name}`,'仅对现有非一次性容器逐个操作；中途失败时会停止并报告，已完成的操作不会回退。',()=>mutation(`/projects/${encodeURIComponent(p.name)}/action`,{action}),action==='stop'),'secondary small')));card.append(members,controls);n.append(card);});return n; }
+const stackActionText = { deploy: '按当前文件创建或更新容器，未变化的容器保持运行。', pull: '拉取文件中镜像的最新版本，并重建有变化的容器。', start: '启动已停止的容器。', stop: '停止全部容器，容器本身保留。', restart: '依次重启全部容器。', down: '删除容器和网络，保留数据卷和编排文件，之后可以再次部署。' };
+const stackSample = 'services:\n  web:\n    image: nginx:alpine\n    restart: unless-stopped\n    ports:\n      - "127.0.0.1:8088:80"\n    volumes:\n      - ./html:/usr/share/nginx/html:ro\n';
+async function projectsPage() {
+  const [data, groups] = await Promise.all([api('/stacks'), api('/projects')]), n = el('div');
+  action(button('刷新', render, 'secondary', 'refresh'), button('新建编排', () => stackEditor(null), 'primary', 'plus'));
+  n.append(note(`编排的相对路径指向 ${data.root}/<编排名>。为安全起见，不允许特权容器、宿主机网络和命名空间、额外权限、设备，以及挂载 /srv/junpanel 以外的目录；保存前会逐项检查。`));
+  if (data.docker_error) n.append(note(data.docker_error, true));
+  if (!data.stacks.length) n.append(empty('还没有编排', '点击“新建编排”，粘贴或编写 docker-compose 文件。'));
+  const grid = el('div', 'project-grid');
+  data.stacks.forEach(s => {
+    const card = panel(s.name, tag(s.busy ? '任务中' : `${s.running} / ${s.containers.length} 运行`, s.busy ? 'blue' : s.running ? 'ok' : s.containers.length ? 'warn' : ''));
+    card.append(el('p', 'muted', `服务：${s.services.join('、') || '—'} · 更新于 ${date(s.updated)}`));
+    if (s.last_error) card.append(el('p', 'error-text', s.last_error));
+    const members = el('div', 'project-members');
+    s.containers.forEach(c => { const r = el('div', 'resource-row'); r.append(el('span', '', c.name), containerStatus(c)); members.append(r); });
+    const controls = el('div', 'installed-actions');
+    controls.append(button('编辑', () => stackEditor(s.name), 'quiet small'));
+    [['部署', 'deploy'], ['更新镜像', 'pull'], ['启动', 'start'], ['停止', 'stop'], ['重启', 'restart'], ['停用', 'down']].forEach(([label, act]) => controls.append(button(label, () => confirm(`${label} ${s.name}`, stackActionText[act], () => mutation(`/stacks/${s.name}/action`, { action: act }), act === 'stop' || act === 'down'), 'quiet small')));
+    controls.append(button('删除', () => confirm(`删除编排 ${s.name}`, `将删除它的容器、网络和编排定义。数据卷和 ${data.root}/${s.name} 中的文件保留。`, () => mutation(`/stacks/${s.name}`, undefined, 'DELETE'), true), 'quiet small'));
+    $$('button', controls).forEach(b => b.disabled = !!s.busy);
+    card.append(members, controls); grid.append(card);
+  });
+  if (data.stacks.length) n.append(grid);
+  const others = groups.filter(p => !data.stacks.some(s => s.name === p.name));
+  if (others.length) {
+    const box = panel('其它 Compose 项目', tag(`${others.length} 个`, 'blue'));
+    box.append(el('p', 'muted', '面板应用和在面板之外部署的项目。可以整组启动、停止或重启，不能在这里编辑。'));
+    others.forEach(p => {
+      const r = el('div', 'resource-row'), t = el('div'), c = el('div', 'table-ops');
+      t.append(el('strong', 'resource-name', p.name), el('small', '', `${p.running} / ${p.containers.length} 运行${p.name.startsWith('junpanel-') ? ' · 面板应用' : ''}`));
+      [['启动', 'start'], ['停止', 'stop'], ['重启', 'restart']].forEach(([label, act]) => c.append(button(label, () => confirm(`${label}项目 ${p.name}`, '仅对现有非一次性容器逐个操作；中途失败时会停止并报告，已完成的操作不会回退。', () => mutation(`/projects/${encodeURIComponent(p.name)}/action`, { action: act }), act === 'stop'), 'quiet small')));
+      r.append(t, c); box.append(r);
+    });
+    n.append(box);
+  }
+  return n;
+}
+function stackProblems(list) { const n = note('未通过检查：', true), ul = el('ul', 'problem-list'); list.forEach(p => ul.append(el('li', '', p))); n.lastChild.append(ul); return n; }
+async function stackEditor(name) {
+  const current = name ? await api(`/stacks/${name}`) : null;
+  const title = field('编排名称', name || '', { max: 32, help: '2–32 位小写字母、数字或中划线，以字母开头，同时也是 Compose 的项目名。' });
+  if (name) title.input.disabled = true;
+  const src = field('docker-compose 文件', current ? current.source : stackSample, { area: true, rows: 18, required: false });
+  src.input.classList.add('code-editor'); src.input.spellcheck = false;
+  const result = el('div');
+  const save = deploy => mutation('/stacks', { name: title.val(), source: src.input.value, create: !name, deploy });
+  const form = formModal(name ? `编辑编排 ${name}` : '新建编排', [title, src], '保存并部署', () => save(true), { large: true, note: `相对路径指向 /srv/junpanel/stacks/${name || '<编排名>'}。保存前会用无权限的用户解析文件，再检查安全限制，部署的正是检查过的内容。` });
+  form.append(result);
+  const check = button('检查配置', async () => { const r = await api('/stacks/check', { name: title.val(), source: src.input.value }); result.replaceChildren(r.ok ? note(`检查通过：${r.services.join('、')}`) : stackProblems(r.problems)); }, 'secondary');
+  const onlySave = button('仅保存', async b => { b.disabled = true; try { await save(false); } finally { b.disabled = false; } }, 'secondary');
+  $('#modal-footer').prepend(check, onlySave);
+}
 const joinPath=(p,name)=>(p==='/'?'':p)+'/'+name;
 async function filesPage() {
   const path=state.filePath, data=await api(`/files?path=${encodeURIComponent(path)}`), rows=data.entries || data, n=el('div');
@@ -340,6 +401,109 @@ async function terminalPage() {
 }
 function jobTag(j) { return tag(({running:'进行中',success:'已完成',failed:'失败'})[j.state] || j.state,j.state==='success'?'ok':j.state==='failed'?'bad':'blue'); }
 async function jobsPage() { const rows=await api('/jobs'),n=el('div','jobs-list');action(button('刷新',render,'secondary','refresh'));n.append(note('记录保存在代理内存中，最多保留 80 项，重启后清空。任务输出有长度限制。'));if(!rows.length)n.append(empty('还没有任务日志'));rows.forEach(j=>{const r=el('div','resource-row'),left=el('div','resource-left'),text=el('div');text.append(el('strong','resource-name',j.title),el('small','muted',date(j.started)));left.append(el('span',`job-icon ${j.state}`,j.state==='success'?'✓':j.state==='failed'?'!':'↻'),text);r.append(left,ops(jobTag(j),button('查看输出',()=>showJob(j.id),'quiet small')));n.append(r);});const running=rows.filter(j=>j.state==='running').length;$('#job-badge').hidden=!running;$('#job-badge').textContent=running;return n; }
+async function networksPage() {
+  const rows = await api('/networks'), n = el('div'), t = table(['网络', '驱动', '子网', '容器', '操作']);
+  action(button('刷新', render, 'secondary', 'refresh'), button('创建网络', () => {
+    const name = field('网络名称', '', { max: 63, placeholder: 'app-net', help: '字母或数字开头，只含字母、数字、下划线、点和中划线。' });
+    const internal = field('外网访问', 'false', { select: [['false', '允许访问外网'], ['true', '仅内部通信（internal）']] });
+    formModal('创建网络', [name, internal], '创建', () => mutation('/networks', { name: name.val(), internal: internal.val() === 'true' }));
+  }, 'primary', 'plus'));
+  rows.forEach(w => {
+    const tags = el('div', 'tag-row');
+    if (w.builtin) tags.append(tag('内置'));
+    if (w.internal) tags.append(tag('仅内部', 'blue'));
+    if (w.project) tags.append(tag(w.project.startsWith('junpanel-') ? '面板应用' : `项目 ${w.project}`, 'blue'));
+    const name = titleCell(w.name, w.id.slice(0, 12), 'network'); name.lastChild.append(tags);
+    const remove = button('删除', () => confirm(`删除网络 ${w.name}`, '仍有容器（包括已停止的容器）连接的网络会拒绝删除，避免这些容器无法再启动。', () => mutation(`/networks/${encodeURIComponent(w.name)}`, undefined, 'DELETE'), true), 'quiet small');
+    remove.disabled = w.builtin || w.containers > 0;
+    if (remove.disabled) remove.title = w.builtin ? 'Docker 内置网络不能删除' : '仍有容器连接此网络';
+    cells(t.body, name, `${w.driver} · ${w.scope}`, (w.subnets || []).join('\n') || '—', w.containers, ops(remove));
+  });
+  n.append(rows.length ? t.n : empty('没有网络'), note('删除不会强制断开容器。编排中的网络随编排一起创建和删除。'));
+  return n;
+}
+async function volumesPage() {
+  const rows = await api('/volumes'), n = el('div'), t = table(['卷', '大小', '状态', '创建时间', '操作']);
+  action(button('刷新', render, 'secondary', 'refresh'), button('创建卷', () => {
+    const name = field('卷名称', '', { max: 64, placeholder: 'app-data', help: '字母或数字开头，只含字母、数字、下划线、点和中划线。' });
+    formModal('创建卷', [name], '创建', () => mutation('/volumes', { name: name.val() }));
+  }, 'primary', 'plus'));
+  rows.forEach(v => {
+    const tags = el('div', 'tag-row');
+    if (v.panel_app) tags.append(tag('面板应用', 'blue')); else if (v.project) tags.append(tag(`项目 ${v.project}`, 'blue'));
+    const name = titleCell(v.name, v.driver, 'database'); name.lastChild.append(tags);
+    const status = v.in_use === undefined ? tag('未知') : v.in_use ? tag(`使用中 · ${v.containers} 个容器`, 'ok') : tag('未使用');
+    const text = v.panel_app ? `${v.name} 属于面板应用，存放着应用数据。删除后数据无法恢复；如仍需要，请先在“备份”页备份该应用。` : `将删除卷 ${v.name} 中的全部数据，无法恢复。仍被容器（包括已停止的容器）使用的卷会拒绝删除。`;
+    const remove = button('删除', () => confirm(`删除卷 ${v.name}`, text, () => mutation(`/volumes/${encodeURIComponent(v.name)}`, undefined, 'DELETE'), true), 'quiet small');
+    if (v.in_use) { remove.disabled = true; remove.title = '仍有容器使用此卷'; }
+    cells(t.body, name, v.size === undefined || v.size < 0 ? '—' : bytes(v.size), status, v.created ? date(v.created) : '—', ops(remove));
+  });
+  n.append(rows.length ? t.n : empty('没有数据卷'), note('删除卷不可恢复，面板不会强制删除仍被使用的卷。大小来自 Docker 的统计，可能有延迟。'));
+  return n;
+}
+async function auditRows(kind, headers, row) {
+  const rows = await api(`/audit?kind=${kind}`), n = el('div'), t = table(headers);
+  action(button('刷新', render, 'secondary', 'refresh'));
+  rows.forEach(e => cells(t.body, ...row(e)));
+  n.append(rows.length ? t.n : empty('还没有记录'), note('日志保存在网页服务的数据目录，超过 2 MB 时轮换一次，最多显示最近 500 条。只记录操作对象，不记录密码、SQL、文件内容或编排内容。'));
+  return n;
+}
+const auditResultTag = e => tag(e.result === 'ok' ? '成功' : '失败', e.result === 'ok' ? 'ok' : 'bad');
+function auditPage() { return auditRows('operation', ['时间', '操作', '对象', '来源 IP', '结果'], e => [date(e.time), titleCell(e.action, `${e.method} ${e.path}`, 'activity'), e.detail || '—', el('code', '', e.ip), auditResultTag(e)]); }
+function loginsPage() { return auditRows('login', ['时间', '事件', '来源 IP', '结果'], e => [date(e.time), e.action, el('code', '', e.ip), auditResultTag(e)]); }
+async function accessPage() {
+  const data = await api('/access'), n = el('div', 'security-grid'), here = location.hostname;
+  action(button('刷新', render, 'secondary', 'refresh'));
+  const current = panel('公网入口', data.running ? tag('调整中', 'blue') : tag(data.entries.length ? `${data.entries.length} 个入口` : '未开放', data.entries.length ? 'ok' : ''));
+  if (!data.managed && !data.entries.length) current.append(el('p', 'muted', '还没有通过面板或安装脚本开放公网入口，目前只能通过 SSH 隧道访问。'));
+  data.entries.forEach(e => {
+    const r = el('div', 'resource-row'), left = el('div', 'resource-left'), text = el('div');
+    text.append(el('strong', 'resource-name', e.address), el('small', 'muted', e.kind === 'domain' ? '域名 · 自动申请正式证书' : 'IP · 自签名证书，浏览器会提示不安全'));
+    left.append(icon(e.kind === 'domain' ? 'globe' : 'network'), text);
+    const right = el('div', 'table-ops'); if (e.address === here) right.append(tag('当前正在使用', 'blue'));
+    right.append(link(`https://${e.address}`, '打开 ↗'));
+    r.append(left, right); current.append(r);
+  });
+  const domain = data.entries.find(e => e.kind === 'domain'), ip = data.entries.find(e => e.kind === 'ip'), busy = data.running || !data.supported;
+  const controls = el('div', 'security-actions');
+  controls.append(button('设置入口', () => accessForm(data), 'primary', 'globe'));
+  if (domain && ip) {
+    controls.append(button('移除域名入口', () => accessChange({ action: 'remove-domain' }, `将只保留 IP 入口 ${ip.address}。`, domain.address === here), 'secondary'));
+    controls.append(button('移除 IP 入口', () => accessChange({ action: 'remove-ip' }, `将只保留域名入口 ${domain.address}。`, ip.address === here), 'secondary'));
+  }
+  if (data.entries.length) controls.append(button('关闭公网入口', () => accessChange({ action: 'disable' }, '关闭后只能通过 SSH 隧道访问面板。', location.protocol === 'https:'), 'quiet danger-text'));
+  $$('button', controls).forEach(b => b.disabled = busy);
+  current.append(controls);
+  if (!data.supported) current.append(note('此服务器没有 systemd-run，无法在面板中调整入口；请通过 SSH 运行 public-access.sh。', true));
+  else if (!data.managed && data.entries.length === 0) current.append(note('设置入口会修改 Caddy 配置并检查后重载；失败时自动恢复原配置。'));
+  const help = panel('说明');
+  [['域名', '先把域名的 A 记录指向访问者实际连接的服务器 IP（使用中转线路时指向线路机），面板会在应用前检查解析，并由 Caddy 自动申请证书。'], ['IP', '只能是本机可直接到达的公网 IPv4，使用自签名证书。'], ['同时使用', '可以同时保留一个域名和一个 IP；“只保留新填写的入口”会移除其它入口。'], ['安全', '每次修改都需要再次输入密码，并记录在操作日志中。修改正在使用的入口后，需要用新地址重新打开面板。']].forEach(([title, text]) => { const r = el('div', 'security-list'); r.append(el('strong', '', title), el('p', 'muted', text)); help.append(r); });
+  n.append(current, help);
+  return n;
+}
+function accessForm(data) {
+  const domain = data.entries.find(e => e.kind === 'domain'), ip = data.entries.find(e => e.kind === 'ip');
+  const d = field('域名', domain ? domain.address : '', { required: false, max: 253, placeholder: 'panel.example.com', help: '不带 https:// 和端口；留空表示不修改域名入口。' });
+  const i = field('公网 IPv4', ip ? ip.address : '', { required: false, max: 15, placeholder: '203.0.113.5', help: '留空表示不修改 IP 入口。' });
+  const keep = field('其它入口', 'keep', { select: [['keep', '保留其它入口'], ['only', '只保留新填写的入口']] });
+  const dns = field('域名解析检查', 'check', { select: [['check', '应用前检查解析到本机'], ['skip', '跳过检查（使用中转线路或 CDN 时）']] });
+  formModal('设置公网入口', [d, i, keep, dns], '下一步', () => {
+    const req = { action: 'set', domain: d.val().trim(), ip: i.val().trim(), only: keep.val() === 'only', skip_dns: dns.val() === 'skip' };
+    if (!req.domain && !req.ip) throw new Error('请填写域名或 IP');
+    const changed = data.entries.some(e => e.address === location.hostname && e.address !== req.domain && e.address !== req.ip && (req.only || (e.kind === 'domain' ? req.domain : req.ip)));
+    accessChange(req, `将设置：${[req.domain, req.ip].filter(Boolean).join('、')}${req.only ? '，并移除其它入口' : ''}。`, changed);
+  });
+}
+function accessChange(req, summary, affectsHere) {
+  const password = field('当前面板密码', '', { type: 'password', max: 256 }), otp = field('6 位动态码', '', { required: state.totp, max: 6 });
+  otp.n.hidden = !state.totp;
+  const text = `${summary}${affectsHere ? '\n当前浏览器使用的入口会失效，完成后请用新的地址重新打开面板。' : ''}`;
+  formModal('确认修改公网入口', [password, otp], '确认修改', async () => {
+    if (state.demo) throw new Error('演示模式不执行服务器变更');
+    const job = await api('/access', { ...req, password: password.input.value, otp: otp.val() });
+    password.input.value = ''; closeModal(); toast('任务已开始'); showJob(job.id);
+  }, { note: text, warning: affectsHere, danger: affectsHere });
+}
 async function showJob(id) { const n=el('div'),status=el('div','log-toolbar'),out=el('pre','log-view','正在读取任务…');n.append(status,out);openModal('任务详情',n,[button('关闭',closeModal)],true);const load=async()=>{const rows=await api('/jobs'),j=rows.find(j=>j.id===id);if(!j){out.textContent='任务已不在当前记录中，可能因服务重启或记录轮换被清除。';clearInterval(modalTimer);return;}$('#modal-title').textContent=j.title;status.replaceChildren(jobTag(j),el('span','muted',`${date(j.started)}${j.ended?' → '+date(j.ended):''}`));out.textContent=[j.output,j.error].filter(Boolean).join('\n\n') || (j.state==='running'?'任务正在执行…':'操作已完成。');out.scrollTop=out.scrollHeight;if(j.state!=='running'){clearInterval(modalTimer);modalTimer=null;}};try{await load();if(!modalTimer && status.textContent.includes('进行中'))modalTimer=setInterval(()=>load().catch(e=>{out.textContent=e.message;}),2000);}catch(e){out.textContent=e.message;} }
 async function securityPage() {
   const session=await api('/session');state.totp=session.totp;const n=el('div','security-grid'),account=panel('管理员账号',tag('单管理员','blue'));account.append(line('账号',state.user),line('会话有效期','闲置 30 分钟 / 最长 8 小时'),line('两步验证',state.totp?'已开启':'未开启'));const actions=el('div','security-actions');actions.append(button('修改密码',passwordForm,'secondary','lock'),button(state.totp?'关闭两步验证':'启用两步验证',totpForm,'primary','shield'));account.append(actions);
@@ -387,7 +551,7 @@ async function backupsPage() {
     const what = el('div'), download = link(`/api/backups/${b.id}/download`, '下载'), buttons = [download];
     what.append(el('strong', '', b.name), el('small', 'muted', b.type === 'database' ? `${b.target} / ${b.database}` : b.target));
     download.removeAttribute('target');
-    if (b.type !== 'database') buttons.push(button('恢复', () => restoreBackup(b), 'quiet small'));
+    buttons.push(button('恢复', () => b.type === 'database' ? restoreDatabaseBackup(b) : restoreBackup(b), 'quiet small'));
     buttons.push(button('删除', () => confirm('删除备份', '将永久删除这份备份文件，无法恢复。', () => mutation(`/backups/${b.id}`, undefined, 'DELETE'), true), 'quiet small'));
     cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), b.note || '手动备份', ops(...buttons));
   });
@@ -395,8 +559,8 @@ async function backupsPage() {
   return n;
 }
 async function newBackup() {
-  const [sites, apps, databases] = await Promise.all([api('/sites'), api('/apps'), api('/databases')]);
-  const supported = ['wordpress', 'gitea', 'kuma', 'postgres', 'mysql', 'redis'];
+  const [sites, apps, databases, catalog] = await Promise.all([api('/sites'), api('/apps'), api('/databases'), api('/catalog')]);
+  const supported = catalog.filter(t => t.backup).map(t => t.key);
   const options = {
     site: sites.sites.filter(s => s.kind === 'static').map(s => [s.id, `${s.name}（${s.domains[0]}）`]),
     app: apps.filter(a => !a.removed && supported.includes(a.template)).map(a => [a.id, a.name]),
@@ -424,6 +588,10 @@ function restoreBackup(b) {
     : '该应用会先停止，其数据卷将被清空并替换为备份时的数据，再重新启动；备份之后写入的数据会丢失。仅适用于同一台服务器上的同一个应用。';
   confirm('恢复备份', `${what}开始前会自动创建一份“恢复前备份”，恢复失败时可用它回滚。`, () => mutation(`/backups/${b.id}/restore`, { confirm: true }), true);
 }
+function restoreDatabaseBackup(b) {
+  const target = field('恢复到数据库', b.database, { max: 63, help: '默认恢复到原数据库。填写一个新名称，可以先恢复成副本核对，原数据库不受影响。' });
+  formModal('恢复数据库备份', [target], '开始恢复', () => mutation(`/backups/${b.id}/restore`, { confirm: true, database: target.val() }), { danger: true, warning: true, note: `来源：${b.name} / ${b.database}，${date(b.created)}。目标数据库会先删除再重建，备份之后写入的数据会丢失；目标已存在时，会先自动做一份“恢复前备份”，恢复失败可以用它回滚。` });
+}
 const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 function frequencyText(s) {
   if (s.every === 'daily') return `每天 ${s.at}`;
@@ -437,7 +605,8 @@ function scheduleWhat(s, apps, sites, databases) {
   return [label, (names[s.type] || s.target) + (s.type === 'database' ? ` / ${s.database}` : '') + `，保留 ${s.keep} 份`];
 }
 async function schedulesPage() {
-  const [data, sites, apps, databases] = await Promise.all([api('/schedules'), api('/sites'), api('/apps'), api('/databases')]), rows = data.schedules, n = el('div');
+  const [data, sites, apps, databases, catalog] = await Promise.all([api('/schedules'), api('/sites'), api('/apps'), api('/databases'), api('/catalog')]), rows = data.schedules, n = el('div');
+  state.catalog = catalog;
   const siteRows = sites.sites;
   action(button('刷新', render, 'secondary', 'refresh'), button('新建计划任务', () => scheduleForm(null, data, siteRows, apps, databases), 'primary', 'plus'));
   n.append(note(`时间按服务器本地时区（${data.zone}）计算。到点时若面板在停机，开机后会补跑一次；应用正忙时会每 10 分钟重试，最多 3 次。定时备份会短暂停止应用。计划任务只支持备份和重启应用，不能执行任意命令。`));
@@ -461,7 +630,7 @@ async function schedulesPage() {
   return n;
 }
 function scheduleForm(current, data, sites, apps, databases) {
-  const supported = ['wordpress', 'gitea', 'kuma', 'postgres', 'mysql', 'redis'];
+  const supported = state.catalog.filter(t => t.backup).map(t => t.key);
   const live = apps.filter(a => !a.removed);
   const targets = {
     site: sites.filter(s => s.kind === 'static').map(s => [s.id, `${s.name}（${s.domains[0]}）`]),
