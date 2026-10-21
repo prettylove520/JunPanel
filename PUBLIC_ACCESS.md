@@ -1,4 +1,43 @@
-# 使用服务器 IP 直接访问 JunPanel
+# 公网访问 JunPanel：服务器 IP 或你自己的域名
+
+面板有两种公网入口，二选一，由同一个脚本管理：
+
+- **服务器 IP**：新版在线安装器自动配置，见下文。
+- **你自己的域名**：见下一节。配置域名后，原来的 IP 入口会停用，只能通过域名访问。
+
+## 用域名访问
+
+先做三件事：
+
+1. 在域名服务商处添加一条 **A 记录**，把你要用的名字（例如 `panel.example.com`）指向这台服务器的公网 IPv4。
+2. 确认服务器的 80 和 443 端口对外开放（用 IP 能打开面板，说明已经开放）。
+3. 如果域名在 Cloudflare 等服务上，先把这条记录设为“仅 DNS”（灰色云朵），不要开代理；证书由服务器上的 Caddy 向 Let's Encrypt 申请，需要请求直接到达服务器。
+
+然后在服务器的 SSH 窗口执行（把域名换成你的）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --domain panel.example.com
+```
+
+脚本会：
+
+- 先检查域名格式，并**在改动任何配置之前**检查它是否已经解析到这台服务器、有没有被 Caddy 里的其它站点占用（包括面板“网站”页创建的站点）。任何一项不满足都会直接停下，原有入口保持不变。
+- 写入域名入口，由 Caddy 自动申请并续期证书；校验整份配置后才重载，失败会自动还原。
+- 检查本机 Caddy 上这个域名的证书与面板响应，通过后显示登录链接。**配置域名后原来的 IP 入口即停用**；证书还没签发好时显示“准备中”，此时 IP 入口已经关闭，可以稍等后查看日志，或重新执行本脚本并传入服务器 IP 改回去。
+
+之后重新执行一键安装命令不会改回 IP 入口，会沿用已配置的域名。想改回 IP 入口，用下面的“更改”命令。
+
+```bash
+# 改回服务器 IP 入口（自动识别 IP，或写明 IP）
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- 服务器公网IPv4
+# 换成另一个域名：重新执行 --domain 命令即可
+```
+
+域名要求：小写字母、数字和连字符组成，至少两段（`panel.example.com`），不带 `https://` 和端口；中文域名请先转换为 Punycode（`xn--…`）；`example.com`、`.local`、`.test` 等保留名称无法签发证书，会被拒绝。如果域名还有 AAAA（IPv6）记录，请确认服务器的 IPv6 也能到达 Caddy，否则证书机构可能通过 IPv6 验证失败。服务器在 NAT 之后、解析与服务器本机地址不一致时，确认无误后可设置 `JUNPANEL_SKIP_DNS_CHECK=1` 跳过解析比对。
+
+域名入口使用与 IP 入口相同的保护：Caddy 先拒绝来源不匹配或缺失的写请求和 WebSocket，再改写为本机请求；登录 Cookie 带 Secure。常规 Let's Encrypt 证书不要求 Caddy 2.10；IP 入口的短期证书才需要。
+
+## 使用服务器 IP 直接访问
 
 新版在线安装器已自动识别 IP、配置 HTTPS，并在最后显示账号、密码和登录链接。正常安装不需要再执行本文的入口配置命令。
 
@@ -28,7 +67,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 - 已安装并运行 JunPanel；本机 `/api/meta` 能正常响应。
 - 使用现有标准 systemd Caddy 服务，Caddy 版本至少 2.10.1。可用 `caddy version` 查看版本。脚本不安装或替换 Caddy。
-- IP 必须是此服务器拥有的公网 IPv4。当前脚本不处理 IPv6 或域名。
+- IP 入口：IP 必须是此服务器拥有的公网 IPv4，不处理 IPv6；域名入口见上一节。
 - 公网 80/443 必须能到达现有 Caddy；脚本不添加防火墙规则。若 IP 的 HTTPS 地址已有其它网站，先检查地址冲突。
 - IP 证书使用 Let's Encrypt `shortlived` 配置，由 Caddy 自动续签。签发依赖外部网络和 CA；“Caddy 已重载”不等于证书已签发。
 
@@ -52,7 +91,7 @@ IP 浏览器连接通常不发送 SNI；本机测试已复现没有默认名称�
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --disable
 ```
 
-重新运行带 IP 的命令可更改直连 IP；不传 IP 时优先沿用已配置的公网入口。更改面板后端端口后，也需重新运行入口配置。卸载面板前建议先关闭公网入口。
+重新运行带 IP 的命令可更改直连 IP（也会把域名入口改回 IP 入口）；不传地址时优先沿用已配置的公网入口，无论它是 IP 还是域名。更改面板后端端口后，也需重新运行入口配置。卸载面板前建议先关闭公网入口。
 
 证书尚未就绪、入口无法打开时，在服务器查看：
 
