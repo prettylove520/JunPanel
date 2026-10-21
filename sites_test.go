@@ -249,6 +249,10 @@ func siteOptionsInCaddy(t *testing.T, bin string) {
 	check("blocked even with the password", "both.test", "/", "team", "correct horse battery", "", 403, nil)
 	check("compression on", "gzip.test", "/", "", "", "gzip", 200, func(r *http.Response, _ string) bool { return r.Header.Get("Content-Encoding") == "gzip" })
 	check("compression off", "plain.test", "/", "", "", "gzip", 200, func(r *http.Response, _ string) bool { return r.Header.Get("Content-Encoding") == "" })
-	check("redirect keeps the path", "keep.test", "/a/b?x=1", "", "", "", 301, func(r *http.Response, _ string) bool { return r.Header.Get("Location") == "https://new.example.com/a/b?x=1" })
-	check("redirect to a fixed page", "fixed.test", "/a/b", "", "", "", 302, func(r *http.Response, _ string) bool { return r.Header.Get("Location") == "https://new.example.com/landing" })
+	check("redirect keeps the path", "keep.test", "/a/b?x=1", "", "", "", 301, func(r *http.Response, _ string) bool {
+		return r.Header.Get("Location") == "https://new.example.com/a/b?x=1"
+	})
+	check("redirect to a fixed page", "fixed.test", "/a/b", "", "", "", 302, func(r *http.Response, _ string) bool {
+		return r.Header.Get("Location") == "https://new.example.com/landing"
+	})
 }
