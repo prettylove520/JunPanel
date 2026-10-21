@@ -60,16 +60,25 @@ domain_in_use() {
 }
 # The access address already configured: a public IPv4 or a domain name.
 configured_address() { configured_address_from /etc/caddy/junpanel.d/panel-access.caddy; }
-configured_address_from() {
+# Every address the file serves, one per line: "domain NAME" or "ip ADDRESS".
+configured_entries_from() {
   local file="$1" line='' candidate=''
   [[ -f "$file" && ! -L "$file" ]] || return 1
   while IFS= read -r line; do
     if [[ "$line" =~ ^https://([0-9a-z.-]+)[[:space:]]\{ ]]; then
       candidate="${BASH_REMATCH[1]}"
-      if public_ip "$candidate" || valid_domain "$candidate"; then printf '%s\n' "$candidate"; return; fi
+      if public_ip "$candidate"; then printf 'ip %s\n' "$candidate"
+      elif valid_domain "$candidate"; then printf 'domain %s\n' "$candidate"; fi
     fi
   done < "$file"
-  return 1
+  return 0
+}
+# The first address of the file: the domain when there is one, otherwise the IP.
+configured_address_from() {
+  local kind='' value=''
+  read -r kind value < <(configured_entries_from "$1" || true)
+  [[ -n "$value" ]] || return 1
+  printf '%s\n' "$value"
 }
 detect_ip() {
   if [[ -n "${JUNPANEL_PUBLIC_IP:-}" ]]; then
@@ -136,7 +145,8 @@ rewrite_root() {
     }
   ' "$file"
 }
-render() {
+PUBLIC_HEADER='# JunPanel public HTTPS access - managed by public-access.sh'
+render_block() {
   local host="$1" port="$2" tls=''
   if public_ip "$host" || ! valid_domain "$host"; then
     tls='    tls {
@@ -148,7 +158,6 @@ render() {
 '
   fi
   cat <<CADDY
-# JunPanel public HTTPS access - managed by public-access.sh
 https://$host {
 ${tls}    route {
         @foreign_origin {
@@ -176,84 +185,165 @@ ${tls}    route {
 }
 CADDY
 }
+render() { printf '%s\n' "$PUBLIC_HEADER"; render_block "$1" "$2"; }
+# The managed file holds up to two entries: a domain and a public IP. The domain comes first.
+render_all() {
+  local domain="$1" ip="$2" port="$3"
+  printf '%s\n' "$PUBLIC_HEADER"
+  if [[ -n "$domain" ]]; then render_block "$domain" "$port"; fi
+  if [[ -n "$domain" && -n "$ip" ]]; then printf '\n'; fi
+  if [[ -n "$ip" ]]; then render_block "$ip" "$port"; fi
+}
+# Which entries exist after this run. Naming a domain or an IP adds or replaces that one and
+# keeps the other; --only drops the other; removing and disabling are explicit. Prints
+# "<ip> <domain>", with - for none.
+plan_entries() {
+  local cmd="$1" only="$2" cur_ip="$3" cur_domain="$4" want_ip="$5" want_domain="$6"
+  local new_ip="$cur_ip" new_domain="$cur_domain"
+  case "$cmd" in
+    disable) new_ip=''; new_domain='';;
+    remove-domain) new_domain='';;
+    remove-ip) new_ip='';;
+    set)
+      [[ -z "$want_ip" ]] || new_ip="$want_ip"
+      [[ -z "$want_domain" ]] || new_domain="$want_domain"
+      if [[ "$only" == 1 ]]; then
+        if [[ -n "$want_domain" && -z "$want_ip" ]]; then new_ip=''; fi
+        if [[ -n "$want_ip" && -z "$want_domain" ]]; then new_domain=''; fi
+      fi;;
+  esac
+  printf '%s %s\n' "${new_ip:--}" "${new_domain:--}"
+}
+# Wait for this machine's Caddy to answer for a host over HTTPS with a valid certificate.
+entry_ready() {
+  local host="$1" tries=12 pause=1 attempt response=''
+  local -a resolve=()
+  # For a domain, ask this machine's Caddy directly, so the check does not depend on DNS caching
+  # or on reaching our own public address from inside.
+  if ! public_ip "$host"; then tries=30; pause=2; resolve=(--resolve "$host:443:127.0.0.1"); fi
+  for ((attempt = 1; attempt <= tries; attempt++)); do
+    if response="$(curl --noproxy '*' "${resolve[@]}" --fail --silent --show-error --connect-timeout 3 --max-time 4 "https://$host/api/meta" 2>/dev/null)" && [[ "$response" == *'"version":'* ]]; then return 0; fi
+    ((attempt == tries)) || sleep "$pause"
+  done
+  return 1
+}
 main() (
   set -Eeuo pipefail
   umask 027
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  local mode="${1:-}" ip='' port=8787 kind=ip want=any
+  local cmd=set only=0 domain_arg='' addr_arg='' port=8787 host='' kind='' value=''
+  local cur_ip='' cur_domain='' want_ip='' want_domain='' new_ip='' new_domain=''
+  local target=/etc/caddy/junpanel.d/panel-access.caddy
   die() { printf '\n[JunPanel] %s\n' "$*" >&2; exit 1; }
-  # --domain NAME only accepts a domain; a bare argument may be either an IP or a domain.
-  if [[ "$mode" == --domain ]]; then want=domain; mode="${2:-}"; [[ -n "$mode" ]] || die '用法：public-access.sh --domain 你的域名，例如 panel.example.com'; fi
-  [[ "$mode" == -* ]] || { mode="${mode,,}"; mode="${mode%.}"; }
-  if [[ "$mode" == --detect ]]; then
+  case "${1:-}" in --detect|--print|--disable|--remove-domain|--remove-ip) cmd="${1#--}"; shift;; esac
+  if [[ "$cmd" == detect ]]; then
     detect_ip || die '未检测到唯一可用的公网 IPv4；可设置 JUNPANEL_PUBLIC_IP，或显式传入服务器公网 IPv4。'
     exit
   fi
-  if [[ "$mode" == --print ]]; then
-    ip="${2:-}"; port="${3:-8787}"; ip="${ip,,}"
-    valid_ip "$ip" || valid_domain "$ip" || die '请输入规范的 IPv4 地址或域名。'
+  if [[ "$cmd" == print ]]; then
+    host="${1:-}"; port="${2:-8787}"; host="${host,,}"
+    valid_ip "$host" || valid_domain "$host" || die '请输入规范的 IPv4 地址或域名。'
     [[ "$port" =~ ^[0-9]{4,5}$ ]] && ((10#$port >= 1024 && 10#$port <= 65535)) || die '端口需在 1024–65535。'
-    render "$ip" "$((10#$port))"
+    render "$host" "$((10#$port))"
     exit
   fi
+  # A domain and a public IP can each be named once: --domain NAME and/or a bare address.
+  while (($#)); do
+    case "$1" in
+      --domain) shift; [[ -n "${1:-}" ]] || die '用法：public-access.sh --domain 你的域名，例如 panel.example.com'; domain_arg="${1,,}"; domain_arg="${domain_arg%.}";;
+      --only) only=1;;
+      -*) die "未知选项：$1";;
+      *) [[ -z "$addr_arg" ]] || die '一次只能写一个地址（IP 或域名）；同时配置两种请写成：--domain 你的域名 服务器IP'; addr_arg="${1,,}"; addr_arg="${addr_arg%.}";;
+    esac
+    shift
+  done
+  [[ "$cmd" == set || -z "$domain_arg$addr_arg" ]] || die "--${cmd} 不需要再指定地址。"
   [[ $EUID -eq 0 ]] || die '请使用 sudo bash public-access.sh，或以 root 执行。'
-  if [[ "$mode" != --disable ]]; then
-    if [[ -n "$mode" ]]; then ip="$mode"; else ip="$(detect_ip)" || die '未能自动识别公网 IPv4，请显式传入服务器公网 IPv4，或用 --domain 指定域名。'; fi
-    if valid_domain "$ip"; then
-      kind=domain
-      reserved_domain "$ip" && die "$ip 是保留或示例域名，公共证书机构不会为它签发证书，请使用你自己的域名。"
-    else
-      [[ "$want" == any ]] || die "“$ip”不是有效的域名。请填写小写字母、数字和连字符组成的域名，例如 panel.example.com；中文域名请先转换为 Punycode，不要带 https:// 或端口。"
-      valid_ip "$ip" || die "“$ip”既不是公网 IPv4，也不是有效的域名。"
-      public_ip "$ip" || die '需要服务器真实的公网 IPv4，不能使用内网、回环或文档示例地址。'
-    fi
-    if [[ "$kind" == domain ]]; then printf '[JunPanel] 管理入口域名：%s\n' "$ip"; else printf '[JunPanel] 已识别管理入口 IP：%s\n' "$ip"; fi
+  if [[ -n "$domain_arg" ]]; then
+    valid_domain "$domain_arg" || die "“$domain_arg”不是有效的域名。请填写小写字母、数字和连字符组成的域名，例如 panel.example.com；中文域名请先转换为 Punycode，不要带 https:// 或端口。"
+    want_domain="$domain_arg"
   fi
+  if [[ -n "$addr_arg" ]]; then
+    if valid_domain "$addr_arg"; then
+      [[ -z "$want_domain" || "$want_domain" == "$addr_arg" ]] || die '一次只能指定一个域名。'
+      want_domain="$addr_arg"
+    else
+      valid_ip "$addr_arg" || die "“$addr_arg”既不是公网 IPv4，也不是有效的域名。"
+      public_ip "$addr_arg" || die '需要服务器真实的公网 IPv4，不能使用内网、回环或文档示例地址。'
+      want_ip="$addr_arg"
+    fi
+  fi
+  if [[ -n "$want_domain" ]] && reserved_domain "$want_domain"; then die "$want_domain 是保留或示例域名，公共证书机构不会为它签发证书，请使用你自己的域名。"; fi
   for command in systemctl runuser mktemp chmod grep cp mv rm dpkg awk cmp; do command -v "$command" >/dev/null || die "缺少系统工具：$command"; done
   [[ -f /opt/junpanel/.junpanel-install && ! -L /opt/junpanel && -f /opt/junpanel/port && ! -L /opt/junpanel/port ]] || die '请先完成 JunPanel 安装。'
   [[ -d /etc/caddy/junpanel.d && ! -L /etc/caddy/junpanel.d && -f /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]] || die 'Caddy 配置目录异常。'
   grep -Fxq 'import /etc/caddy/junpanel.d/*.caddy' /etc/caddy/Caddyfile || die '主 Caddyfile 缺少 JunPanel import，请先完成安装。'
   [[ -x /usr/bin/caddy ]] || die '未找到 /usr/bin/caddy。'
   systemctl is-active --quiet caddy.service || die 'Caddy 服务未运行。'
-  local target=/etc/caddy/junpanel.d/panel-access.caddy backup='' temp='' changed=0 had_previous=0
+  local backup='' temp='' changed=0 had_previous=0
   local root_backup='' root_temp='' root_action=enable
   [[ ! -L "$target" ]] || die '入口配置是符号链接，拒绝覆盖。'
   if [[ -e "$target" ]]; then
-    [[ -f "$target" ]] && grep -Fxq '# JunPanel public HTTPS access - managed by public-access.sh' "$target" || die '同名配置不属于 JunPanel，拒绝覆盖。'
+    [[ -f "$target" ]] && grep -Fxq "$PUBLIC_HEADER" "$target" || die '同名配置不属于 JunPanel，拒绝覆盖。'
     had_previous=1
+    while read -r kind value; do
+      case "$kind" in ip) cur_ip="$value";; domain) cur_domain="$value";; esac
+    done < <(configured_entries_from "$target" || true)
   fi
-  if [[ "$mode" != --disable ]]; then
+  if [[ "$cmd" == set && -z "$want_ip$want_domain" ]]; then
+    # Nothing named: keep what is configured (the installer re-runs this way), or detect this
+    # server's own IP for a first setup. An explicit JUNPANEL_PUBLIC_IP always wins.
+    if [[ -n "${JUNPANEL_PUBLIC_IP:-}" || -z "$cur_ip$cur_domain" ]]; then
+      want_ip="$(detect_ip)" || die '未能自动识别公网 IPv4，请显式传入服务器公网 IPv4，或用 --domain 指定域名。'
+      printf '[JunPanel] 已识别管理入口 IP：%s\n' "$want_ip"
+    fi
+  fi
+  read -r new_ip new_domain < <(plan_entries "$cmd" "$only" "$cur_ip" "$cur_domain" "$want_ip" "$want_domain")
+  [[ "$new_ip" != - ]] || new_ip=''
+  [[ "$new_domain" != - ]] || new_domain=''
+  if [[ "$cmd" != set && -z "$new_ip$new_domain" && -z "$cur_ip$cur_domain" ]] && ! grep -Eq '^[[:space:]]*default_sni[[:space:]].*# JunPanel IP TLS default[[:space:]]*$' /etc/caddy/Caddyfile; then
+    printf '[JunPanel] 未配置公网直连，无需更改。\n'; exit
+  fi
+  if [[ "$cmd" == remove-domain && -z "$cur_domain" ]]; then printf '[JunPanel] 没有配置域名入口，无需更改。\n'; exit; fi
+  if [[ "$cmd" == remove-ip && -z "$cur_ip" ]]; then printf '[JunPanel] 没有配置 IP 入口，无需更改。\n'; exit; fi
+  if [[ -n "$new_ip$new_domain" ]]; then
     command -v curl >/dev/null || die '缺少 curl。'
-    local caddy_version
-    caddy_version="$(/usr/bin/caddy version)"; caddy_version="${caddy_version%% *}"; caddy_version="${caddy_version#v}"
-    if [[ "$kind" == ip ]]; then dpkg --compare-versions "$caddy_version" ge 2.10.1 || die 'IP 公信证书需要 Caddy 2.10.1 或更新版本；此脚本不会替换现有 Caddy。'; fi
-    systemctl is-active --quiet junpanel-web.service || die 'JunPanel 网页服务未运行，请先检查安装结果。'
     read -r port < /opt/junpanel/port
     [[ "$port" =~ ^[0-9]{4,5}$ ]] && ((10#$port >= 1024 && 10#$port <= 65535)) || die '已保存的面板端口无效。'
     port=$((10#$port))
+  fi
+  if [[ "$cmd" == set ]]; then
+    systemctl is-active --quiet junpanel-web.service || die 'JunPanel 网页服务未运行，请先检查安装结果。'
     curl --noproxy '*' --fail --silent --show-error --max-time 5 "http://127.0.0.1:$port/api/meta" >/dev/null || die '本机面板尚未就绪。'
-    if [[ "$kind" == domain ]]; then
+    if [[ -n "$want_ip" && "$want_ip" != "$cur_ip" ]]; then
+      local caddy_version
+      caddy_version="$(/usr/bin/caddy version)"; caddy_version="${caddy_version%% *}"; caddy_version="${caddy_version#v}"
+      dpkg --compare-versions "$caddy_version" ge 2.10.1 || die 'IP 公信证书需要 Caddy 2.10.1 或更新版本；此脚本不会替换现有 Caddy。'
+    fi
+    # A domain that is already the panel's own entry is left alone: re-running the installer must
+    # not start failing a DNS check behind a relay. Only a new or changed domain is checked.
+    if [[ -n "$want_domain" && "$want_domain" != "$cur_domain" ]]; then
       local used='' fragment=''
       local -a others=()
       for fragment in /etc/caddy/junpanel.d/*.caddy; do [[ "$fragment" == "$target" ]] || others+=("$fragment"); done
-      used="$(domain_in_use "$ip" /etc/caddy/Caddyfile "${others[@]}")" && die "域名 $ip 已经在 $used 中配置为另一个站点，不能再作为面板入口。请换一个域名（例如它的子域名），或先把那个站点移除。未做任何更改。"
-    fi
-    if [[ "$kind" == domain && "${JUNPANEL_SKIP_DNS_CHECK:-}" != 1 ]]; then
-      # Check DNS before touching anything: switching to a domain that does not point here would
-      # remove the working IP entry and leave no public way in until it is fixed.
-      local resolved='' server='' v6=''
-      resolved="$(getent ahostsv4 "$ip" 2>/dev/null | awk '{print $1}' | sort -u)" || resolved=''
-      [[ -n "$resolved" ]] || die "域名 $ip 还没有解析到任何 IPv4 地址。请先在域名服务商处添加一条 A 记录指向这台服务器，等待生效后重试（可用 getent hosts $ip 查看）。未做任何更改。"
-      if server="$(detect_server_ip)"; then
-        grep -Fxq -- "$server" <<< "$resolved" || die "域名 $ip 当前解析到 $(tr '\n' ' ' <<< "$resolved" | sed 's/ $//')，不是这台服务器的 $server。请把 A 记录改为 $server 并等待生效；如果使用了 Cloudflare 等代理，请先改为“仅 DNS”。未做任何更改。若确认解析无误（例如服务器在 NAT 之后），可设置 JUNPANEL_SKIP_DNS_CHECK=1 后重试。"
-      else
-        printf '[JunPanel] 无法确认这台服务器的公网 IP，已跳过解析比对；域名解析到：%s\n' "$(tr '\n' ' ' <<< "$resolved" | sed 's/ $//')"
+      used="$(domain_in_use "$want_domain" /etc/caddy/Caddyfile "${others[@]}")" && die "域名 $want_domain 已经在 $used 中配置为另一个站点，不能再作为面板入口。请换一个域名（例如它的子域名），或先把那个站点移除。未做任何更改。"
+      printf '[JunPanel] 管理入口域名：%s\n' "$want_domain"
+      if [[ "${JUNPANEL_SKIP_DNS_CHECK:-}" != 1 ]]; then
+        # Check DNS before touching anything: a domain that does not point here would otherwise
+        # be configured and fail to get a certificate.
+        local resolved='' server='' v6=''
+        resolved="$(getent ahostsv4 "$want_domain" 2>/dev/null | awk '{print $1}' | sort -u)" || resolved=''
+        [[ -n "$resolved" ]] || die "域名 $want_domain 还没有解析到任何 IPv4 地址。请先在域名服务商处添加一条 A 记录指向这台服务器，等待生效后重试（可用 getent hosts $want_domain 查看）。未做任何更改。"
+        if server="$(detect_server_ip)"; then
+          grep -Fxq -- "$server" <<< "$resolved" || die "域名 $want_domain 当前解析到 $(tr '\n' ' ' <<< "$resolved" | sed 's/ $//')，不是这台服务器的 $server。请把 A 记录改为 $server 并等待生效；如果使用了 Cloudflare 等代理，请先改为“仅 DNS”。未做任何更改。若确认解析无误（例如经过线路机转发，或服务器在 NAT 之后），可设置 JUNPANEL_SKIP_DNS_CHECK=1 后重试。"
+        else
+          printf '[JunPanel] 无法确认这台服务器的公网 IP，已跳过解析比对；域名解析到：%s\n' "$(tr '\n' ' ' <<< "$resolved" | sed 's/ $//')"
+        fi
+        v6="$(getent ahostsv6 "$want_domain" 2>/dev/null | awk '$1 !~ /^::ffff:/ {print $1}' | sort -u | head -1)" || v6=''
+        [[ -z "$v6" ]] || printf '[JunPanel] 注意：域名还有 AAAA 记录（%s）。证书机构可能通过 IPv6 验证，请确认这台服务器的 IPv6 也能到达 Caddy，否则请删除 AAAA 记录。\n' "$v6"
       fi
-      v6="$(getent ahostsv6 "$ip" 2>/dev/null | awk '$1 !~ /^::ffff:/ {print $1}' | sort -u | head -1)" || v6=''
-      [[ -z "$v6" ]] || printf '[JunPanel] 注意：域名还有 AAAA 记录（%s）。证书机构可能通过 IPv6 验证，请确认这台服务器的 IPv6 也能到达 Caddy，否则请删除 AAAA 记录。\n' "$v6"
     fi
-  elif ((had_previous == 0)) && ! grep -Eq '^[[:space:]]*default_sni[[:space:]].*# JunPanel IP TLS default[[:space:]]*$' /etc/caddy/Caddyfile; then
-    printf '[JunPanel] 未配置公网直连，无需更改。\n'; exit
+    if [[ -n "$want_ip" && "$want_ip" != "$cur_ip" ]]; then printf '[JunPanel] 已识别管理入口 IP：%s\n' "$want_ip"; fi
   fi
   cleanup() {
     local code=$?
@@ -276,43 +366,62 @@ main() (
   root_backup="$(mktemp /etc/caddy/.junpanel-root-old.XXXXXXXX)"
   cp -p -- /etc/caddy/Caddyfile "$root_backup"
   if ((had_previous)); then backup="$(mktemp /etc/caddy/.junpanel-public-old.XXXXXXXX)"; cp -p -- "$target" "$backup"; fi
-  if [[ "$mode" == --disable ]]; then
+  if [[ -z "$new_ip$new_domain" ]]; then
     root_action=disable; changed=1; rm -f -- "$target"
   else
-    # Only the IP certificate needs a default server name; a domain does not, so remove ours.
-    [[ "$kind" == ip ]] || root_action=disable
+    # Only the IP certificate needs a default server name; without an IP entry remove ours.
+    [[ -n "$new_ip" ]] || root_action=disable
     temp="$(mktemp /etc/caddy/.junpanel-public-new.XXXXXXXX)"
-    render "$ip" "$port" > "$temp"
+    render_all "$new_domain" "$new_ip" "$port" > "$temp"
     chmod 0644 "$temp"
     changed=1; mv -- "$temp" "$target"; temp=''
   fi
   root_temp="$(mktemp /etc/caddy/.junpanel-root-new.XXXXXXXX)"
   cp -p -- /etc/caddy/Caddyfile "$root_temp"
-  rewrite_root /etc/caddy/Caddyfile "$ip" "$root_action" > "$root_temp" || die '主配置已有不同的 default_sni，已保留原设置；请先人工核对。'
+  rewrite_root /etc/caddy/Caddyfile "${new_ip:-none}" "$root_action" > "$root_temp" || die '主配置已有不同的 default_sni，已保留原设置；请先人工核对。'
   runuser -u caddy -- /usr/bin/caddy validate --config "$root_temp" --adapter caddyfile
   if ! cmp -s -- /etc/caddy/Caddyfile "$root_temp"; then mv -- "$root_temp" /etc/caddy/Caddyfile; root_temp=''; fi
   systemctl reload caddy.service
   changed=0
-  if [[ "$mode" == --disable ]]; then
+  if [[ -z "$new_ip$new_domain" ]]; then
     printf '\n[JunPanel] 公网直连已关闭，仍可使用原有 SSH 隧道访问。\n'; exit
   fi
+  if [[ "$cmd" != set ]]; then
+    printf '\n[JunPanel] 已更新公网入口：%s\n' "$([[ -n "$new_domain" ]] && printf 'https://%s ' "$new_domain")$([[ -n "$new_ip" ]] && printf 'https://%s' "$new_ip")"
+    exit
+  fi
+  # Check what this run set; a bare re-run checks everything that is configured.
+  local -a verify=()
+  [[ -z "$want_domain" ]] || verify+=("$want_domain")
+  [[ -z "$want_ip" ]] || verify+=("$want_ip")
+  if ((${#verify[@]} == 0)); then
+    [[ -z "$new_domain" ]] || verify+=("$new_domain")
+    [[ -z "$new_ip" ]] || verify+=("$new_ip")
+  fi
   printf '\n[JunPanel] 正在准备 HTTPS 登录入口，首次签发证书最多等待约一分钟…\n'
-  local attempt response='' tries=12 pause=1
-  local -a resolve=()
-  # For a domain, ask this machine's Caddy directly, so the check does not depend on DNS caching
-  # or on reaching our own public address from inside.
-  if [[ "$kind" == domain ]]; then tries=30; pause=2; resolve=(--resolve "$ip:443:127.0.0.1"); fi
-  for ((attempt = 1; attempt <= tries; attempt++)); do
-    if response="$(curl --noproxy '*' "${resolve[@]}" --fail --silent --show-error --connect-timeout 3 --max-time 4 "https://$ip/api/meta" 2>/dev/null)" && [[ "$response" == *'"version":'* ]]; then
-      printf '\n  登录链接：https://%s\n  状态：HTTPS 证书与面板响应检查通过\n  账号：使用现有面板账号\n\n以后直接在浏览器打开上方链接，无需 SSH 隧道。\n' "$ip"
-      if [[ "$kind" == domain ]]; then printf '  原来的 IP 入口已停用，只能通过这个域名访问。\n'; fi
-      exit
+  local pending=0
+  for host in "${verify[@]}"; do
+    if entry_ready "$host"; then
+      printf '\n  登录链接：https://%s\n  状态：HTTPS 证书与面板响应检查通过\n' "$host"
+    else
+      pending=1
+      printf '\n  登录链接（准备中）：https://%s\n  面板已安装，但 HTTPS 证书或入口尚未就绪，当前不能确认可登录。\n' "$host"
     fi
-    ((attempt == tries)) || sleep "$pause"
   done
-  printf '\n  登录链接（准备中）：https://%s\n  面板已安装，但 HTTPS 证书或入口尚未就绪，当前不能确认可登录。\n\n公网 80/443 需可达；请查看：sudo journalctl -u caddy -n 80 --no-pager\n' "$ip"
-  if [[ "$kind" == domain ]]; then printf '如需改回 IP 入口：重新执行本脚本并传入服务器公网 IPv4。\n'; fi
-  exit 2
+  if ((pending)); then
+    printf '\n公网 80/443 需可达；请查看：sudo journalctl -u caddy -n 80 --no-pager\n'
+    if [[ -n "$cur_ip" && -z "$new_ip" ]]; then printf '原来的 IP 入口已停用；如需恢复，重新执行本脚本并传入服务器公网 IPv4。\n'; fi
+    exit 2
+  fi
+  printf '  账号：使用现有面板账号\n\n以后直接在浏览器打开上方链接，无需 SSH 隧道。\n'
+  if [[ -n "$new_domain" && -n "$new_ip" ]]; then
+    printf '  当前可用入口：https://%s 和 https://%s\n' "$new_domain" "$new_ip"
+  elif [[ -n "$cur_ip" && -z "$new_ip" ]]; then
+    printf '  原来的 IP 入口已停用，只能通过这个域名访问。\n'
+  elif [[ -n "$cur_domain" && -z "$new_domain" ]]; then
+    printf '  原来的域名入口已停用，只能通过这个 IP 访问。\n'
+  fi
+  exit 0
 )
 
 if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then main "$@"; fi
