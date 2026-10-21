@@ -36,6 +36,11 @@ jobs:
           done
           bash tests/ip-detection.sh
           bash tests/tls-defaults.sh
+      - name: Domain access through a real Caddy
+        run: |
+          sudo apt-get install -y caddy >/dev/null
+          sudo systemctl stop caddy || true
+          JUNPANEL_CADDY_TEST=1 bash tests/domain-access.sh
       - name: Linux amd64 and arm64 builds
         run: |
           for arch in amd64 arm64; do
