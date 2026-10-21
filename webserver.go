@@ -115,7 +115,7 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		if file == "" {
 			file = "index.html"
 		}
-		if file != "index.html" && file != "app.js" && file != "style.css" && file != "junpanel.css" && file != "logo.svg" && file != "favicon.svg" && file != "logo-preview.svg" {
+		if file != "index.html" && file != "app.js" && file != "style.css" && file != "logo.svg" && file != "favicon.svg" && file != "logo-preview.svg" {
 			http.NotFound(out, r)
 			return
 		}
