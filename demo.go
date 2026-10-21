@@ -62,6 +62,8 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = grouped(demoContainers())
 	case "/sites":
 		value = map[string]any{"sites": demoPublicSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
+	case "/access":
+		value = map[string]any{"entries": []map[string]string{{"kind": "domain", "address": "panel.example.com"}, {"kind": "ip", "address": "203.0.113.10"}}, "managed": true, "running": false, "supported": true}
 	case "/catalog":
 		value = appCatalog
 	case "/apps":

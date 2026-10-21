@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
+	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"io/fs"
 	"log"
 	"mime"
@@ -13,6 +16,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -338,6 +342,39 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		r.ContentLength = 0
 		r.Header.Del("Content-Length")
 		r.Header.Del("Content-Type")
+	}
+	// Changing the public entry can lock the browser out, so it needs the password
+	// again; the agent's endpoint is reachable only through here, with no secrets.
+	if strings.HasPrefix(path.Clean(r.URL.Path), "/api/access/apply") {
+		fail(out, bad(404, "接口不存在"))
+		return
+	}
+	if r.URL.Path == "/api/access" && r.Method == "POST" {
+		var req struct {
+			Password string `json:"password"`
+			OTP      string `json:"otp"`
+			Action   string `json:"action"`
+			Domain   string `json:"domain"`
+			IP       string `json:"ip"`
+			Only     bool   `json:"only"`
+			SkipDNS  bool   `json:"skip_dns"`
+		}
+		if e = body(r, &req); e != nil {
+			fail(out, e)
+			return
+		}
+		if e = w.auth.confirm(clientIP(r), req.Password, req.OTP); e != nil {
+			log.Printf("reauth result=failed ip=%s", clientIP(r))
+			w.auditLogin(r, "再次验证密码失败", "failed")
+			fail(out, e)
+			return
+		}
+		forward, _ := json.Marshal(map[string]any{"action": req.Action, "domain": req.Domain, "ip": req.IP, "only": req.Only, "skip_dns": req.SkipDNS})
+		r.URL.Path = "/api/access/apply"
+		r.Body = io.NopCloser(bytes.NewReader(forward))
+		r.ContentLength = int64(len(forward))
+		r.Header.Set("Content-Length", strconv.Itoa(len(forward)))
+		r.Header.Set("Content-Type", "application/json")
 	}
 	if r.URL.Path == "/api/terminal/ticket" && r.Method == "POST" {
 		var req struct {
