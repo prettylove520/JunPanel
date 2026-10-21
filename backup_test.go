@@ -210,7 +210,7 @@ func TestBackupRequestValidation(t *testing.T) {
 	}
 }
 
-func TestBackupDatabaseRestoreRefused(t *testing.T) {
+func TestDatabaseRestoreValidation(t *testing.T) {
 	a := testAgent(t)
 	meta, e := a.writeBackup(backupMeta{Type: "database", Target: "x", Name: "x", Database: "db"}, "sql.gz", func(w io.Writer) error {
 		_, e := w.Write([]byte("select 1;"))
@@ -219,8 +219,17 @@ func TestBackupDatabaseRestoreRefused(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if r := request(a.routes(), "POST", "/backups/"+meta.ID+"/restore", `{"confirm":true}`, nil, nil); r.Code != 400 || !strings.Contains(r.Body.String(), "原生工具") {
-		t.Fatalf("%d %s", r.Code, r.Body.String())
+	h := a.routes()
+	for body, want := range map[string]int{
+		`{"confirm":false}`:                        400,
+		`{"confirm":true,"database":"bad-name"}`:   400,
+		`{"confirm":true,"database":"x; DROP"}`:    400,
+		`{"confirm":true}`:                         404,
+		`{"confirm":true,"database":"other_copy"}`: 404,
+	} {
+		if r := request(h, "POST", "/backups/"+meta.ID+"/restore", body, nil, nil); r.Code != want {
+			t.Fatalf("%s: %d %s", body, r.Code, r.Body.String())
+		}
 	}
 }
 

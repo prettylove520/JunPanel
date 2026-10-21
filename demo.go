@@ -131,3 +131,19 @@ func demoCaddySources() []caddyConfig {
 		{Config: "/etc/monitoring/production.caddy", Adapter: "caddyfile", PIDs: []int{1203}, Hosts: []string{"monitor.example.com"}},
 	}
 }
+
+func demoAudit(kind string) []auditEntry {
+	now := time.Now().UTC()
+	if kind == "login" {
+		return []auditEntry{
+			{Time: now.Add(-2 * time.Minute), Kind: "login", IP: "203.0.113.24", Action: "登录成功", Result: "ok"},
+			{Time: now.Add(-3 * time.Minute), Kind: "login", IP: "198.51.100.7", Action: "登录失败", Result: "failed"},
+			{Time: now.Add(-26 * time.Hour), Kind: "login", IP: "203.0.113.24", Action: "退出登录", Result: "ok"},
+		}
+	}
+	return []auditEntry{
+		{Time: now.Add(-1 * time.Minute), Kind: "operation", IP: "203.0.113.24", Action: "应用操作", Detail: "action=restart", Method: "POST", Path: "/api/apps/notes/action", Status: 202, Result: "ok"},
+		{Time: now.Add(-40 * time.Minute), Kind: "operation", IP: "203.0.113.24", Action: "新建备份", Detail: "type=app target=blog", Method: "POST", Path: "/api/backups", Status: 202, Result: "ok"},
+		{Time: now.Add(-3 * time.Hour), Kind: "operation", IP: "203.0.113.24", Action: "保存网站", Detail: "name=个人主页 kind=static", Method: "POST", Path: "/api/sites", Status: 409, Result: "failed"},
+	}
+}

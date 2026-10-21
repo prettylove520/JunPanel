@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type webServer struct {
 	mu      sync.Mutex
 	slots   chan struct{}
 	logins  chan struct{}
+	audit   *auditLog
 }
 
 func newWeb(accountFile, socket string, port int, demo bool) (*webServer, error) {
@@ -44,7 +46,11 @@ func newWeb(accountFile, socket string, port int, demo bool) (*webServer, error)
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
 		send(w, 502, map[string]any{"error": "本机管理代理未连接，请检查 junpanel-agent 服务"})
 	}
-	return &webServer{auth: a, port: port, demo: demo, proxy: proxy, tickets: map[string]terminalTicket{}, slots: make(chan struct{}, 24), logins: make(chan struct{}, 2)}, nil
+	w := &webServer{auth: a, port: port, demo: demo, proxy: proxy, tickets: map[string]terminalTicket{}, slots: make(chan struct{}, 24), logins: make(chan struct{}, 2)}
+	if !demo && accountFile != "" {
+		w.audit = newAuditLog(filepath.Join(filepath.Dir(accountFile), "audit.log"))
+	}
+	return w, nil
 }
 func (w *webServer) cookie(r *http.Request) string {
 	c, e := r.Cookie("junpanel_session")
@@ -167,11 +173,17 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 				result = "throttled"
 			}
 			log.Printf("login result=%s ip=%s", result, ip)
+			if result == "throttled" {
+				w.auditLogin(r, "登录被限速", "failed")
+			} else {
+				w.auditLogin(r, "登录失败", "failed")
+			}
 			fail(out, e)
 			return
 		}
 		http.SetCookie(out, &http.Cookie{Name: "junpanel_session", Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		log.Printf("login result=success ip=%s", ip)
+		w.auditLogin(r, "登录成功", "ok")
 		user, totp := w.auth.info()
 		send(out, 200, map[string]any{"csrf": session.CSRF, "user": user, "demo": w.demo, "totp": totp})
 		return
@@ -186,6 +198,21 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		fail(out, bad(403, "CSRF 校验失败，请重新载入"))
 		return
 	}
+	out, finish := w.auditRequest(out, r)
+	defer finish()
+	if r.URL.Path == "/api/audit" && r.Method == "GET" {
+		kind := r.URL.Query().Get("kind")
+		if kind != "operation" && kind != "login" {
+			fail(out, bad(400, "日志类型无效"))
+			return
+		}
+		if w.demo {
+			send(out, 200, demoAudit(kind))
+		} else {
+			send(out, 200, w.audit.list(kind, 500))
+		}
+		return
+	}
 	if r.URL.Path == "/api/session" && r.Method == "GET" {
 		user, totp := w.auth.info()
 		send(out, 200, map[string]any{"csrf": session.CSRF, "user": user, "demo": w.demo, "totp": totp})
@@ -197,6 +224,7 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/logout" && r.Method == "POST" {
+		w.auditLogin(r, "退出登录", "ok")
 		w.auth.logout(token)
 		http.SetCookie(out, &http.Cookie{Name: "junpanel_session", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 		send(out, 200, map[string]any{"ok": true})
@@ -234,6 +262,16 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		default:
 			e = bad(400, "未知安全操作")
 		}
+		if label, ok := map[string]string{"password": "修改密码", "totp_setup": "开始设置两步验证", "totp_enable": "开启两步验证", "totp_disable": "关闭两步验证"}[req.Action]; ok {
+			result, code := "ok", 200
+			if e != nil {
+				result, code = "failed", 400
+				if f, ok := e.(*fault); ok {
+					code = f.Code
+				}
+			}
+			w.audit.add(auditEntry{Kind: "operation", IP: clientIP(r), Action: label, Method: "POST", Path: "/api/security", Status: code, Result: result})
+		}
 		if e != nil {
 			fail(out, e)
 			return
@@ -262,6 +300,7 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		}
 		if e = w.auth.confirm(clientIP(r), req.Password, req.OTP); e != nil {
 			log.Printf("reauth result=failed ip=%s", clientIP(r))
+			w.auditLogin(r, "再次验证密码失败", "failed")
 			fail(out, e)
 			return
 		}
@@ -289,6 +328,7 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		}
 		if e = w.auth.confirm(clientIP(r), req.Password, req.OTP); e != nil {
 			log.Printf("reauth result=failed ip=%s", clientIP(r))
+			w.auditLogin(r, "再次验证密码失败", "failed")
 			fail(out, e)
 			return
 		}
