@@ -192,6 +192,15 @@ func TestStackParsedWithoutRoot(t *testing.T) {
 		t.Skip("docker compose not installed")
 	}
 	a := testAgent(t)
+	// Like /srv/junpanel, the stack root must be readable by any user; t.TempDir's
+	// parents are private.
+	root, e := os.MkdirTemp("", "junpanel-root-")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	os.Chmod(root, 0755)
+	a.cfg.Root = root
 	secret := filepath.Join(t.TempDir(), "secret.env")
 	os.WriteFile(secret, []byte("SECRET=root-only\n"), 0600)
 	// t.TempDir's parents are private; this file must be readable by any user.
