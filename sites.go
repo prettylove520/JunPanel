@@ -261,7 +261,7 @@ func (a *agent) siteSave(w http.ResponseWriter, r *http.Request) error {
 				return e
 			}
 			fresh = value.Root
-			if e = os.WriteFile(filepath.Join(value.Root, "index.html"), []byte("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><title>网站已启航</title><body><h1>网站已启航</h1><p>进入JunPanel的站点文件，上传你的网页。</p></body></html>"), 0644); e != nil {
+			if e = os.WriteFile(filepath.Join(value.Root, "index.html"), []byte("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><title>网站已启航</title><body><h1>网站已启航</h1><p>在 JunPanel 的“文件”中上传你的网页。</p></body></html>"), 0644); e != nil {
 				return e
 			}
 		}

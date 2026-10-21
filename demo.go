@@ -42,7 +42,7 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 	var value any
 	switch path {
 	case "/overview":
-		value = map[string]any{"host": demoHost(), "host_error": "", "containers": demoContainers(), "docker_error": "", "sites": demoSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "apps": demoApps(), "caddy_state": "active", "jobs": demoJobs(), "time": time.Now(), "version": version, "demo": true}
+		value = map[string]any{"host": demoHost(), "host_error": "", "containers": demoContainers(), "docker_error": "", "sites": demoSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "apps": demoApps(), "caddy_state": "active", "alerts_active": 2, "update_available": "9.9.9", "jobs": demoJobs(), "time": time.Now(), "version": version, "demo": true}
 	case "/containers":
 		value = demoContainers()
 	case "/projects":

@@ -298,7 +298,7 @@ func (a *agent) launchAppThen(record appRecord, action string, done func(error))
 				rows[i].Busy = false
 				rows[i].LastError = ""
 				if e != nil {
-					rows[i].LastError = "上次部署或管理操作未完成，请检查任务记录"
+					rows[i].LastError = "上次部署或管理操作未完成，请检查任务日志"
 				} else if action == "remove" {
 					rows[i].Removed = true
 				} else if action == "restore" || action == "deploy" {

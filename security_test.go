@@ -274,7 +274,7 @@ func TestHTTPBoundary(t *testing.T) {
 	if w = request(h, "GET", "/app.js", "", nil, nil); w.Code != 200 || !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatal("asset / CSP")
 	}
-	if w = request(h, "GET", "/junpanel.css", "", nil, nil); w.Code != 200 {
+	if w = request(h, "GET", "/style.css", "", nil, nil); w.Code != 200 {
 		t.Fatal("JunPanel design stylesheet missing")
 	}
 	if w = request(h, "GET", "/account.json", "", nil, cookie); w.Code != 404 {

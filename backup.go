@@ -524,7 +524,7 @@ func (a *agent) backupApp(ctx context.Context, out io.Writer, rec appRecord, tag
 		restart, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		if re := a.compose(restart, out, rec, "start"); re != nil && e == nil {
-			e = bad(502, "备份已完成，但应用重启失败，请到应用中心手动启动")
+			e = bad(502, "备份已完成，但应用重启失败，请到“应用商店 / 已安装”中手动启动")
 		}
 	}
 	return meta, e
@@ -832,7 +832,7 @@ func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job,
 		j, e := a.jobs.startWithin(backupTimeout, "备份 · 应用 · "+rec.Name, func(ctx context.Context, out *limitedBuffer) error {
 			meta, e := a.backupApp(ctx, out, rec, spec.Tag)
 			if e != nil {
-				a.releaseApp(rec.ID, "上次备份未完成，请检查任务记录")
+				a.releaseApp(rec.ID, "上次备份未完成，请检查任务日志")
 			} else {
 				a.releaseApp(rec.ID, "")
 			}
@@ -930,7 +930,7 @@ func (a *agent) backupRestore(w http.ResponseWriter, r *http.Request) error {
 		j, e = a.jobs.startWithin(backupTimeout, "恢复 · 应用 · "+rec.Name, func(ctx context.Context, out *limitedBuffer) error {
 			e := a.restoreApp(ctx, out, rec, meta)
 			if e != nil {
-				a.releaseApp(rec.ID, "上次恢复未完成，请检查任务记录")
+				a.releaseApp(rec.ID, "上次恢复未完成，请检查任务日志")
 			} else {
 				a.releaseApp(rec.ID, "")
 			}

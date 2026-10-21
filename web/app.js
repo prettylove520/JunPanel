@@ -33,46 +33,86 @@ const paths = {
   trash: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   play: '<path d="m7 3 14 9-14 9Z"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+  cert: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 9h10M7 13h5"/><circle cx="16" cy="17" r="2.5"/><path d="m14.8 19.2-.8 2.8 2-1 2 1-.8-2.8"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
 };
 function icon(name) { const span = el('span', 'icon'); span.innerHTML = `<svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.info}</svg>`; return span; }
 $$('[data-icon]').forEach(n => n.replaceChildren(icon(n.dataset.icon)));
-const state = { csrf: '', user: '', demo: false, totp: false, route: 'overview', epoch: 0, filePath: '/', tab: 'installed', containerTab: 'containers', catalog: [], apps: [], sites: [], timers: [], socket: null };
+const state = { csrf: '', user: '', demo: false, totp: false, route: 'overview', epoch: 0, filePath: '/', catalog: [], apps: [], sites: [], timers: [], socket: null };
+// route: [title, description, icon, group]
 const routes = {
-  overview: ['服务器总览', '资源、站点与部署，尽在一处。', 'OVERVIEW', 'dashboard'],
-  sites: ['网站', '静态网站与反向代理，交给现有 Caddy。', 'WEBSITES', 'globe'],
-  apps: ['应用中心', '选一个应用，留下一个端口，再为它绑定域名。', 'APPLICATIONS', 'apps'],
-  containers: ['Docker 容器', '查看现有容器、日志与镜像，处理日常启停。', 'CONTAINERS', 'box'],
-  projects: ['Compose 项目', '按项目整理现有容器，一起启动、停止或重启。', 'PROJECTS', 'layers'],
-  files: ['站点文件', '在 /srv/junpanel 内管理文件，删除先进入回收站。', 'FILES', 'folder'],
-  databases: ['数据库', '管理应用中心创建的数据库，执行查询与备份。', 'DATABASES', 'database'],
-  backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'BACKUPS', 'disk'],
-  schedules: ['计划任务', '按时间表自动备份或重启应用，并只保留最近几份备份。', 'SCHEDULES', 'clock'],
-  upgrade: ['版本升级', '检查新版本，校验后在面板内一键升级。', 'UPGRADE', 'refresh'],
-  alerts: ['告警', '磁盘、证书、容器和服务出问题时，在面板里提醒，并推送到你的 Webhook。', 'ALERTS', 'bell'],
-  terminal: ['容器终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'TERMINAL', 'terminal'],
-  jobs: ['任务记录', '每一次部署与容器操作，都有明确的结果。', 'ACTIVITY', 'activity'],
-  security: ['账号与安全', '管理你的登录凭据，了解工作台的权限边界。', 'SECURITY', 'shield'],
+  overview: ['概览', '', 'dashboard', 'overview'],
+  apps: ['全部应用', '一键部署常用应用：端口只绑定本机，安装后可在“网站”中绑定域名。', 'apps', 'apps'],
+  installed: ['已安装', '通过 JunPanel 安装的应用。卸载会保留数据卷与凭据，可以恢复部署。', 'apps', 'apps'],
+  sites: ['网站', '静态网站与反向代理，交给系统 Caddy 并自动签发 HTTPS。', 'globe', 'sites'],
+  certs: ['证书', 'Caddy 自动签发和续期的 HTTPS 证书。', 'cert', 'sites'],
+  databases: ['数据库', '管理应用商店安装的数据库，执行查询、建库与备份。', 'database', 'databases'],
+  containers: ['容器', '系统 Docker 中的全部容器，包括安装面板之前创建的容器。', 'box', 'containers'],
+  projects: ['编排', '按 Docker Compose 项目整理容器，一起启动、停止或重启。', 'layers', 'containers'],
+  images: ['镜像', '本机 Docker 镜像。仍被容器使用的镜像不能删除。', 'image', 'containers'],
+  terminal: ['终端', '打开运行中容器的 /bin/sh，处理必要的维护。', 'terminal', 'containers'],
+  files: ['文件', '管理 /srv/junpanel 内的文件，删除的文件先进入回收站。', 'folder', 'files'],
+  schedules: ['计划任务', '按时间表自动备份或重启应用，只保留最近几份备份。', 'clock', 'schedules'],
+  backups: ['备份', '为网站文件、应用数据和数据库留一份副本，需要时恢复。', 'disk', 'backups'],
+  alerts: ['告警', '磁盘、证书、容器和服务出问题时提醒你，并推送到 Webhook。', 'bell', 'alerts'],
+  jobs: ['任务日志', '每一次部署、备份和容器操作的执行记录。', 'activity', 'jobs'],
+  security: ['安全', '管理员密码、两步验证与面板的权限边界。', 'shield', 'settings'],
+  upgrade: ['版本升级', '检查新版本，校验后在面板内一键升级。', 'refresh', 'settings'],
 };
+// Sidebar menu, in 1Panel order. [group, label, icon, badge id]
+const menu = [
+  ['overview', '概览', 'dashboard'],
+  ['apps', '应用商店', 'apps'],
+  ['sites', '网站', 'globe', 'site-badge'],
+  ['databases', '数据库', 'database'],
+  ['containers', '容器', 'box'],
+  ['files', '文件', 'folder'],
+  ['schedules', '计划任务', 'clock'],
+  ['backups', '备份', 'disk'],
+  ['alerts', '告警', 'bell', 'alert-badge'],
+  ['jobs', '任务日志', 'activity', 'job-badge'],
+  ['settings', '面板设置', 'settings', 'upgrade-badge'],
+];
+const groupRoutes = g => Object.keys(routes).filter(r => routes[r][3] === g);
+const groupLabel = g => (menu.find(m => m[0] === g) || [])[1] || '';
+(function buildNav() {
+  const nav = $('#nav');
+  menu.forEach(([g, label, symbol, badge]) => {
+    if (g === 'jobs') nav.append(el('div', 'nav-divider'));
+    const b = el('button', 'nav-link'); b.type = 'button'; b.dataset.group = g; b.dataset.route = groupRoutes(g)[0];
+    b.append(icon(symbol), el('span', '', label));
+    if (badge) { const n = el('span', `nav-badge${badge === 'site-badge' ? ' count' : ''}`); n.id = badge; n.hidden = true; b.append(n); }
+    nav.append(b);
+  });
+})();
 const view = $('#view');
 const bytes = n => { if (n == null || !Number.isFinite(Number(n))) return '—'; let i = 0; n = Number(n); while (n >= 1024 && i < 4) { n /= 1024; i++; } return `${n.toFixed(i ? (n < 10 ? 1 : 0) : 0)} ${['B','KB','MB','GB','TB'][i]}`; };
 const percent = n => n == null ? '采样中' : `${Number(n).toFixed(1)}%`;
 const date = s => s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '—';
 const uptime = s => s ? `${Math.floor(s / 86400)} 天 ${Math.floor(s % 86400 / 3600)} 小时` : '—';
 function toast(message, error = false) { const n = el('div', `toast${error ? ' error' : ''}`, message); $('#toasts').append(n); setTimeout(() => n.remove(), 5500); }
-function button(text, fn, kind = 'secondary', symbol) { const b = el('button', `button ${kind}`, text); b.type = 'button'; if (symbol) b.prepend(icon(symbol)); b.addEventListener('click', async () => { try { await fn(b); } catch(e) { toast(e.message, true); } }); return b; }
+const destructive = /^(删除|卸载|移除|永久删除|清空回收站)$/;
+function button(text, fn, kind = 'secondary', symbol) { const b = el('button', `button ${kind}`, text); b.type = 'button'; if (kind.includes('quiet') && destructive.test(text)) b.classList.add('danger-text'); if (symbol) b.prepend(icon(symbol)); b.addEventListener('click', async () => { try { await fn(b); } catch(e) { toast(e.message, true); } }); return b; }
 function tag(text, cls = '') { return el('span', `tag ${cls}`, text); }
 function empty(message, sub = '') { const n = el('div', 'empty'); n.append(icon('layers'), el('h3', '', message), el('p', 'muted', sub)); return n; }
 function note(message, warning = false) { const n = el('div', warning ? 'info warning' : 'info'); n.append(icon('info'), el('span', '', message)); return n; }
 function line(name, value) { const n = el('div', 'details-row'); n.append(el('span', 'muted', name), el('span', '', value)); return n; }
 function panel(title, right) { const n = el('section', 'panel'), h = el('div', 'panel-header'); h.append(el('h2', '', title)); if (right) h.append(right); n.append(h); return n; }
 function field(label, value = '', options = {}) { const n = el('div', 'field'), id = `f-${crypto.randomUUID()}`, input = el(options.area ? 'textarea' : options.select ? 'select' : 'input'); input.id = id; input.value = value; if (!options.area && !options.select) input.type = options.type || 'text'; if (options.required !== false) input.required = true; if (options.placeholder) input.placeholder = options.placeholder; if (options.max) input.maxLength = options.max; if (options.area) input.rows = options.rows || 5; if (options.select) options.select.forEach(([v,t]) => { const o = el('option','',t); o.value = v; input.append(o); }); input.value = value; const l = el('label','',label); l.htmlFor = id; n.append(l,input); if (options.help) n.append(el('p','help',options.help)); return { n, input, val: () => input.value.trim() }; }
+const rendering = new Set();
+class Superseded extends Error {}
 async function api(path, data, method) {
+  const epoch = state.epoch;
   const opts = { method: method || (data === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin', signal: AbortSignal.timeout(85000) };
   if (opts.method !== 'GET') opts.headers['X-CSRF-Token'] = state.csrf;
   if (data !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(data); }
   const response = await fetch(`/api${path}`, opts);
   let value; try { value = await response.json(); } catch { throw new Error('服务响应异常，请检查本机代理状态'); }
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); throw new Error(value.error || `操作失败 (${response.status})`); }
+  if (rendering.has(epoch) && epoch !== state.epoch) throw new Superseded('页面已切换');
   $('#footer-status').replaceChildren(el('span','status-dot'), document.createTextNode(` 已连接 · ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`));
   return value;
 }
@@ -94,23 +134,43 @@ async function mutation(path, data, method) { const result = await api(path, dat
 function clearPage() { state.epoch++; state.timers.forEach(clearInterval); state.timers = []; if (state.socket) { state.socket.close(); state.socket = null; } }
 function interval(fn, ms) { state.timers.push(setInterval(() => { if (!document.hidden) fn().catch(e => { $('#connection-error').hidden = false; $('#connection-error').textContent = e.message; }); }, ms)); }
 function showLogin() { clearPage(); closeModal(); state.csrf = ''; $('#application').hidden = true; $('#login').hidden = false; }
-async function enter(session) { Object.assign(state, session); $('#login').hidden = true; $('#application').hidden = false; $('#demo-banner').hidden = !state.demo; $('#current-user').textContent = state.user; $('#login-password').value = ''; await navigate(location.hash.slice(1).split('?')[0] || 'overview'); const currentCSRF=state.csrf; Promise.allSettled([api('/sites'),api('/apps')]).then(([sites,apps])=>{if(state.csrf!==currentCSRF)return;if(sites.status==='fulfilled'){state.sites=inventorySites(sites.value);$('#site-badge').textContent=sites.value.error?'—':inventorySites(sites.value).length;}if(apps.status==='fulfilled')state.apps=apps.value;}); }
+function setSiteBadge(count) { const b = $('#site-badge'); b.hidden = count == null; b.textContent = count ?? ''; }
+async function enter(session) { Object.assign(state, session); $('#login').hidden = true; $('#application').hidden = false; $('#demo-banner').hidden = !state.demo; $('#current-user').textContent = state.user; $('#user-avatar').textContent = (state.user || 'J').slice(0, 1).toUpperCase(); $('#login-password').value = ''; await navigate(location.hash.slice(1).split('?')[0] || 'overview'); const currentCSRF=state.csrf; Promise.allSettled([api('/sites'),api('/apps'),api('/alerts'),api('/upgrade')]).then(([sites,apps,alerts,upgrade])=>{if(state.csrf!==currentCSRF)return;if(sites.status==='fulfilled'){state.sites=inventorySites(sites.value);setSiteBadge(sites.value.error?null:inventorySites(sites.value).length);}if(apps.status==='fulfilled')state.apps=apps.value;if(alerts.status==='fulfilled')setAlertBadge(alerts.value.active.length);if(upgrade.status==='fulfilled')setUpgradeBadge(upgrade.value.available?upgrade.value.latest.version:'');}); }
 $('#login-form').onsubmit = async e => { e.preventDefault(); const b = $('#login-submit'); b.disabled = true; $('#login-error').textContent = ''; try { const r = await api('/login', { user: $('#login-user').value, password: $('#login-password').value, otp: $('#login-otp').value }); await enter(r); } catch(e) { $('#login-error').textContent = e.message; } finally { b.disabled = false; } };
 $('#show-password').onclick = () => { const i = $('#login-password'); i.type = i.type === 'password' ? 'text' : 'password'; };
 $('#logout').onclick = async () => { try { await api('/logout', {}); } finally { showLogin(); } };
 $('#mobile-menu').onclick = () => $('#sidebar').classList.toggle('open');
-const savedTheme = localStorage.getItem('junpanel-theme'); if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.dataset.theme = savedTheme;
-$('#theme-toggle').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('junpanel-theme', t); if (state.route === 'overview') $$('.chart').forEach(c => c._draw && c._draw()); };
-$$('[data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
+$('#sidebar-mask').onclick = () => $('#sidebar').classList.remove('open');
+function applyTheme(t) { document.documentElement.dataset.theme = t; $('#theme-toggle').replaceChildren(icon(t === 'dark' ? 'sun' : 'moon')); $$('.chart').forEach(c => c._draw && c._draw()); }
+let savedTheme = null; try { savedTheme = localStorage.getItem('junpanel-theme'); } catch {}
+applyTheme(savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+$('#theme-toggle').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; applyTheme(t); try { localStorage.setItem('junpanel-theme', t); } catch {} };
+$$('#nav [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
 window.addEventListener('hashchange', () => { const r = location.hash.slice(1).split('?')[0]; if (state.csrf && r !== state.route) navigate(r); });
 let lastActivity = 0;
 ['pointerdown','keydown'].forEach(type => document.addEventListener(type, () => { if (!state.csrf || Date.now() - lastActivity < 60000) return; lastActivity = Date.now(); api('/heartbeat', {}).catch(() => {}); }, { passive: true }));
 async function navigate(route) { state.route = routes[route] ? route : 'overview'; history.replaceState(null, '', `#${state.route}`); $('#sidebar').classList.remove('open'); await render(); }
+function drawChrome() {
+  const r = routes[state.route], group = r[3], siblings = groupRoutes(group), label = groupLabel(group);
+  const crumb = $('#breadcrumb'); crumb.replaceChildren();
+  if (siblings.length > 1) crumb.append(el('span', '', label), el('span', 'sep', '/'));
+  crumb.append(el('strong', '', siblings.length > 1 ? r[0] : label));
+  document.title = `${siblings.length > 1 ? r[0] + ' · ' + label : label} · JunPanel`;
+  document.body.dataset.route = state.route;
+  $$('#nav .nav-link').forEach(n => { const active = n.dataset.group === group; n.classList.toggle('active', active); if (active) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
+  const sub = $('#subnav'); sub.hidden = siblings.length < 2;
+  sub.replaceChildren(...siblings.map(s => { const b = el('button', `subnav-item${s === state.route ? ' active' : ''}`, routes[s][0]); b.type = 'button'; b.onclick = () => navigate(s); return b; }));
+  $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
+  $('#page-description').textContent = r[1]; $('#page-bar').hidden = state.route === 'overview';
+}
+const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, security: securityPage, upgrade: upgradePage });
 async function render() {
-  clearPage(); const epoch = state.epoch, r = routes[state.route]; $('#breadcrumb').textContent = r[0]; $('#page-title').textContent = r[0]; $('#page-description').textContent = r[1];document.body.dataset.route=state.route; $('#page-eyebrow').textContent = `WORKBENCH / ${r[2]}`; $('#connection-error').hidden = true;
-  $$('[data-route]').forEach(n => {const active=n.dataset.route===state.route;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}); $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在读取服务器状态…'));
-  try { const renderer = { overview: overviewPage, sites: sitesPage, apps: appsPage, containers: containersPage, projects: projectsPage, files: filesPage, databases: databasesPage, backups: backupsPage, schedules: schedulesPage, alerts: alertsPage, upgrade: upgradePage, terminal: terminalPage, jobs: jobsPage, security: securityPage }[state.route]; const n = await renderer(); if (epoch !== state.epoch) return; view.replaceChildren(n); }
-  catch(e) { if (epoch !== state.epoch) return; view.replaceChildren(empty('暂时无法读取', e.message), button('重新连接', render, 'secondary','refresh')); }
+  clearPage(); const epoch = state.epoch; drawChrome(); $('#connection-error').hidden = true;
+  $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在加载…'));
+  rendering.add(epoch);
+  try { const n = await renderers()[state.route](); if (epoch !== state.epoch) return; view.replaceChildren(n); }
+  catch(e) { if (epoch !== state.epoch || e instanceof Superseded) return; view.replaceChildren(empty('暂时无法读取', e.message), button('重新连接', render, 'secondary','refresh')); }
+  finally { rendering.delete(epoch); }
 }
 function action(...buttons) { $('#page-actions').append(...buttons); }
 function table(headers) { const wrap = el('div','table-wrap'), t = el('table','data-table'), head = el('thead'), row = el('tr'), body = el('tbody'); headers.forEach(h => row.append(el('th','',h))); head.append(row); t.append(head,body); wrap.append(t); return { n: wrap, body }; }
@@ -120,60 +180,93 @@ function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
 function appLogo(key) { return el('div', `app-logo ${key}`, ({wordpress:'W',gitea:'G',kuma:'U',postgres:'P',mysql:'M',redis:'R'})[key] || 'A'); }
-function serverArt() {
-  const n=el('div','server-art');n.setAttribute('aria-hidden','true');
-  n.innerHTML='<svg viewBox="0 0 280 180" fill="none"><defs><linearGradient id="server-edge" x1="45" y1="15" x2="235" y2="165" gradientUnits="userSpaceOnUse"><stop stop-color="#8fe5c4"/><stop offset="1" stop-color="#929ce1"/></linearGradient></defs><ellipse cx="146" cy="100" rx="118" ry="51" transform="rotate(-21 146 100)" stroke="currentColor" stroke-dasharray="3 6"/><ellipse cx="146" cy="100" rx="87" ry="68" transform="rotate(-21 146 100)" stroke="currentColor"/><path d="m93 42 65-17 46 28-65 18Z" fill="#233137" stroke="url(#server-edge)"/><path d="m93 42 46 29v28L93 71Z" fill="#17282c" stroke="url(#server-edge)"/><path d="m139 71 65-18v28l-65 18Z" fill="#1e2d32" stroke="url(#server-edge)"/><path d="m93 82 46 29 65-18v28l-65 18-46-29Z" fill="#18282c" stroke="url(#server-edge)"/><path d="m93 122 46 29 65-18v15l-65 18-46-29Z" fill="#18282c" stroke="url(#server-edge)"/><path d="M139 111v28m0 12v15m12-75 31-9m-31 49 31-9m-31 40 31-9" stroke="url(#server-edge)"/><circle cx="106" cy="65" r="2" fill="#9de3c8"/><circle cx="106" cy="106" r="2" fill="#9de3c8"/><circle cx="106" cy="141" r="2" fill="#9de3c8"/><circle cx="245" cy="74" r="6" fill="#111e23" stroke="#9de3c8"/><circle cx="44" cy="128" r="4" fill="#9de3c8"/><path d="M52 38h15m-7-7v14m155 112h12m-6-6v12" stroke="currentColor"/></svg>';
-  return n;
-}
-function sparkline(history,key,color){
-  const n=el('div','sparkline');n.setAttribute('aria-hidden','true');if(history.length<2)return n;
-  const values=history.slice(-40).map(p=>Math.max(0,Number(p[key])||0)),max=Math.max(1,...values),min=Math.min(0,...values),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path');svg.setAttribute('viewBox','0 0 150 36');svg.setAttribute('preserveAspectRatio','none');path.setAttribute('d',values.map((v,i)=>`${i?'L':'M'}${i*150/(values.length-1)},${32-(v-min)/(max-min)*27}`).join(' '));path.setAttribute('stroke',color);path.setAttribute('stroke-width','1.7');path.setAttribute('fill','none');svg.append(path);n.append(svg);return n;
-}
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
-function metric(title, value, subtitle, symbol, progress) { const n = el('section','metric'), h = el('div','metric-head'); h.append(el('span','',title), icon(symbol)); n.append(h,el('div','metric-number',value),el('div','metric-note',subtitle)); if (progress !== undefined) n.append(meter(progress)); return n; }
-function chart(history, key, label, color, max = 100) {
-  const canvas = el('canvas','chart'); canvas.setAttribute('aria-label',label); canvas.setAttribute('role','img');
-  canvas._draw = () => { const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1; canvas.width = rect.width * dpr; canvas.height = 190 * dpr; const ctx = canvas.getContext('2d'); ctx.scale(dpr,dpr); const w = rect.width, h = 190, pad = 44, dark = document.documentElement.dataset.theme === 'dark'; const values = history.map(p => Number(p[key] || 0)); const top = max || Math.max(1024, ...values) * 1.15; ctx.font='13px Segoe UI'; ctx.fillStyle=dark?'#7e8da5':'#73809a'; ctx.strokeStyle=dark?'#263043':'#e1e7ee';
-    for(let i=0;i<4;i++) { const y=pad+(h-pad*2)*i/3; ctx.beginPath(); ctx.moveTo(36,y); ctx.lineTo(w-8,y); ctx.stroke(); ctx.fillText(max ? `${Math.round(top*(1-i/3))}%` : bytes(top*(1-i/3)),0,y+3); }
-    if (values.length < 2) { ctx.fillText('等待第二次采样…',50,90); return; }
-    const points=values.map((v,i)=>[36+(w-44)*i/(values.length-1),h-pad-Math.min(top,v)/top*(h-pad*2)]); ctx.beginPath(); points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();ctx.lineTo(w-8,h-pad);ctx.lineTo(36,h-pad);ctx.closePath();const g=ctx.createLinearGradient(0,pad,0,h-pad);g.addColorStop(0,color+'3a');g.addColorStop(1,color+'00');ctx.fillStyle=g;ctx.fill();
-  }; const observer = new ResizeObserver(() => {if(!canvas.isConnected){observer.disconnect();return;}canvas._draw();}); observer.observe(canvas); setTimeout(() => { if(!canvas.isConnected) observer.disconnect(); else canvas._draw(); },100); return canvas;
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).
+function chart(history, series, max = 100) {
+  const canvas = el('canvas','chart'); canvas.setAttribute('aria-label',series.map(s=>s[1]).join(' / ')); canvas.setAttribute('role','img');
+  canvas._draw = () => {
+    const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1, w = rect.width, h = 220, left = 58, right = 10, top = 28, bottom = 26;
+    canvas.width = w * dpr; canvas.height = h * dpr; const ctx = canvas.getContext('2d'); ctx.scale(dpr,dpr);
+    const muted = cssVar('--muted'), grid = cssVar('--line-soft'), font = getComputedStyle(document.body).fontFamily;
+    const all = series.flatMap(([k]) => history.map(p => Number(p[k] || 0))), peak = max || Math.max(1024, ...all) * 1.2;
+    ctx.font = `12px ${font}`; ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) { const y = top + (h - top - bottom) * i / 4; ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.fillText(max ? `${Math.round(peak * (1 - i / 4))}%` : `${bytes(peak * (1 - i / 4))}/s`, left - 8, y); }
+    let lx = left; series.forEach(([, label, color]) => { ctx.fillStyle = cssVar(color); ctx.fillRect(lx, 8, 12, 3); ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(label, lx + 18, 10); lx += ctx.measureText(label).width + 40; });
+    if (history.length < 2) { ctx.textAlign = 'center'; ctx.fillText('等待更多采样…', (left + w) / 2, h / 2); return; }
+    const time = s => new Date(s).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(time(history[0].at), left, h - 10); ctx.textAlign = 'right'; ctx.fillText(time(history[history.length - 1].at), w - right, h - 10);
+    series.forEach(([key, , colorVar]) => {
+      const color = cssVar(colorVar), points = history.map((p, i) => [left + (w - left - right) * i / (history.length - 1), h - bottom - Math.min(peak, Number(p[key] || 0)) / peak * (h - top - bottom)]);
+      ctx.beginPath(); points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.lineTo(w - right, h - bottom); ctx.lineTo(left, h - bottom); ctx.closePath(); const g = ctx.createLinearGradient(0, top, 0, h - bottom); g.addColorStop(0, color + '33'); g.addColorStop(1, color + '00'); ctx.fillStyle = g; ctx.fill();
+    });
+  };
+  const observer = new ResizeObserver(() => { if (!canvas.isConnected) { observer.disconnect(); return; } canvas._draw(); }); observer.observe(canvas); return canvas;
 }
+function gauge(title, value, text, sub) {
+  const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div','gauge'), ring = el('div', `gauge-ring${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), r = 46, c = 2 * Math.PI * r;
+  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
+  const t = el('div','gauge-text'); t.append(el('strong','',text)); ring.append(t); n.append(ring, el('span','',title), el('small','',sub)); return n;
+}
+function loadText(p) { return p < 50 ? '运行流畅' : p < 75 ? '运行正常' : p < 90 ? '运行缓慢' : '运行堵塞'; }
 function inventorySites(data) {
   return [...(data.sites || []), ...(data.external_hosts || []).map(host=>({name:host,domains:[host],kind:'existing',readonly:true,sources:(data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config)}))];
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
 async function overviewPage() {
-  const data = await api('/overview'); state.sites = inventorySites(data); state.apps = data.apps || []; $('#site-badge').textContent = inventorySites(data).length; setAlertBadge(data.alerts_active); setUpgradeBadge(data.update_available); const n = el('div','overview-page');
+  const data = await api('/overview'), n = el('div'); let choice = 0;
   function paint(d) {
-    d.docker = {available: !d.docker_error, total: (d.containers || []).length, running: (d.containers || []).filter(c => c.state === 'running').length};
-    const visibleSites=inventorySites(d); $('#site-badge').textContent=d.sites_error || d.caddy_error?'—':visibleSites.length; n.replaceChildren();
-    for(const problem of [d.host_error,d.sites_error,d.apps_error,d.caddy_error])if(problem)n.append(note(problem,true));
-    setAlertBadge(d.alerts_active); setUpgradeBadge(d.update_available); if(d.update_available){const info=note(`有新版本 v${d.update_available} 可以升级（当前 v${d.version}）。`),go=button('查看并升级',()=>navigate('upgrade'),'quiet small');info.append(go);n.append(info);}
-    if(d.alerts_active>0){const banner=note(`有 ${d.alerts_active} 条告警尚未解决。`,true),open=button('查看告警',()=>navigate('alerts'),'quiet small');banner.append(open);n.append(banner);}
-    if(d.docker_error)n.append(note(d.docker_error,true)); const h = d.host; h.disk = h.disk || {}; const mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, disk = h.disk.total ? h.disk.used / h.disk.total * 100 : 0;
-    const server = el('div','server-line'), left = el('div','server-line-left'), texts = el('div'); texts.append(el('div','server-name',h.hostname || '服务器'),el('div','server-subtitle',`${h.os || 'Linux'} · ${h.cores} 核 · 已运行 ${uptime(h.uptime)}`)); const serverMark=el('div','server-square'),serverLogo=el('img');serverLogo.src='/logo.svg';serverLogo.alt='';serverMark.append(serverLogo);left.append(serverMark,texts); const tags = el('div','server-tags'); tags.append(tag(accessLabel(),'ok'),tag(d.demo ? '模拟数据' : '实时数据','blue')); const hero=el('div','server-welcome');hero.append(el('span','eyebrow','YOUR SERVER, IN FOCUS'),el('h2','','服务有序，部署从容。'),el('p','',d.demo?'这里是 JunPanel 的交互演示，所有指标与站点均为模拟数据。':'从资源状态到应用上线，今天的服务器工作从这里开始。'));const connection=el('div','server-connection');connection.append(left,tags);server.append(hero,connection,serverArt());
-    const metrics=el('div','metric-grid'); metrics.append(metric('CPU 使用率',percent(h.cpu),`负载 ${(h.load || []).map(v=>Number(v).toFixed(2)).join(' / ')}`,'cpu',h.cpu),metric('内存',bytes(h.mem_used),`共 ${bytes(h.mem_total)} · 使用 ${percent(mem)}`,'memory',mem),metric('系统磁盘',bytes(h.disk.used),`共 ${bytes(h.disk.total)} · 剩余 ${bytes(h.disk.free)}`,'disk',disk),metric('实时网络',`↓ ${bytes(h.rx)}/s`,`↑ ${bytes(h.tx)}/s · 已排除容器虚拟接口`,'network'));
-    metrics.children[0].append(sparkline(h.history || [],'cpu','#a7a4ff'));metrics.children[1].append(sparkline(h.history || [],'memory','#69d9b6'));metrics.children[3].append(sparkline(h.history || [],'rx','#e0b879'));
-    const row=el('div','overview-row'), chartPanel=panel('资源趋势',tag('最近约 10 分钟')); const tabs=el('div','segmented'); const chartBox=el('div'); const metricsList=[['cpu','CPU','#a7a4ff',100],['memory','内存','#69d9b6',100],['rx','网络入站','#e5ba81',0]]; const choose=i=>{ tabs.replaceChildren(...metricsList.map((m,j)=>{ const b=button(m[1],()=>choose(j),'quiet small');b.classList.toggle('active',j===i);return b;}));chartBox.replaceChildren(chart(h.history || [],...metricsList[i])); }; choose(0);chartPanel.append(tabs,chartBox,el('div','chart-caption','每 5 秒采样 · 内存中保留 120 个点 · 重启后重新采样'));
-    const services=panel('服务运行状态'); [['Docker Engine',d.docker.available?'连接正常':'连接失败',d.docker.available,'box'],['Caddy',d.caddy_state?.trim() || '未知',d.caddy_state?.trim()==='active','globe'],['管理入口',accessLabel(),true,'lock']].forEach(([a,b,c,s])=>{ const item=el('div','service-item'),t=el('div','service-title');t.append(icon(s),el('span','',a));item.append(t,tag(b,c?'ok':'warn'));services.append(item); }); services.append(el('p','panel-note',`Swap ${bytes(h.swap_used)} / ${bytes(h.swap_total)} · 内核 ${h.kernel || '—'}`)); row.append(chartPanel,services);
-    const strip=el('div','stat-strip'); [['运行容器',d.docker_error?'读取失败':`${d.docker.running} / ${d.docker.total}`,'containers'],['网站 / 域名',d.sites_error || d.caddy_error?'读取失败':String(visibleSites.length),'sites'],['面板安装应用',d.apps_error?'读取失败':String((d.apps || []).filter(a=>!a.removed).length),'apps'],['后台任务',String((d.jobs || []).filter(j=>j.state==='running').length),'jobs']].forEach(([label,v,r])=>{const b=el('button','small-stat');b.append(el('span','muted',label),el('strong','',v),icon('arrow'));b.onclick=()=>navigate(r);strip.append(b);});
-    const lower=el('div','overview-row'), sites=panel('我的网站',button('全部网站',()=>navigate('sites'),'quiet small','arrow')), activity=panel('最近活动',button('全部记录',()=>navigate('jobs'),'quiet small','arrow'));
-    if (!visibleSites.length) sites.append(empty(d.caddy_error || d.sites_error?'网站读取未完成':'未发现网站配置',d.caddy_error || d.sites_error || '这里同时显示面板网站和原有 Caddy 域名。'));
-    visibleSites.slice(0,5).forEach(s=>{ const r=el('div','resource-row'),l=el('div','resource-left'),t=el('div');t.append(el('strong','resource-name',s.name),el('small','muted',s.readonly?(s.sources?.join(' · ') || '原有 Caddy 配置'):s.domains.join(' · ')));l.append(el('span','round-initial green',s.readonly?'C':s.kind==='proxy'?'↗':'S'),t);r.append(l,tag(s.readonly?'原有配置':s.enabled?'已启用':'已停用',s.readonly?'blue':s.enabled?'ok':''));sites.append(r); });
-    if (!d.jobs?.length) activity.append(empty('一切就绪','新的操作会出现在这里'));
-    (d.jobs || []).slice(0,3).forEach(j=>{const b=el('button','resource-row activity-button'),l=el('div','resource-left'),t=el('div');t.append(el('strong','resource-name',j.title),el('small','muted',date(j.started)));l.append(el('span',`job-icon ${j.state}`,j.state==='success'?'✓':j.state==='running'?'↻':'!'),t);b.append(l,jobTag(j));b.onclick=()=>showJob(j.id);activity.append(b);});lower.append(sites,activity);n.append(server,metrics,row,strip,lower);
-    const inventory=el('div','inventory-grid'), dockerPanel=panel('现有 Docker 容器',button('全部容器',()=>navigate('containers'),'quiet small','arrow'));
-    if(d.docker_error)dockerPanel.append(note(d.docker_error,true));
-    else if(!d.containers?.length)dockerPanel.append(empty('当前 Docker 未列出容器','已查询运行中和已停止的全部容器。直接运行的程序、系统服务和静态网站不会显示在这里。'));
-    else (d.containers || []).slice(0,6).forEach(c=>{const r=el('div','resource-row'),t=el('div');t.append(el('strong','resource-name',c.name),el('small','muted',c.image));r.append(t,containerStatus(c));dockerPanel.append(r);});
-    dockerPanel.append(el('p','panel-note','容器来自系统 Docker；“面板安装应用”只统计通过 JunPanel 安装的应用。原有项目不会自动变成面板安装记录。'));inventory.append(dockerPanel);n.append(inventory);
+    const visibleSites = inventorySites(d), h = d.host || {}, disk = h.disk || {}, containers = d.containers || [], running = containers.filter(c => c.state === 'running').length;
+    state.sites = visibleSites; state.apps = d.apps || []; setSiteBadge(d.sites_error || d.caddy_error ? null : visibleSites.length); setAlertBadge(d.alerts_active); setUpgradeBadge(d.update_available);
+    n.replaceChildren();
+    for (const problem of [d.host_error, d.sites_error, d.apps_error, d.caddy_error, d.docker_error]) if (problem) n.append(note(problem, true));
+    if (d.alerts_active > 0) { const b = note(`有 ${d.alerts_active} 条告警尚未解决。`, true); b.append(button('查看告警', () => navigate('alerts'), 'quiet small')); n.append(b); }
+    if (d.update_available) { const b = note(`JunPanel v${d.update_available} 已发布，当前版本 v${d.version}。`); b.append(button('查看并升级', () => navigate('upgrade'), 'quiet small')); n.append(b); }
+    const grid = el('div','home-grid'), main = el('div','home-col'), side = el('div','home-col');
+
+    const counts = panel('概览'), cg = el('div','count-grid');
+    [['网站', d.sites_error || d.caddy_error ? '—' : visibleSites.length, 'sites'], ['已安装应用', d.apps_error ? '—' : (d.apps || []).filter(a => !a.removed).length, 'installed'], ['容器', d.docker_error ? '—' : `${running} / ${containers.length}`, 'containers'], ['告警', d.alerts_active || 0, 'alerts']].forEach(([label, value, route]) => {
+      const b = el('button', `count-item${route === 'alerts' && d.alerts_active ? ' alarm' : ''}`); b.type = 'button'; b.append(el('span','',label), el('strong','',String(value))); b.onclick = () => navigate(route); cg.append(b);
+    });
+    counts.append(cg);
+
+    const status = panel('状态'), gg = el('div','gauge-grid'), cores = h.cores || 1, load = (h.load || [])[0] || 0, loadPct = load / cores * 100, mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, used = disk.total ? disk.used / disk.total * 100 : 0;
+    gg.append(gauge('负载', loadPct, `${Math.round(Math.min(loadPct, 100))}%`, loadText(loadPct)), gauge('CPU', h.cpu, h.cpu == null ? '—' : `${Number(h.cpu).toFixed(1)}%`, `${cores} 核`), gauge('内存', mem, `${mem.toFixed(1)}%`, `${bytes(h.mem_used)} / ${bytes(h.mem_total)}`), gauge('磁盘 /', used, `${used.toFixed(1)}%`, `${bytes(disk.used)} / ${bytes(disk.total)}`));
+    status.append(gg);
+
+    const choices = [['CPU', [['cpu','CPU','--primary']], 100], ['内存', [['memory','内存','--success']], 100], ['流量', [['rx','下行','--primary'], ['tx','上行','--warning']], 0]];
+    const tabs = el('div','segmented'), now = el('div','monitor-now'), head = el('div','monitor-head'), box = el('div');
+    now.append(...[['↓ 下行', `${bytes(h.rx)}/s`], ['↑ 上行', `${bytes(h.tx)}/s`], ['累计', `${bytes(h.rx_total)} / ${bytes(h.tx_total)}`]].map(([a, b]) => { const s = el('span','',a + ' '); s.append(el('b','',b)); return s; }));
+    const choose = i => { choice = i; tabs.replaceChildren(...choices.map((c, j) => { const b = button(c[0], () => choose(j), 'quiet small'); b.classList.toggle('active', j === i); return b; })); box.replaceChildren(chart(h.history || [], choices[i][1], choices[i][2])); };
+    choose(choice); head.append(tabs, now);
+    const monitor = panel('监控', tag('最近 10 分钟')); monitor.append(head, box, el('p','chart-caption','每 5 秒采样一次，保存在内存中，面板重启后重新采样。流量已排除容器虚拟网卡。'));
+
+    const dockerPanel = panel('容器', button('全部容器', () => navigate('containers'), 'quiet small'));
+    if (d.docker_error) dockerPanel.append(note(d.docker_error, true));
+    else if (!containers.length) dockerPanel.append(empty('没有容器', '系统 Docker 当前没有任何容器。'));
+    else { const t = table(['名称', '镜像', '状态']); containers.slice(0, 6).forEach(c => cells(t.body, c.name, el('code','',c.image), containerStatus(c))); dockerPanel.append(t.n); }
+    main.append(counts, status, monitor, dockerPanel);
+
+    const info = panel('系统信息'); info.classList.add('sysinfo');
+    [['主机名称', h.hostname || '—'], ['发行版本', h.os || 'Linux'], ['内核版本', h.kernel || '—'], ['处理器', `${cores} 核`], ['交换分区', `${bytes(h.swap_used)} / ${bytes(h.swap_total)}`], ['运行时间', uptime(h.uptime)], ['面板版本', d.version ? `v${d.version}` : '—'], ['访问方式', accessLabel()]].forEach(([a, b]) => info.append(line(a, b)));
+    const services = panel('服务');
+    const caddy = (d.caddy_state || '').trim(), caddyLabel = { active: '运行中', inactive: '已停止', failed: '失败', activating: '启动中', deactivating: '停止中', reloading: '重载中' }[caddy] || '未知';
+    [['Docker', d.docker_error ? '连接失败' : '运行中', !d.docker_error, 'box', d.docker_error], ['Caddy', caddyLabel, caddy === 'active', 'globe', caddy]].forEach(([a, b, ok, sym, detail]) => { const r = el('div','service-item'), t = el('div','service-title'), state = tag(b, ok ? 'ok' : 'warn'); if (detail) state.title = detail; t.append(icon(sym), el('span','',a)); r.append(t, state); services.append(r); });
+    const sites = panel('网站', button('全部网站', () => navigate('sites'), 'quiet small'));
+    if (!visibleSites.length) sites.append(empty(d.caddy_error || d.sites_error ? '网站读取未完成' : '还没有网站', d.caddy_error || d.sites_error || '这里会显示面板创建的网站和原有 Caddy 域名。'));
+    visibleSites.slice(0, 5).forEach(s => { const r = el('div','resource-row'), l = el('div','resource-left'), t = el('div'); t.append(el('strong','resource-name',s.name), el('small','',s.readonly ? '原有 Caddy 配置' : s.domains.join(' · '))); l.append(el('span','round-initial',s.readonly ? 'C' : s.kind === 'proxy' ? '↗' : 'S'), t); r.append(l, tag(s.readonly ? '原有' : s.enabled ? '已启用' : '已停用', s.readonly ? 'blue' : s.enabled ? 'ok' : '')); sites.append(r); });
+    const activity = panel('最近任务', button('全部', () => navigate('jobs'), 'quiet small'));
+    if (!d.jobs?.length) activity.append(empty('暂无任务', '部署、备份和容器操作会记录在这里。'));
+    (d.jobs || []).slice(0, 4).forEach(j => { const b = el('button','resource-row activity-button'), l = el('div','resource-left'), t = el('div'); t.append(el('strong','resource-name',j.title), el('small','',date(j.started))); l.append(el('span',`job-icon ${j.state}`,j.state === 'success' ? '✓' : j.state === 'running' ? '↻' : '!'), t); b.append(l, jobTag(j)); b.onclick = () => showJob(j.id); activity.append(b); });
+    side.append(info, services, sites, activity);
+    grid.append(main, side); n.append(grid);
   }
-  paint(data); action(button('创建网站',()=>siteForm(),'primary','plus'),button('刷新',render,'secondary','refresh'));
-  const epoch=state.epoch; interval(async()=>{const d=await api('/overview');if(epoch===state.epoch){paint(d);$('#connection-error').hidden=true;}},10000);return n;
+  paint(data);
+  const epoch = state.epoch; interval(async () => { const d = await api('/overview'); if (epoch === state.epoch) { paint(d); $('#connection-error').hidden = true; } }, 10000); return n;
 }
 async function sitesPage() {
-  const data=await api('/sites'), rows=data.sites; state.sites=inventorySites(data); $('#site-badge').textContent=data.error?'—':inventorySites(data).length; action(button('创建网站',()=>siteForm(),'primary','plus')); const n=el('div');n.append(note('网站使用系统 Caddy 自动签发 HTTPS。域名需先解析到服务器，80/443 需已可达。面板只管理自己创建的配置。'));
+  const data=await api('/sites'), rows=data.sites; state.sites=inventorySites(data); setSiteBadge(data.error?null:inventorySites(data).length); action(button('创建网站',()=>siteForm(),'primary','plus')); const n=el('div');n.append(note('网站使用系统 Caddy 自动签发 HTTPS。域名需先解析到服务器，80/443 需已可达。面板只管理自己创建的配置。'));
   if(data.error)n.append(note(data.error,true));
   if(data.caddy_sources?.length){const sources=panel('Caddy 配置来源',tag(`${data.caddy_sources.length} 份配置`,'blue'));sources.classList.add('existing-site-list');sources.append(el('p','muted','从系统主配置及运行中的 Caddy 进程发现。这里只读取配置文件；原有实例不由面板重载，磁盘配置可能与当前内存配置不同。'));for(const source of data.caddy_sources){const row=el('div','resource-row'),text=el('div');text.append(el('strong','resource-name',source.config),el('small','muted',`PID ${source.pids?.length?source.pids.join(', '):'未关联'} · ${source.error?'读取失败':`${source.hosts?.length || 0} 个主机匹配`} · ${source.primary?'面板连接的主配置':'原有实例，只读'}`));if(source.error)text.append(el('p','form-error',source.error));row.append(text,tag(source.error?'读取失败':'已读取',source.error?'bad':'ok'));sources.append(row);}n.append(sources);}
   if(data.external_hosts?.length){const existing=panel('原有 Caddy 网站',tag(`${data.external_hosts.length} 个域名`,'blue'));existing.classList.add('existing-site-list');existing.append(el('p','muted','已汇总系统主配置和其他运行中 Caddy 实例的配置。按域名去重；配置存在不代表网站已通过健康检查。'));for(const host of data.external_hosts){const r=el('div','resource-row'),t=el('div');t.append(el('strong','resource-name',host),el('small','muted','来源：'+((data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config).join(' · ') || '系统 Caddy')));r.append(t,tag('只读','blue'));existing.append(r);}n.append(existing);}
@@ -186,23 +279,23 @@ function siteForm(site, app) {
   formModal(site?'编辑网站':'创建网站',[name,domains,kind,upstream],'保存并应用',async()=>{await mutation('/sites',{id:site?.id || '',name:name.val(),domains:domains.val().split(/[\s,]+/).filter(Boolean),kind:kind.val(),upstream:kind.val()==='proxy'?upstream.val():''});},{note:'面板会检查域名冲突，校验 Caddy 配置，再重载服务。失败时尝试还原本次配置。'});
 }
 async function appsPage() {
-  const [catalog,apps]=await Promise.all([api('/catalog'),api('/apps')]);state.catalog=catalog;state.apps=apps;const n=el('div'),tools=el('div','toolbar'),tabs=el('div','tabs');const installed=button(`已安装 (${apps.filter(a=>!a.removed).length})`,()=>{state.tab='installed';render();},'quiet');installed.classList.add('tab');installed.classList.toggle('active',state.tab==='installed');const store=button('应用商店',()=>{state.tab='store';render();},'quiet');store.classList.add('tab');store.classList.toggle('active',state.tab==='store');tabs.append(installed,store);tools.append(tabs);n.append(tools);action(button('浏览应用',()=>{state.tab='store';return render();},'primary','plus'));
-  if(state.tab==='store') {
-    n.append(note('精选 6 个常用应用。端口默认仅绑定本机，安装后可在“网站”中绑定域名。数据库凭据随机生成并保存在代理的私有目录。'));
-    const chips=el('div','chips'),grid=el('div','catalog-grid');let category='全部';const draw=()=>{chips.replaceChildren(...['全部','网站应用','开发工具','运维工具','数据库'].map(c=>{const b=button(c,()=>{category=c;draw();},'quiet small');b.classList.add('chip');b.classList.toggle('active',category===c);return b;}));grid.replaceChildren();catalog.filter(t=>category==='全部'||t.category===category).forEach(t=>{const card=el('section','app-card'),head=el('div','app-card-head'),title=el('div');title.append(el('h3','',t.name),el('small','muted',t.category));head.append(appLogo(t.key),title);const bottom=el('div','app-card-bottom');bottom.append(el('code','',t.image),button('安装',()=>installApp(t),'secondary small','plus'));card.append(head,el('p','muted',t.summary),bottom);grid.append(card);});};draw();n.append(chips,grid);
+  const [catalog,apps]=await Promise.all([api('/catalog'),api('/apps')]);state.catalog=catalog;state.apps=apps;const n=el('div');action(button('刷新',render,'secondary','refresh'));
+  if(state.route==='apps') {
+    n.append(note('数据库凭据随机生成，保存在管理代理的私有目录。'));
+    const chips=el('div','chips'),grid=el('div','catalog-grid');let category='全部';const draw=()=>{chips.replaceChildren(...['全部','网站应用','开发工具','运维工具','数据库'].map(c=>{const b=button(c,()=>{category=c;draw();},'quiet small');b.classList.add('chip');b.classList.toggle('active',category===c);return b;}));grid.replaceChildren();catalog.filter(t=>category==='全部'||t.category===category).forEach(t=>{const card=el('section','app-card'),head=el('div','app-card-head'),title=el('div');title.append(el('h3','',t.name),el('small','muted',t.category));head.append(appLogo(t.key),title);const bottom=el('div','app-card-bottom');bottom.append(el('code','',t.image),button('安装',()=>installApp(t),'primary small'));card.append(head,el('p','muted',t.summary),bottom);grid.append(card);});};draw();n.append(chips,grid);
   } else {
-    if(!apps.length)n.append(empty('工作台已准备好','去应用商店部署第一个服务。'));
-    const grid=el('div','installed-grid');apps.forEach(a=>{const t=catalog.find(t=>t.key===a.template),card=el('section','installed-card'),head=el('div','installed-header'),name=el('div');name.append(el('h3','',a.name),el('small','muted',t?.name || a.template));head.append(appLogo(a.template),name,tag(a.busy?'任务中':a.removed?'已卸载':a.docker_available===false?'状态未知':`${a.running || 0}/${a.containers || 0} 运行`,a.busy?'blue':a.removed?'':a.running?'ok':'warn'));card.append(head,el('div','installed-meta',`项目 ${a.project} · 本机端口 ${a.port}`));if(a.last_error)card.append(el('p','error-text',a.last_error));const controls=el('div','installed-actions');controls.append(button('连接信息',()=>credentialForm(a),'quiet small','lock'));if(a.removed)controls.append(button('恢复部署',()=>appAction(a,'restore'),'primary small'));else{if(!a.database)controls.append(button('绑定域名',()=>siteForm(null,a),'primary small','globe'));else controls.append(button('管理数据库',()=>navigate('databases'),'primary small','database'));[['启动','start'],['停止','stop'],['重启','restart'],['重新部署','deploy'],['卸载','remove']].forEach(([text,v])=>controls.append(button(text,()=>appAction(a,v),'quiet small')));}$$('button',controls).forEach(b=>b.disabled=!!a.busy);card.append(controls);grid.append(card);});n.append(grid,note('卸载保留数据卷与项目凭据，可恢复部署。重新部署使用本地已有镜像，不会自动拉取新版本。'));
+    if(!apps.length){const e=empty('还没有安装应用','到“全部应用”中选择一个开始部署。');e.append(button('去安装',()=>navigate('apps'),'primary'));n.append(e);}
+    const grid=el('div','installed-grid');apps.forEach(a=>{const t=catalog.find(t=>t.key===a.template),card=el('section','installed-card'),head=el('div','installed-header'),name=el('div');name.append(el('h3','',a.name),el('small','muted',t?.name || a.template));head.append(appLogo(a.template),name,tag(a.busy?'任务中':a.removed?'已卸载':a.docker_available===false?'状态未知':`${a.running || 0}/${a.containers || 0} 运行`,a.busy?'blue':a.removed?'':a.running?'ok':'warn'));card.append(head,el('div','installed-meta',`项目 ${a.project} · 本机端口 ${a.port}`));if(a.last_error)card.append(el('p','error-text',a.last_error));const controls=el('div','installed-actions');controls.append(button('连接信息',()=>credentialForm(a),'quiet small'));if(a.removed)controls.append(button('恢复部署',()=>appAction(a,'restore'),'quiet small'));else{if(!a.database)controls.append(button('绑定域名',()=>siteForm(null,a),'quiet small'));else controls.append(button('管理数据库',()=>navigate('databases'),'quiet small'));[['启动','start'],['停止','stop'],['重启','restart'],['重新部署','deploy'],['卸载','remove']].forEach(([text,v])=>controls.append(button(text,()=>appAction(a,v),'quiet small')));}$$('button',controls).forEach(b=>b.disabled=!!a.busy);card.append(controls);grid.append(card);});if(apps.length)n.append(grid,note('重新部署使用本地已有镜像，不会自动拉取新版本。'));
   }return n;
 }
-function installApp(t) { const id=field('应用标识',t.key,{max:32,help:'2–32 位小写字母、数字与中划线，以字母开头。'}),name=field('显示名称',t.name,{max:60}),port=field('本机端口',String(t.port),{type:'number',help:'仅绑定 127.0.0.1。请为每个应用使用独立端口。'});port.input.min=1024;port.input.max=65535;formModal(`安装 ${t.name}`,[name,id,port],'开始部署',()=>mutation('/apps',{id:id.val(),name:name.val(),template:t.key,port:Number(port.val())}),{note:'将使用现有 Docker Compose 下载并启动应用；可在任务记录中查看结果。'}); }
+function installApp(t) { const id=field('应用标识',t.key,{max:32,help:'2–32 位小写字母、数字与中划线，以字母开头。'}),name=field('显示名称',t.name,{max:60}),port=field('本机端口',String(t.port),{type:'number',help:'仅绑定 127.0.0.1。请为每个应用使用独立端口。'});port.input.min=1024;port.input.max=65535;formModal(`安装 ${t.name}`,[name,id,port],'开始部署',()=>mutation('/apps',{id:id.val(),name:name.val(),template:t.key,port:Number(port.val())}),{note:'将使用现有 Docker Compose 下载并启动应用；可在任务日志中查看结果。'}); }
 function appAction(a,action) { const label={start:'启动',stop:'停止',restart:'重启',deploy:'重新部署',remove:'卸载',restore:'恢复部署'}[action];confirm(`${label} ${a.name}`,action==='remove'?'将停止并移除该应用的容器和网络，保留数据卷及私有项目配置。':`将通过现有 Docker Compose ${label}该应用。`,()=>mutation(`/apps/${a.id}/action`,{action}),action==='remove'||action==='stop'); }
 function containerStatus(c) { return tag(({running:'运行中',exited:'已停止',created:'已创建',paused:'已暂停',restarting:'重启中',dead:'异常'})[c.state] || c.state,c.state==='running'?'ok':c.state==='exited'?'':'warn'); }
 async function containersPage() {
-  const n=el('div'),tabs=el('div','tabs');['containers','images'].forEach((s,i)=>{const b=button(i?'镜像':'容器',()=>{state.containerTab=s;render();},'quiet');b.classList.add('tab');b.classList.toggle('active',state.containerTab===s);tabs.append(b);});n.append(tabs,note('列出系统 Docker 中的全部容器，包括在安装 JunPanel 之前创建的容器和已停止的容器。非 Docker 服务请查看网站中的原有 Caddy 配置。'));
-  if(state.containerTab==='images') {const rows=await api('/images'),t=table(['镜像','ID','大小','创建时间','操作']);action(button('拉取镜像',()=>{const f=field('镜像名','',{placeholder:'nginx:stable-alpine',max:250});formModal('拉取镜像',[f],'开始拉取',()=>mutation('/images/pull',{image:f.val()}));},'primary','plus'));rows.forEach(i=>cells(t.body,(i.tags || []).join('\n')||'<无标签>',el('code','',i.id.slice(0,12)),bytes(i.size),date(i.created*1000),button('删除',()=>confirm('删除镜像','将使用非强制方式删除镜像；仍被容器使用的镜像会拒绝删除。',()=>mutation(`/images/${i.id}`,undefined,'DELETE'),true),'quiet small')));n.append(rows.length?t.n:empty('没有镜像'));return n;}
+  const n=el('div');
   const rows=await api('/containers');action(button('刷新',render,'secondary','refresh'));const search=field('筛选容器','',{required:false,placeholder:'名称、镜像或项目'});search.n.classList.add('toolbar');n.append(search.n);const holder=el('div');n.append(holder);const paint=()=>{const q=search.val().toLowerCase(),filtered=rows.filter(c=>`${c.name} ${c.image} ${c.project}`.toLowerCase().includes(q)),t=table(['容器 / 镜像','状态','项目','端口','操作']);filtered.forEach(c=>{const buttons=[button('日志',()=>showLogs(c),'quiet small')];if(c.state==='running'&&!c.protected)buttons.push(button('终端',()=>{state.terminalId=c.id;return navigate('terminal');},'quiet small'));if(!c.protected&&['running','exited','created'].includes(c.state)){(c.state==='running'?[['停止','stop'],['重启','restart']]:[['启动','start']]).forEach(([a,b])=>buttons.push(button(a,()=>confirm(`${a} ${c.name}`,'该操作会改变真实容器状态。',()=>mutation(`/containers/${c.id}/action`,{action:b}),b==='stop'),'quiet small')));}cells(t.body,titleCell(c.name,c.image),containerStatus(c),c.project || '独立容器',el('code','',(c.ports || []).map(p=>`${p.ip || '*'}:${p.public} → ${p.private}/${p.protocol}`).join('\n')||'—'),ops(...buttons,c.protected?tag('受保护'):el('span')));});holder.replaceChildren(filtered.length?t.n:empty(rows.length?'没有匹配的容器':'系统 Docker 未列出容器',rows.length?'请调整筛选条件。':'直接运行的程序、系统服务或静态网站不属于 Docker 容器。'));};search.input.oninput=paint;paint();return n;
 }
+async function imagesPage() { const rows=await api('/images'),n=el('div'),t=table(['镜像','ID','大小','创建时间','操作']);action(button('刷新',render,'secondary','refresh'),button('拉取镜像',()=>{const f=field('镜像名','',{placeholder:'nginx:stable-alpine',max:250});formModal('拉取镜像',[f],'开始拉取',()=>mutation('/images/pull',{image:f.val()}));},'primary','plus'));rows.forEach(i=>cells(t.body,(i.tags || []).join('\n')||'<无标签>',el('code','',i.id.slice(0,12)),bytes(i.size),date(i.created*1000),ops(button('删除',()=>confirm('删除镜像','将使用非强制方式删除镜像；仍被容器使用的镜像会拒绝删除。',()=>mutation(`/images/${i.id}`,undefined,'DELETE'),true),'quiet small'))));n.append(rows.length?t.n:empty('没有镜像'));return n; }
 async function showLogs(c) { const n=el('div'),tools=el('div','log-toolbar'),tail=field('显示行数','200',{select:[['50','最近 50 行'],['100','最近 100 行'],['200','最近 200 行'],['500','最近 500 行']]}),out=el('pre','log-view','正在读取…');const load=async()=>{const r=await api(`/containers/${c.id}/logs?tail=${tail.val()}`);out.textContent=r.logs || r.text || '暂无日志';out.scrollTop=out.scrollHeight;};tools.append(tail.n,button('刷新',load,'secondary small','refresh'));tail.input.onchange=()=>load().catch(e=>toast(e.message,true));n.append(tools,out);openModal(`${c.name} · 日志`,n,[button('关闭',closeModal)],true);try{await load();}catch(e){out.textContent=e.message;} }
 async function projectsPage() { const groups=await api('/projects'),n=el('div','project-grid');action(button('刷新',render,'secondary','refresh'));if(!groups.length)return empty('没有 Compose 项目','通过 Docker Compose 标签识别已有项目。');groups.forEach(p=>{const card=panel(p.name,tag(`${p.running} / ${p.containers.length} 运行`,p.running?'ok':'')),members=el('div','project-members');(p.containers || []).forEach(c=>{const r=el('div','resource-row');r.append(el('span','',c.name),containerStatus(c));members.append(r);});const controls=el('div','project-controls');[['启动','start'],['停止','stop'],['重启','restart']].forEach(([label,action])=>controls.append(button(label,()=>confirm(`${label}项目 ${p.name}`,'仅对现有非一次性容器逐个操作；中途失败时会停止并报告，已完成的操作不会回退。',()=>mutation(`/projects/${encodeURIComponent(p.name)}/action`,{action}),action==='stop'),'secondary small')));card.append(members,controls);n.append(card);});return n; }
 const joinPath=(p,name)=>(p==='/'?'':p)+'/'+name;
@@ -212,7 +305,7 @@ async function filesPage() {
   const uploadInput=el('input');uploadInput.type='file';uploadInput.hidden=true;uploadInput.onchange=async()=>{const f=uploadInput.files[0];if(!f)return;if(f.size>512*1024*1024){toast('单文件上传上限 512 MB',true);uploadInput.value='';return;}try{await uploadFile(joinPath(path,f.name),f);toast('上传完成');await render();}catch(e){toast(e.message,true);}finally{uploadInput.value='';}};n.append(uploadInput);
   const crumb=el('div','file-breadcrumb');crumb.append(button('/srv/junpanel',()=>{state.filePath='/';return render();},'quiet small','folder'));let current='';path.split('/').filter(Boolean).forEach(part=>{current+='/'+part;const dest=current;crumb.append(el('span','muted','/'),button(part,()=>{state.filePath=dest;return render();},'quiet small'));});n.append(crumb);
   const t=table(['名称','大小','修改时间','权限','操作']); if(path!=='/')cells(t.body,button('.. 上一级',()=>{state.filePath=path.slice(0,path.lastIndexOf('/'))||'/';return render();},'quiet small'),'', '', '', '');
-  rows.forEach(f=>{const p=f.path || joinPath(path,f.name),isDir=f.directory ?? f.dir ?? f.is_dir; const name=button(f.name,()=>{if(f.link)throw new Error('符号链接不在界面中展开');if(isDir){state.filePath=p;return render();}return editFile(p);},'quiet small',isDir?'folder':'file');name.classList.add('file-name');const controls=[];if(!isDir&&!f.link){const download=link(`/api/files/download?path=${encodeURIComponent(p)}`,'下载');download.removeAttribute('target');controls.push(download);}controls.push(button('重命名',()=>{const v=field('新路径',p,{help:'可移动到管理目录中的其它位置；不会覆盖已有目标。'});formModal('重命名 / 移动',[v],'保存',()=>mutation('/files/rename',{path:p,to:v.val()}));},'quiet small'),button('删除',()=>confirm(`移入回收站 · ${f.name}`,'文件将移动到本机回收站，可在工作台中恢复。站点根目录不可移动。',()=>mutation('/files/trash',{path:p}),true),'quiet small'));cells(t.body,name,isDir?'文件夹':bytes(f.size),date(f.modified || f.mod_time),el('code','',f.mode || '—'),ops(...controls));});n.append(t.n,note('文件操作限定在 /srv/junpanel。文本编辑上限 1 MB，单文件上传上限 512 MB，下载不限大小。'));return n;
+  rows.forEach(f=>{const p=f.path || joinPath(path,f.name),isDir=f.directory ?? f.dir ?? f.is_dir; const name=button(f.name,()=>{if(f.link)throw new Error('符号链接不在界面中展开');if(isDir){state.filePath=p;return render();}return editFile(p);},'quiet small',isDir?'folder':'file');name.classList.add('file-name');const controls=[];if(!isDir&&!f.link){const download=link(`/api/files/download?path=${encodeURIComponent(p)}`,'下载');download.removeAttribute('target');controls.push(download);}controls.push(button('重命名',()=>{const v=field('新路径',p,{help:'可移动到管理目录中的其它位置；不会覆盖已有目标。'});formModal('重命名 / 移动',[v],'保存',()=>mutation('/files/rename',{path:p,to:v.val()}));},'quiet small'),button('删除',()=>confirm(`移入回收站 · ${f.name}`,'文件将移动到本机回收站，可在回收站中恢复。站点根目录不可移动。',()=>mutation('/files/trash',{path:p}),true),'quiet small'));cells(t.body,name,isDir?'文件夹':bytes(f.size),date(f.modified || f.mod_time),el('code','',f.mode || '—'),ops(...controls));});n.append(t.n,note('文件操作限定在 /srv/junpanel。文本编辑上限 1 MB，单文件上传上限 512 MB，下载不限大小。'));return n;
 }
 async function editFile(path) { const data=await api(`/files/content?path=${encodeURIComponent(path)}`),text=field(path,data.text || '',{area:true,rows:20,required:false});text.input.classList.add('code-editor');text.input.spellcheck=false;formModal('编辑文本文件',[text],'保存文件',()=>mutation('/files/save',{path,text:text.input.value,revision:data.revision}),{large:true,note:'保存前会检查文件是否被其它操作修改，避免覆盖更新。'}); }
 async function showTrash() { const rows=await api('/trash'),n=el('div');n.append(el('p','muted','回收站中的项目保留 30 天后自动永久删除。'));if(!rows.length)n.append(empty('回收站为空'));rows.forEach(r=>{const item=el('div','resource-row'),left=el('div','resource-left'),text=el('div','resource-name'),ops=el('div','table-ops'),name=r.path || r.original;text.append(el('strong','',name),el('small','muted',date(r.at)));left.append(text);ops.append(button('恢复',()=>mutation(`/trash/${r.id}/restore`,{}),'secondary small'),button('永久删除',()=>confirm('永久删除',`将永久删除 ${name}，无法恢复。`,async()=>{await api(`/trash/${r.id}`,undefined,'DELETE');toast('已永久删除');await showTrash();},true),'quiet small'));item.append(left,ops);n.append(item);});const actions=[button('关闭',closeModal)];if(rows.length)actions.unshift(button('清空回收站',()=>confirm('清空回收站',`将永久删除回收站中的全部 ${rows.length} 项，无法恢复。`,async()=>{const v=await api('/trash/empty',{});closeModal();toast(`已永久删除 ${v.removed} 项`);},true),'danger'));openModal('回收站',n,actions); }
@@ -221,7 +314,7 @@ function credentialForm(app) {
  formModal(`${app.name} · 连接信息`,[password,otp],'验证并查看',async()=>{const data=await api('/credentials',{id:app.id,password:password.input.value,otp:otp.val()});password.input.value='';const n=el('div');n.append(note(data.note));[['地址',data.host],['端口',String(data.port)],['用户',data.user],['数据库',data.database]].filter(v=>v[1]).forEach(([a,b])=>n.append(line(a,b)));if(data.password){const secret=field('数据库密码',data.password,{type:'password',required:false});secret.input.readOnly=true;n.append(secret.n);const toggle=button('显示 / 隐藏',()=>{secret.input.type=secret.input.type==='password'?'text':'password';},'secondary small');const copy=button('复制密码',async()=>{await navigator.clipboard.writeText(data.password);toast('密码已复制，请妥善保管剪贴板');},'secondary small');n.append(ops(toggle,copy));}openModal(`${app.name} · 连接信息`,n,[button('关闭',closeModal)]);},{note:'连接凭据需要再次验证管理员身份，仅在当前弹窗中展示。'});
 }
 async function databasesPage() {
-  const rows=await api('/databases');action(button('刷新',render,'secondary','refresh'));if(!rows.length)return empty('还没有受管数据库','在应用中心安装 PostgreSQL、MySQL、Redis 或 WordPress 后，会出现在这里。');const n=el('div'),layout=el('div','database-layout'),left=el('div','database-selector'),main=el('div','panel');n.append(note('此处使用受管应用的管理员凭据。SQL 可更改或删除数据，请核对语句；可在“备份”页创建备份。',true),layout);layout.append(left,main);
+  const rows=await api('/databases');action(button('刷新',render,'secondary','refresh'));if(!rows.length)return empty('还没有受管数据库','在应用商店安装 PostgreSQL、MySQL、Redis 或 WordPress 后，会出现在这里。');const n=el('div'),layout=el('div','database-layout'),left=el('div','database-selector'),main=el('div','panel');n.append(note('此处使用受管应用的管理员凭据。SQL 可更改或删除数据，请核对语句；可在“备份”页创建备份。',true),layout);layout.append(left,main);
   const choose=d=>{left.replaceChildren();rows.forEach(row=>{const b=el('button',`database-card${row.id===d.id?' selected':''}`);b.append(icon('database'),el('strong','',row.name),el('small','muted',`${row.kind} · ${row.port || '容器内部'}`));b.onclick=()=>choose(row);left.append(b);});main.replaceChildren();main.append(el('h2','',d.name));const db=field('数据库名称',d.database || 'junpanel',{max:63}),sql=field(d.kind==='redis'?'只读命令':'SQL 语句',d.kind==='redis'?'INFO':'SELECT 1;',{area:d.kind!=='redis',rows:8,select:d.kind==='redis'?[['INFO','INFO'],['DBSIZE','DBSIZE'],['PING','PING']]:undefined});if(d.kind!=='redis')sql.input.classList.add('code-editor');const result=el('pre','log-view','执行结果将显示在这里。'),tools=el('div','database-controls'),run=button('执行',async()=>{run.disabled=true;try{const value=await api(`/databases/${d.id}/query`,{database:db.val(),sql:d.kind==='redis'?'':sql.input.value,command:d.kind==='redis'?sql.val():''});result.textContent=value.text || '执行成功（无输出）';}finally{run.disabled=false;}},'primary','play');tools.append(run,button('连接信息',()=>credentialForm(d),'secondary','lock'));if(d.kind!=='redis'){tools.append(button('新建数据库',()=>{const name=field('数据库名称','',{max:63,help:'仅字母、数字及下划线，以字母或下划线开头。'});formModal('新建数据库',[name],'创建',()=>mutation(`/databases/${d.id}/create`,{name:name.val()}));},'secondary'));tools.append(button('备份此数据库',async()=>{if(!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(db.val()))throw new Error('数据库名称格式无效');await mutation('/backups',{type:'database',target:d.id,database:db.val()});},'secondary'));}if(d.kind!=='redis')main.append(db.n);main.append(sql.n,tools,result,el('p','help','查询结果限制 8 MB。数据库备份是流式导出的压缩 SQL，不受此限制，需用数据库原生工具导入。'));};choose(rows.find(d=>d.id===state.dbId)||rows[0]);return n;
 }
 function decode64(s, decoder = new TextDecoder()) { const b=Uint8Array.from(atob(s),x=>x.charCodeAt(0));return decoder.decode(b,{stream:true}); }
@@ -235,7 +328,7 @@ async function terminalPage() {
   form.onsubmit=e=>{e.preventDefault();try{send(input.value+'\n');input.value='';}catch(e){toast(e.message,true);}};tools.append(select.n,status,connect,button('Ctrl+C',()=>send('\x03'),'secondary small'),button('断开',()=>ws?.close(),'quiet small'));p.append(tools,output,form);n.append(p,el('p','help','最多同时连接 2 个终端；无输入 5 分钟、连接 30 分钟后关闭。退出终端不保证结束容器内已启动的后台进程。'));interval(async()=>{if(ws?.readyState===1 && Date.now()-lastActivity<240000)ws.send(JSON.stringify({type:'ping'}));},60000);return n;
 }
 function jobTag(j) { return tag(({running:'进行中',success:'已完成',failed:'失败'})[j.state] || j.state,j.state==='success'?'ok':j.state==='failed'?'bad':'blue'); }
-async function jobsPage() { const rows=await api('/jobs'),n=el('div','jobs-list');action(button('刷新',render,'secondary','refresh'));n.append(note('记录保存在代理内存中，最多保留 80 项，重启后清空。任务输出有长度限制。'));if(!rows.length)n.append(empty('还没有任务记录'));rows.forEach(j=>{const r=el('div','resource-row'),left=el('div','resource-left'),text=el('div');text.append(el('strong','resource-name',j.title),el('small','muted',date(j.started)));left.append(el('span',`job-icon ${j.state}`,j.state==='success'?'✓':j.state==='failed'?'!':'↻'),text);r.append(left,ops(jobTag(j),button('查看输出',()=>showJob(j.id),'quiet small')));n.append(r);});const running=rows.filter(j=>j.state==='running').length;$('#job-badge').hidden=!running;$('#job-badge').textContent=running;return n; }
+async function jobsPage() { const rows=await api('/jobs'),n=el('div','jobs-list');action(button('刷新',render,'secondary','refresh'));n.append(note('记录保存在代理内存中，最多保留 80 项，重启后清空。任务输出有长度限制。'));if(!rows.length)n.append(empty('还没有任务日志'));rows.forEach(j=>{const r=el('div','resource-row'),left=el('div','resource-left'),text=el('div');text.append(el('strong','resource-name',j.title),el('small','muted',date(j.started)));left.append(el('span',`job-icon ${j.state}`,j.state==='success'?'✓':j.state==='failed'?'!':'↻'),text);r.append(left,ops(jobTag(j),button('查看输出',()=>showJob(j.id),'quiet small')));n.append(r);});const running=rows.filter(j=>j.state==='running').length;$('#job-badge').hidden=!running;$('#job-badge').textContent=running;return n; }
 async function showJob(id) { const n=el('div'),status=el('div','log-toolbar'),out=el('pre','log-view','正在读取任务…');n.append(status,out);openModal('任务详情',n,[button('关闭',closeModal)],true);const load=async()=>{const rows=await api('/jobs'),j=rows.find(j=>j.id===id);if(!j){out.textContent='任务已不在当前记录中，可能因服务重启或记录轮换被清除。';clearInterval(modalTimer);return;}$('#modal-title').textContent=j.title;status.replaceChildren(jobTag(j),el('span','muted',`${date(j.started)}${j.ended?' → '+date(j.ended):''}`));out.textContent=[j.output,j.error].filter(Boolean).join('\n\n') || (j.state==='running'?'任务正在执行…':'操作已完成。');out.scrollTop=out.scrollHeight;if(j.state!=='running'){clearInterval(modalTimer);modalTimer=null;}};try{await load();if(!modalTimer && status.textContent.includes('进行中'))modalTimer=setInterval(()=>load().catch(e=>{out.textContent=e.message;}),2000);}catch(e){out.textContent=e.message;} }
 async function securityPage() {
   const session=await api('/session');state.totp=session.totp;const n=el('div','security-grid'),account=panel('管理员账号',tag('单管理员','blue'));account.append(line('账号',state.user),line('会话有效期','闲置 30 分钟 / 最长 8 小时'),line('两步验证',state.totp?'已开启':'未开启'));const actions=el('div','security-actions');actions.append(button('修改密码',passwordForm,'secondary','lock'),button(state.totp?'关闭两步验证':'启用两步验证',totpForm,'primary','shield'));account.append(actions);
@@ -246,12 +339,11 @@ function totpForm() { const password=field('当前密码','',{type:'password',ma
   formModal('启用两步验证',[password],'验证密码',async()=>{const r=await api('/security',{action:'totp_setup',password:password.input.value});const secret=field('在验证器中手动添加此密钥',r.secret,{required:false,help:'选择基于时间（TOTP），每 30 秒更新，6 位数字。此密钥只用于你的验证器。'});secret.input.readOnly=true;const code=field('验证器生成的 6 位动态码','',{max:6});formModal('确认两步验证',[secret,code],'开启并重新登录',async()=>{await api('/security',{action:'totp_enable',otp:code.val()});showLogin();toast('两步验证已开启，请重新登录');},{note:'请先安全保存验证器密钥。丢失时可在服务器本机重置面板账号，重置会同时关闭两步验证。'});});
 }
 function openSearch() { const d=$('#search-dialog');if(!d.open)d.showModal();$('#search-input').value='';drawSearch();$('#search-input').focus(); }
-function drawSearch() { const q=$('#search-input').value.toLowerCase(),results=$('#search-results');results.replaceChildren();Object.entries(routes).filter(([r,v])=>`${r} ${v[0]} ${v[1]}`.toLowerCase().includes(q)).forEach(([r,v])=>{const b=el('button','search-result');b.append(icon(v[3]),el('span','',v[0]),el('small','muted',v[1]));b.onclick=()=>{$('#search-dialog').close();navigate(r);};results.append(b);});state.sites.filter(s=>`${s.name} ${s.domains}`.toLowerCase().includes(q)&&q).forEach(s=>{const b=el('button','search-result');b.append(icon('globe'),el('span','',s.name),el('small','muted',s.domains.join(', ')));b.onclick=()=>{$('#search-dialog').close();navigate('sites');};results.append(b);});state.apps.filter(a=>a.name.toLowerCase().includes(q)&&q).forEach(a=>{const b=el('button','search-result');b.append(icon('apps'),el('span','',a.name));b.onclick=()=>{$('#search-dialog').close();state.tab='installed';navigate('apps');};results.append(b);});if(!results.children.length)results.append(empty('没有匹配结果')); }
+function drawSearch() { const q=$('#search-input').value.toLowerCase(),results=$('#search-results');results.replaceChildren();Object.entries(routes).filter(([r,v])=>`${r} ${v[0]} ${groupLabel(v[3])} ${v[1]}`.toLowerCase().includes(q)).forEach(([r,v])=>{const b=el('button','search-result'),g=groupLabel(v[3]);b.append(icon(v[2]),el('span','',g===v[0]?v[0]:`${g} / ${v[0]}`),el('small','muted',v[1]));b.onclick=()=>{$('#search-dialog').close();navigate(r);};results.append(b);});state.sites.filter(s=>`${s.name} ${s.domains}`.toLowerCase().includes(q)&&q).forEach(s=>{const b=el('button','search-result');b.append(icon('globe'),el('span','',s.name),el('small','muted',s.domains.join(', ')));b.onclick=()=>{$('#search-dialog').close();navigate('sites');};results.append(b);});state.apps.filter(a=>a.name.toLowerCase().includes(q)&&q).forEach(a=>{const b=el('button','search-result');b.append(icon('apps'),el('span','',a.name));b.onclick=()=>{$('#search-dialog').close();navigate('installed');};results.append(b);});if(!results.children.length)results.append(empty('没有匹配结果')); }
 $('#open-search').onclick=openSearch;$('#search-close').onclick=()=>$('#search-dialog').close();$('#search-input').oninput=drawSearch;document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&state.csrf){e.preventDefault();openSearch();}});
-$('.local-indicator').children[1].textContent=accessLabel();
-$('.sidebar-caption').textContent=location.host;
+$('#access-label').textContent=accessLabel();
 $('.login-boundary').lastChild.textContent=location.protocol==='https:'?'HTTPS 加密连接 · 管理员认证':'本机入口 · 远程访问请使用 SSH 隧道';
-(async()=>{try{const meta=await api('/meta');state.demo=meta.demo;$('#sidebar-version').textContent=meta.version;$('#demo-hint').hidden=!meta.demo;if(meta.demo){$('#login-user').value='demo';$('#login-password').value='JunPanelPreview2026!';}try{await enter(await api('/session'));}catch{showLogin();}}catch(e){$('#login-error').textContent=e.message;}})();
+(async()=>{try{const meta=await api('/meta');state.demo=meta.demo;$('#sidebar-version').textContent=meta.version;$('#footer-version').textContent=`v${meta.version}`;$('#demo-hint').hidden=!meta.demo;if(meta.demo){$('#login-user').value='demo';$('#login-password').value='JunPanelPreview2026!';}try{await enter(await api('/session'));}catch{showLogin();}}catch(e){$('#login-error').textContent=e.message;}})();
 function uploadFile(target, file) {
   return new Promise((resolve, reject) => {
     const progress = el('div', 'toast', `正在上传 ${file.name} 0%`), xhr = new XMLHttpRequest();
@@ -313,7 +405,7 @@ async function newBackup() {
   formModal('新建备份', [type, target, database], '开始备份', async () => {
     if (!target.input.value) throw new Error('没有可备份的对象');
     await mutation('/backups', { type: type.input.value, target: target.input.value, database: type.input.value === 'database' ? database.val() : '' });
-  }, { note: '备份作为后台任务运行，可在任务记录查看进度。应用备份会短暂停止应用以保证数据一致，完成后自动启动。' });
+  }, { note: '备份作为后台任务运行，可在任务日志查看进度。应用备份会短暂停止应用以保证数据一致，完成后自动启动。' });
 }
 function restoreBackup(b) {
   const what = b.type === 'site'
@@ -401,7 +493,7 @@ function scheduleForm(current, data, sites, apps, databases) {
 function setAlertBadge(count) { const b = $('#alert-badge'); if (!b) return; b.hidden = !count; b.textContent = count || ''; }
 const alertKinds = { triggered: ['告警', 'bad'], reminder: ['仍未解决', 'warn'], resolved: ['已恢复', 'ok'] };
 async function alertsPage() {
-  const [data, certs] = await Promise.all([api('/alerts'), api('/certificates')]), cfg = data.config, n = el('div');
+  const data = await api('/alerts'), cfg = data.config, n = el('div');
   setAlertBadge(data.active.length);
   action(button('立即检查', async () => { await api('/alerts/check', {}); toast('检查完成'); await render(); }, 'secondary', 'refresh'));
 
@@ -425,7 +517,8 @@ async function alertsPage() {
   const repeat = field('未解决时的重复提醒间隔（小时）', String(cfg.repeat_hours), { type: 'number' });
   const error = el('div', 'form-error'), save = button('保存设置', () => form.requestSubmit(), 'primary');
   const test = button('发送测试通知', async () => { await api('/alerts/test', {}); toast('测试通知已发送，请到接收端确认'); }, 'secondary');
-  form.append(format.n, url.n, notify.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, repeat.n, error);
+  form.className = 'form-grid'; url.n.classList.add('span-2'); error.classList.add('span-2');
+  form.append(format.n, notify.n, url.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, repeat.n, error);
   form.onsubmit = async e => {
     e.preventDefault(); error.textContent = ''; save.disabled = true;
     try {
@@ -441,14 +534,6 @@ async function alertsPage() {
   settings.append(hint, form);
   n.append(settings);
 
-  const certPanel = panel('证书', tag(certs.found ? `${certs.certificates.length} 张` : '未找到 Caddy 证书目录', certs.found ? 'blue' : 'warn'));
-  if (certs.certificates.length) {
-    const t = table(['域名', '签发者', '到期时间', '剩余', '状态']);
-    certs.certificates.forEach(c => cells(t.body, c.name, c.issuer, date(c.not_after), c.days_left < 0 ? '已过期' : `${c.days_left} 天`, tag(c.warn ? '即将到期' : '正常', c.warn ? 'bad' : 'ok')));
-    certPanel.append(t.n);
-  } else certPanel.append(el('p', 'muted', certs.found ? 'Caddy 当前没有为已配置的网站保存证书。' : '读取 /var/lib/caddy 下的证书失败，可能 Caddy 使用了自定义数据目录。'));
-  n.append(certPanel);
-
   const historyPanel = panel('最近事件');
   if (!data.history.length) historyPanel.append(el('p', 'muted', '还没有告警事件。'));
   else {
@@ -458,6 +543,15 @@ async function alertsPage() {
   }
   n.append(historyPanel);
   return n;
+}
+async function certsPage() {
+  const certs = await api('/certificates'), n = el('div');
+  action(button('刷新', render, 'secondary', 'refresh'));
+  n.append(note('证书由 Caddy 自动签发和续期，无需手动操作。到期提醒可在“告警”中设置。'));
+  if (!certs.certificates.length) { n.append(empty(certs.found ? '没有证书' : '未找到 Caddy 证书目录', certs.found ? 'Caddy 当前没有为已配置的网站保存证书。' : '读取 /var/lib/caddy 下的证书失败，可能 Caddy 使用了自定义数据目录。')); return n; }
+  const t = table(['域名', '签发者', '到期时间', '剩余', '状态']);
+  certs.certificates.forEach(c => cells(t.body, c.name, c.issuer, date(c.not_after), c.days_left < 0 ? '已过期' : `${c.days_left} 天`, tag(c.days_left < 0 ? '已过期' : c.warn ? '即将到期' : '正常', c.warn || c.days_left < 0 ? 'bad' : 'ok')));
+  n.append(t.n); return n;
 }
 function setUpgradeBadge(ver) { const b = $('#upgrade-badge'); if (!b) return; b.hidden = !ver; b.textContent = ver ? '新' : ''; }
 async function upgradePage() {
@@ -483,7 +577,7 @@ async function upgradePage() {
 
   const up = panel(`新版本 v${latest.version}`, tag('可升级', 'blue'));
   if (latest.notes) { const notes = el('pre', 'log-view', latest.notes); up.append(notes); }
-  up.append(el('p', 'muted', `完整的发布说明：${d.notes_url}`));
+  const full = el('p', 'muted', '完整的发布说明：'); full.append(link(d.notes_url, d.notes_url)); up.append(full);
   up.append(note('升级会下载安装包并用发布时固定的 SHA-256 校验，通过后才安装；面板和管理代理会重启约 1 分钟，现有应用和 Caddy 不受影响，登录会话会清空，账号、数据、备份与计划任务保留。安装失败会自动回滚。'));
   if (!d.supported) up.append(note(d.unsupported_reason, true));
   d.blockers.forEach(b => up.append(note(b + '。请等它结束后再升级。', true)));

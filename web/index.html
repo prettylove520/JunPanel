@@ -1,28 +1,76 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#183026">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#005eeb">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <title>JunPanel · 服务器工作台</title>
+  <title>JunPanel</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/junpanel.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <section id="login" class="login-layout">
-    <div class="login-intro"><a class="brand" href="/"><span class="brand-icon"><img src="/logo.svg" alt="" width="43" height="43"></span><span class="brand-wordmark"><strong>Jun<span>Panel</span></strong><small>你的服务器工作空间</small></span></a><div class="intro-copy"><div class="eyebrow">A BETTER PLACE FOR YOUR SERVER.</div><h1>让好服务，<br>从这里发生。</h1><p>从一个域名，到一组应用。<br>把服务器里的日常，整理成清晰的工作空间。</p><div class="intro-illustration" aria-hidden="true"><div class="illustration-head"><span class="tiny-lights">● ● ●</span><span>junpanel / workbench</span></div><div class="illustration-body"><div class="illustration-bars"><i></i><i></i><i></i><i></i></div><div class="illustration-lines"><span>服务有序，部署从容。</span><i></i><i></i><i></i></div></div><div class="illustration-label">LOCAL FIRST <span>↗</span></div></div></div><div class="intro-footer">独立设计 · 自托管 · 中文优先</div></div>
-    <div class="login-side"><form id="login-form" class="login-form"><div class="eyebrow">欢迎回来</div><h2>进入服务器工作台</h2><p class="muted">使用管理员账号，连接你的服务器。</p><label for="login-user">管理员账号</label><input id="login-user" autocomplete="username" placeholder="admin" required maxlength="64"><label for="login-password">登录密码</label><div class="password-field"><input id="login-password" type="password" autocomplete="current-password" placeholder="输入你的密码" required maxlength="256"><button type="button" id="show-password" aria-label="显示或隐藏密码">◉</button></div><label for="login-otp">动态码 <span class="muted">已启用两步验证时填写</span></label><input id="login-otp" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="可选 · 6 位动态码"><div id="login-error" class="form-error" role="alert"></div><button type="submit" id="login-submit" class="button primary wide">连接工作台 <span>→</span></button><div class="login-boundary"><span class="status-dot"></span>本机入口 · SSH 加密远程链路</div><p id="demo-hint" class="demo-hint" hidden>演示账号 demo · 密码 JunPanelPreview2026!<br>仅展示模拟数据，服务器变更已禁用。</p></form><span class="login-copyright">JUNPANEL / 服务器工作台</span></div>
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand"><img src="/logo.svg" alt="" width="40" height="40"><strong>JunPanel</strong></div>
+        <h1>现代化的 Linux 服务器运维面板</h1>
+        <p>网站、应用、容器、数据库、备份与告警，在一个地方管理。</p>
+        <ul class="login-points"><li>基于现有 Caddy 与 Docker，不改动原有服务</li><li>备份可恢复，计划任务按时执行</li><li>独立低权限网页服务，管理代理仅本机可达</li></ul>
+      </div>
+      <form id="login-form" class="login-form">
+        <h2>登录</h2>
+        <p class="muted">使用管理员账号进入面板</p>
+        <label for="login-user">账号</label>
+        <input id="login-user" autocomplete="username" placeholder="请输入账号" required maxlength="64">
+        <label for="login-password">密码</label>
+        <div class="password-field"><input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" required maxlength="256"><button type="button" id="show-password" aria-label="显示或隐藏密码"><span data-icon="eye"></span></button></div>
+        <label for="login-otp">动态码 <span class="muted">（已开启两步验证时填写）</span></label>
+        <input id="login-otp" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="6 位数字">
+        <div id="login-error" class="form-error" role="alert"></div>
+        <button type="submit" id="login-submit" class="button primary wide">登录</button>
+        <div class="login-boundary"><span class="status-dot"></span><span></span></div>
+        <p id="demo-hint" class="demo-hint" hidden>演示账号 demo · 密码 JunPanelPreview2026!<br>仅展示模拟数据，服务器变更已禁用。</p>
+      </form>
+    </div>
+    <div class="login-footer">JunPanel · 自托管服务器面板</div>
   </section>
+
   <div id="application" class="shell" hidden>
-    <aside class="sidebar" id="sidebar"><a class="brand" href="/"><span class="brand-icon"><img src="/logo.svg" alt="" width="43" height="43"></span><span class="brand-wordmark"><strong>Jun<span>Panel</span></strong><small>你的服务器工作空间</small></span></a><div class="nav-section-label">工作空间</div><nav aria-label="主要模块"><button class="nav-link active" data-route="overview"><span data-icon="dashboard"></span>服务器总览</button><button class="nav-link" data-route="sites"><span data-icon="globe"></span>网站<span id="site-badge" class="nav-badge">—</span></button><button class="nav-link" data-route="apps"><span data-icon="apps"></span>应用中心</button><button class="nav-link" data-route="containers"><span data-icon="box"></span>Docker 容器</button><button class="nav-link" data-route="projects"><span data-icon="layers"></span>Compose 项目</button><button class="nav-link" data-route="files"><span data-icon="folder"></span>站点文件</button><button class="nav-link" data-route="databases"><span data-icon="database"></span>数据库</button><button class="nav-link" data-route="backups"><span data-icon="disk"></span>备份</button><button class="nav-link" data-route="schedules"><span data-icon="clock"></span>计划任务</button><button class="nav-link" data-route="alerts"><span data-icon="bell"></span>告警<span id="alert-badge" class="nav-badge" hidden></span></button><button class="nav-link" data-route="upgrade"><span data-icon="refresh"></span>版本升级<span id="upgrade-badge" class="nav-badge" hidden></span></button><button class="nav-link" data-route="terminal"><span data-icon="terminal"></span>容器终端</button></nav><div class="nav-section-label nav-second">管理</div><nav aria-label="工作台管理"><button class="nav-link" data-route="jobs"><span data-icon="activity"></span>任务记录<span id="job-badge" class="nav-badge" hidden>0</span></button><button class="nav-link" data-route="security"><span data-icon="shield"></span>账号与安全</button></nav><div class="sidebar-bottom"><div class="local-indicator"><span class="status-dot"></span><span>本机连接模式</span><span data-icon="lock"></span></div><div class="sidebar-caption">SSH 隧道 · 127.0.0.1</div><div class="sidebar-version">JUNPANEL <span id="sidebar-version">0.1.9</span><span>自托管</span></div></div></aside>
-    <div class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button mobile-menu" id="mobile-menu" aria-label="打开或收起导航"><span data-icon="menu"></span></button><span class="muted">工作空间</span><span class="breadcrumb-slash">/</span><strong id="breadcrumb">服务器总览</strong></div><div class="topbar-actions"><button class="search-launch" id="open-search"><span data-icon="search"></span><span>快速前往</span><kbd>⌘ K</kbd></button><button class="icon-button" id="theme-toggle" title="切换主题" aria-label="切换主题"><span data-icon="sun"></span></button><span class="topbar-divider"></span><span class="user-avatar">J</span><span id="current-user" class="user-name">管理员</span><button class="icon-button" id="logout" title="退出登录" aria-label="退出登录"><span data-icon="logout"></span></button></div></header>
-    <main><div id="demo-banner" class="demo-banner" hidden><span data-icon="info"></span>演示工作台 · 指标、站点与日志均为模拟数据，变更操作已禁用。</div><div id="connection-error" class="alert" hidden></div><div class="page-heading"><div><div class="eyebrow" id="page-eyebrow">WORKBENCH / OVERVIEW</div><h1 id="page-title">服务器总览</h1><p id="page-description">资源、站点与部署，尽在一处。</p></div><div id="page-actions" class="page-actions"></div></div><div id="view" class="view"></div><footer><span>JunPanel · 让服务有序，让部署从容</span><span id="footer-status"><span class="status-dot"></span> 连接中</span></footer></main></div>
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30"><strong>JunPanel</strong></a>
+      <nav id="nav" aria-label="主菜单"></nav>
+      <div class="sidebar-bottom">
+        <span class="status-dot"></span><span id="access-label">本机连接</span>
+        <span class="sidebar-version">v<span id="sidebar-version">—</span></span>
+      </div>
+    </aside>
+    <div class="sidebar-mask" id="sidebar-mask"></div>
+    <div class="main-shell">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="mobile-menu" aria-label="打开或收起菜单"><span data-icon="menu"></span></button>
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div class="topbar-actions">
+          <button class="search-launch" id="open-search"><span data-icon="search"></span><span>搜索</span><kbd>Ctrl K</kbd></button>
+          <button class="icon-button" id="theme-toggle" title="切换深色 / 浅色" aria-label="切换深色或浅色主题"><span data-icon="moon"></span></button>
+          <span class="user-chip"><span class="user-avatar" id="user-avatar">J</span><span id="current-user">管理员</span></span>
+          <button class="icon-button" id="logout" title="退出登录" aria-label="退出登录"><span data-icon="logout"></span></button>
+        </div>
+      </header>
+      <main>
+        <div id="demo-banner" class="banner" hidden><span data-icon="info"></span>演示模式：指标、站点与日志均为模拟数据，变更操作已禁用。</div>
+        <div id="connection-error" class="banner danger" hidden></div>
+        <div id="subnav" class="subnav" hidden></div>
+        <div id="page-bar" class="page-bar"><div><h1 id="page-title"></h1><p id="page-description"></p></div><div id="page-actions" class="page-actions"></div></div>
+        <div id="view" class="view"></div>
+        <footer><span>JunPanel <span id="footer-version"></span></span><span id="footer-status"><span class="status-dot"></span> 连接中</span></footer>
+      </main>
+    </div>
   </div>
-  <dialog id="modal" class="modal" aria-labelledby="modal-title"><div class="modal-header"><div><div id="modal-eyebrow" class="eyebrow">JUNPANEL / WORKSPACE</div><h2 id="modal-title"></h2></div><button class="icon-button" id="modal-close" aria-label="关闭弹窗"><span data-icon="close"></span></button></div><div id="modal-content" class="modal-content"></div><div id="modal-footer" class="modal-footer"></div></dialog>
-  <dialog id="search-dialog" class="search-dialog" aria-label="快速搜索"><div class="search-dialog-field"><span data-icon="search"></span><input id="search-input" placeholder="搜索模块、站点或已安装应用" aria-label="快速搜索"><button class="text-button" id="search-close">ESC</button></div><div id="search-results"></div></dialog>
+
+  <dialog id="modal" class="modal" aria-labelledby="modal-title"><div class="modal-header"><h2 id="modal-title"></h2><button class="icon-button" id="modal-close" aria-label="关闭弹窗"><span data-icon="close"></span></button></div><div id="modal-content" class="modal-content"></div><div id="modal-footer" class="modal-footer"></div></dialog>
+  <dialog id="search-dialog" class="search-dialog" aria-label="快速搜索"><div class="search-dialog-field"><span data-icon="search"></span><input id="search-input" placeholder="搜索菜单、网站或应用" aria-label="快速搜索"><button class="text-button" id="search-close">ESC</button></div><div id="search-results"></div></dialog>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 </body>
 </html>
