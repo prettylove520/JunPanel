@@ -102,6 +102,16 @@ function note(message, warning = false) { const n = el('div', warning ? 'info wa
 function line(name, value) { const n = el('div', 'details-row'); n.append(el('span', 'muted', name), el('span', '', value)); return n; }
 function panel(title, right) { const n = el('section', 'panel'), h = el('div', 'panel-header'); h.append(el('h2', '', title)); if (right) h.append(right); n.append(h); return n; }
 function field(label, value = '', options = {}) { const n = el('div', 'field'), id = `f-${crypto.randomUUID()}`, input = el(options.area ? 'textarea' : options.select ? 'select' : 'input'); input.id = id; input.value = value; if (!options.area && !options.select) input.type = options.type || 'text'; if (options.required !== false) input.required = true; if (options.placeholder) input.placeholder = options.placeholder; if (options.max) input.maxLength = options.max; if (options.area) input.rows = options.rows || 5; if (options.select) options.select.forEach(([v,t]) => { const o = el('option','',t); o.value = v; input.append(o); }); input.value = value; const l = el('label','',label); l.htmlFor = id; n.append(l,input); if (options.help) n.append(el('p','help',options.help)); return { n, input, val: () => input.value.trim() }; }
+// The version this page was served with. After the panel is upgraded, every response carries
+// the new version; reload once so an open tab does not keep running the old interface.
+const pageVersion = $('meta[name=junpanel-version]')?.content || '';
+function checkVersion(served) {
+  if (!served || !pageVersion || served === pageVersion) return;
+  let tried = null; try { tried = sessionStorage.getItem('junpanel-reloaded-for'); } catch {}
+  if (tried === served) return;
+  try { sessionStorage.setItem('junpanel-reloaded-for', served); } catch {}
+  location.reload();
+}
 const rendering = new Set();
 class Superseded extends Error {}
 async function api(path, data, method) {
@@ -110,6 +120,7 @@ async function api(path, data, method) {
   if (opts.method !== 'GET') opts.headers['X-CSRF-Token'] = state.csrf;
   if (data !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(data); }
   const response = await fetch(`/api${path}`, opts);
+  checkVersion(response.headers.get('X-JunPanel-Version'));
   let value; try { value = await response.json(); } catch { throw new Error('服务响应异常，请检查本机代理状态'); }
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); throw new Error(value.error || `操作失败 (${response.status})`); }
   if (rendering.has(epoch) && epoch !== state.epoch) throw new Superseded('页面已切换');
