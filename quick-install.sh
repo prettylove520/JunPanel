@@ -8,8 +8,8 @@ main() (
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   local version=0.1.11
   local expected=a735e272b2a06d7f24b1e10c240221f4253e47cfbf4079a6732c9871832bf629
-  local public_ref=ccb593f39637aba35e43c9e6132d956114673833
-  local public_hash=1347b25e3f22ce4ad7d94d8b8baf5c07b2a36fa799b6ecc932fd5f8a46e9d692
+  local public_ref=1109e8c37025347fe860a73dc138a43d5258acea
+  local public_hash=fba97a4be376e3e21bd1a21ad6ab75a0e0617ba25faeec9bcc678e6bd1e541e7
   local archive="JunPanel-$version-linux.tar.gz"
   local url="https://github.com/prettylove520/JunPanel/releases/download/v$version/$archive"
   local public_url="https://raw.githubusercontent.com/prettylove520/JunPanel/$public_ref/public-access.sh"
@@ -49,7 +49,7 @@ main() (
   (cd -- "$workdir" && printf '%s  %s\n%s  public-access.sh\n' "$expected" "$archive" "$public_hash" | sha256sum --check --status) || fail '下载文件校验失败，未执行安装。请重新运行安装命令。'
   if [[ "$access" == public ]]; then
     if public_ip="$(bash "$workdir/public-access.sh" --detect 2>"$workdir/ip-detection.log")"; then
-      printf '[JunPanel] 自动识别到服务器公网 IP：%s\n' "$public_ip"
+      if [[ "$public_ip" =~ ^[0-9.]+$ ]]; then printf '[JunPanel] 自动识别到服务器公网 IP：%s\n' "$public_ip"; else printf '[JunPanel] 沿用已配置的域名入口：%s\n' "$public_ip"; fi
     else
       public_ip=''
       printf '[JunPanel] 未识别到唯一公网 IPv4，将先安装面板，不生成未经确认的公网地址。\n'
@@ -63,7 +63,7 @@ main() (
     case "$line" in '管理员：'*) panel_user="${line#管理员：}";; '初始密码：'*) panel_password="${line#初始密码：}";; esac
   done < "$workdir/install.log"
   if [[ "$access" == public && -n "$public_ip" ]]; then
-    printf '[4/4] 自动配置 IP HTTPS 登录入口…\n'
+    printf '[4/4] 自动配置 HTTPS 登录入口…\n'
     if "${runner[@]}" bash "$workdir/public-access.sh" "$public_ip"; then public_result=0; else public_result=$?; fi
   elif [[ "$access" == local ]]; then
     printf '[4/4] 配置本机访问模式…\n'
