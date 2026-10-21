@@ -47,12 +47,16 @@ type dataPart struct {
 }
 
 var appData = map[string][]dataPart{
-	"wordpress": {{"app", "/var/www/html", "web"}, {"database", "/var/lib/mysql", "database"}},
-	"gitea":     {{"app", "/data", "data"}},
-	"kuma":      {{"app", "/app/data", "data"}},
-	"postgres":  {{"app", "/var/lib/postgresql/data", "data"}},
-	"mysql":     {{"app", "/var/lib/mysql", "data"}},
-	"redis":     {{"app", "/data", "data"}},
+	"wordpress":   {{"app", "/var/www/html", "web"}, {"database", "/var/lib/mysql", "database"}},
+	"gitea":       {{"app", "/data", "data"}},
+	"kuma":        {{"app", "/app/data", "data"}},
+	"postgres":    {{"app", "/var/lib/postgresql/data", "data"}},
+	"mysql":       {{"app", "/var/lib/mysql", "data"}},
+	"redis":       {{"app", "/data", "data"}},
+	"vaultwarden": {{"app", "/data", "data"}},
+	"memos":       {{"app", "/var/opt/memos", "data"}},
+	"n8n":         {{"app", "/home/node/.n8n", "data"}},
+	"openwebui":   {{"app", "/app/backend/data", "data"}},
 }
 
 // backupTag labels a backup: a note for the list and the schedule that made it.
@@ -897,7 +901,8 @@ func (a *agent) backupDelete(w http.ResponseWriter, r *http.Request) error {
 }
 func (a *agent) backupRestore(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		Confirm bool `json:"confirm"`
+		Confirm  bool   `json:"confirm"`
+		Database string `json:"database"`
 	}
 	if e := body(r, &req); e != nil {
 		return e
@@ -940,8 +945,30 @@ func (a *agent) backupRestore(w http.ResponseWriter, r *http.Request) error {
 			a.releaseApp(rec.ID, "")
 			return e
 		}
+	case "database":
+		target := req.Database
+		if target == "" {
+			target = meta.Database
+		}
+		if !dbIdentifier.MatchString(target) {
+			return bad(400, "目标数据库名需为字母、数字与下划线，以字母或下划线开头")
+		}
+		// Keep the app from being stopped or removed while its database is replaced.
+		rec, e := a.markBusy(meta.Target)
+		if e != nil {
+			return e
+		}
+		j, e = a.jobs.startWithin(backupTimeout, "恢复 · 数据库 · "+rec.Name+" / "+target, func(ctx context.Context, out *limitedBuffer) error {
+			e := a.restoreDatabase(ctx, out, meta, target)
+			a.releaseApp(rec.ID, "")
+			return e
+		})
+		if e != nil {
+			a.releaseApp(rec.ID, "")
+			return e
+		}
 	default:
-		return bad(400, "数据库导出文件请使用数据库原生工具导入")
+		return bad(400, "备份类型无效")
 	}
 	send(w, 202, j)
 	return nil

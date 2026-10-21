@@ -401,3 +401,8 @@ dl.details dd { margin: 0; }
   .gauge-ring { width: 96px; height: 96px; }
 }
 .terminal-toolbar .tag { height: 26px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tag-row:empty { display: none; }
+.problem-list { margin: 6px 0 0; padding-left: 18px; }
+.problem-list li { margin: 2px 0; word-break: break-word; }
+.form-error, .info > span { white-space: pre-line; }

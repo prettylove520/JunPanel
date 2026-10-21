@@ -240,9 +240,11 @@ func TestDockerDatabaseBackupStreams(t *testing.T) {
 	if len(sql) < 9<<20 || !strings.Contains(string(sql), "CREATE TABLE public.big") || !strings.Contains(string(sql), "PostgreSQL database dump complete") {
 		t.Fatalf("dump incomplete: %d bytes", len(sql))
 	}
-	if r = request(h, "POST", "/backups/"+list.Backups[0].ID+"/restore", `{"confirm":true}`, nil, nil); r.Code != 400 {
-		t.Fatal("database dump restore should point to native tools")
+	// The large dump also restores, streamed into a new database.
+	if r = request(h, "POST", "/backups/"+list.Backups[0].ID+"/restore", `{"confirm":true,"database":"streamed"}`, nil, nil); r.Code != 202 {
+		t.Fatalf("restore: %d %s", r.Code, r.Body.String())
 	}
+	waitJob(t, a, r.Body.Bytes(), 5*time.Minute)
 	if r = request(h, "POST", "/backups", `{"type":"database","target":"bk-pg","database":"junpanel; DROP"}`, nil, nil); r.Code != 400 {
 		t.Fatal("bad database name accepted")
 	}
@@ -350,5 +352,114 @@ func TestDockerScheduledBackupAndRestart(t *testing.T) {
 	}
 	if got := redisCommand(t, a, rec, "GET", "scheduled"); got != "kept" {
 		t.Fatalf("data after restart: %q", got)
+	}
+}
+
+func sqlLines(t *testing.T, a *agent, rec appRecord, db, query string) string {
+	t.Helper()
+	c := a.running(t, rec, "app")
+	args, env, e := databaseArgs(rec, "postgres", db, query)
+	if e != nil {
+		t.Fatal(e)
+	}
+	text, e := a.docker.exec(c.ID, args, env)
+	if e != nil {
+		t.Fatalf("%s: %v", query, e)
+	}
+	return strings.TrimSpace(text)
+}
+
+// A database backup restores into an emptied database, after the current one has
+// been backed up, and can also be restored under another name.
+func TestDockerDatabaseRestore(t *testing.T) {
+	a := dockerAgent(t)
+	h := a.routes()
+	rec := installApp(t, a, "pr"+randomID(4), "postgres")
+	// The image runs a temporary server for its init scripts and then restarts, so
+	// wait for queries to keep working rather than for the first answer.
+	ok := 0
+	args, env, _ := databaseArgs(rec, "postgres", "junpanel", "SELECT 1")
+	for i := 0; i < 90 && ok < 2; i++ {
+		if _, e := a.docker.exec(a.running(t, rec, "app").ID, args, env); e == nil {
+			ok++
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		ok = 0
+		time.Sleep(time.Second)
+	}
+	if ok < 2 {
+		t.Fatal("postgres did not start")
+	}
+	sqlLines(t, a, rec, "junpanel", "CREATE TABLE notes (body text); INSERT INTO notes VALUES ('before');")
+	r := request(h, "POST", "/backups", `{"type":"database","target":"`+rec.ID+`","database":"junpanel"}`, nil, nil)
+	waitJob(t, a, r.Body.Bytes(), 2*time.Minute)
+	original := listBackups(t, h)[0]
+	sqlLines(t, a, rec, "junpanel", "INSERT INTO notes VALUES ('after'); CREATE TABLE extra (x int);")
+
+	r = request(h, "POST", "/backups/"+original.ID+"/restore", `{"confirm":true}`, nil, nil)
+	if r.Code != 202 {
+		t.Fatalf("restore: %d %s", r.Code, r.Body.String())
+	}
+	j := waitJob(t, a, r.Body.Bytes(), 3*time.Minute)
+	if got := sqlLines(t, a, rec, "junpanel", "SELECT body FROM notes ORDER BY body"); got != "body\nbefore" {
+		t.Fatalf("after restore: %q\n%s", got, j.Output)
+	}
+	if got := sqlLines(t, a, rec, "junpanel", "SELECT count(*) FROM pg_tables WHERE tablename = 'extra'"); got != "count\n0" {
+		t.Fatalf("table created after the backup survived: %q", got)
+	}
+	var pre backupMeta
+	for _, b := range listBackups(t, h) {
+		if b.Note == "恢复前自动备份" {
+			pre = b
+		}
+	}
+	if pre.ID == "" {
+		t.Fatal("no backup of the database before it was replaced")
+	}
+	// The pre-restore backup holds the state that was replaced.
+	r = request(h, "POST", "/backups/"+pre.ID+"/restore", `{"confirm":true,"database":"copy_of_before"}`, nil, nil)
+	waitJob(t, a, r.Body.Bytes(), 3*time.Minute)
+	if got := sqlLines(t, a, rec, "copy_of_before", "SELECT body FROM notes ORDER BY body"); got != "body\nafter\nbefore" {
+		t.Fatalf("restore under another name: %q", got)
+	}
+	if got := sqlLines(t, a, rec, "junpanel", "SELECT body FROM notes ORDER BY body"); got != "body\nbefore" {
+		t.Fatalf("restoring elsewhere touched the original: %q", got)
+	}
+	// A damaged file is refused before anything is changed.
+	path := filepath.Join(a.backupDir(), original.File)
+	raw, _ := os.ReadFile(path)
+	raw[len(raw)/2] ^= 0xff
+	os.WriteFile(path, raw, 0600)
+	before := len(listBackups(t, h))
+	r = request(h, "POST", "/backups/"+original.ID+"/restore", `{"confirm":true}`, nil, nil)
+	j = waitOutcome(t, a, r.Body.Bytes())
+	if j.State != "failed" || !strings.Contains(j.Error, "校验失败") || len(listBackups(t, h)) != before {
+		t.Fatalf("damaged backup: %s %s, backups %d -> %d", j.State, j.Error, before, len(listBackups(t, h)))
+	}
+	if got := sqlLines(t, a, rec, "junpanel", "SELECT body FROM notes ORDER BY body"); got != "body\nbefore" {
+		t.Fatalf("damaged backup changed the database: %q", got)
+	}
+	// A dump that fails to load says so and names the way back.
+	bad, e := a.writeBackup(backupMeta{Type: "database", Target: rec.ID, Name: rec.Name, Database: "junpanel"}, "sql.gz", func(w io.Writer) error {
+		_, e := w.Write([]byte("CREATE TABLE ok (x int);\nTHIS IS NOT SQL;\n"))
+		return e
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	r = request(h, "POST", "/backups/"+bad.ID+"/restore", `{"confirm":true,"database":"scratch"}`, nil, nil)
+	j = waitOutcome(t, a, r.Body.Bytes())
+	if j.State != "failed" || !strings.Contains(j.Error, "导入失败") {
+		t.Fatalf("bad dump: %s %s", j.State, j.Error)
+	}
+	if got := sqlLines(t, a, rec, "scratch", "SELECT count(*) FROM pg_tables WHERE tablename = 'ok'"); got != "count\n0" {
+		t.Fatalf("a failed load left part of the dump behind: %q", got)
+	}
+	rows, _ := a.readApps()
+	for _, row := range rows {
+		if row.ID == rec.ID && row.Busy {
+			t.Fatal("app left busy")
+		}
 	}
 }
