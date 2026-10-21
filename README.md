@@ -71,7 +71,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash
 ```
 
-随后使用脚本显示的链接和原有面板账号登录。管理员可在设置中修改密码，最低 8 个字符。支持现有 0.1.1 安装，使用系统 Caddy 申请和续签 IP 证书；要求 **Caddy 2.10.1 或更新版本、公网 80/443 可达**。默认用服务器 IP 访问，不需要域名；也可以改用你自己的域名（例如 `panel.example.com`，由 Caddy 自动申请和续期证书）。证书签发需要时间；脚本会报告入口是否已就绪，失败可查看其提示的日志。[使用域名、直连说明与关闭方式](PUBLIC_ACCESS.md)
+随后使用脚本显示的链接和原有面板账号登录。管理员可在设置中修改密码，最低 8 个字符。支持现有 0.1.1 安装，使用系统 Caddy 申请和续签 IP 证书；要求 **Caddy 2.10.1 或更新版本、公网 80/443 可达**。默认用服务器 IP 访问，不需要域名；也可以加上你自己的域名（例如 `panel.example.com`，由 Caddy 自动申请和续期证书），IP 和域名可以同时使用。证书签发需要时间；脚本会报告入口是否已就绪，失败可查看其提示的日志。[使用域名、直连说明与关闭方式](PUBLIC_ACCESS.md)
 
 <details>
 <summary>方式二：通过 SSH 隧道访问（无需公开面板）</summary>
