@@ -1,9 +1,9 @@
 # 公网访问 JunPanel：服务器 IP 或你自己的域名
 
-面板有两种公网入口，二选一，由同一个脚本管理：
+面板有两种公网入口，可以只用其中一种，也可以**同时使用**，由同一个脚本管理：
 
 - **服务器 IP**：新版在线安装器自动配置，见下文。
-- **你自己的域名**：见下一节。配置域名后，原来的 IP 入口会停用，只能通过域名访问。
+- **你自己的域名**：见下一节。配置域名**不会**影响已有的 IP 入口，两个地址都可以登录。
 
 ## 用域名访问
 
@@ -23,14 +23,27 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 - 先检查域名格式，并**在改动任何配置之前**检查它是否已经解析到这台服务器、有没有被 Caddy 里的其它站点占用（包括面板“网站”页创建的站点）。任何一项不满足都会直接停下，原有入口保持不变。
 - 写入域名入口，由 Caddy 自动申请并续期证书；校验整份配置后才重载，失败会自动还原。
-- 检查本机 Caddy 上这个域名的证书与面板响应，通过后显示登录链接。**配置域名后原来的 IP 入口即停用**；证书还没签发好时显示“准备中”，此时 IP 入口已经关闭，可以稍等后查看日志，或重新执行本脚本并传入服务器 IP 改回去。
+- 检查本机 Caddy 上这个域名的证书与面板响应，通过后显示登录链接。已有的 IP 入口保持不变；证书还没签发好时显示“准备中”，可以稍等后查看日志。
 
-之后重新执行一键安装命令不会改回 IP 入口，会沿用已配置的域名。想改回 IP 入口，用下面的“更改”命令。
+之后重新执行一键安装命令会原样保留已配置的域名和 IP 入口。已经是面板入口的域名不会被再次检查解析，所以域名经过线路机等中转、解析与服务器本机地址不一致时，重跑安装命令也不会被拦住。
+
+### 调整入口
+
+指定哪一种，就只改哪一种，另一种保持不变：
 
 ```bash
-# 改回服务器 IP 入口（自动识别 IP，或写明 IP）
+# 换成另一个域名（IP 入口保留）
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --domain 新域名
+# 加上或更换 IP 入口（域名入口保留）；IP 入口需要 Caddy 2.10.1 或更新版本
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- 服务器公网IPv4
-# 换成另一个域名：重新执行 --domain 命令即可
+# 一条命令同时设置两个
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --domain 你的域名 服务器公网IPv4
+# 只保留所指定的一种，停用另一种：加 --only
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --domain 你的域名 --only
+# 单独停用一种，或全部关闭
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --remove-domain
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --remove-ip
+curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --disable
 ```
 
 域名要求：小写字母、数字和连字符组成，至少两段（`panel.example.com`），不带 `https://` 和端口；中文域名请先转换为 Punycode（`xn--…`）；`example.com`、`.local`、`.test` 等保留名称无法签发证书，会被拒绝。如果域名还有 AAAA（IPv6）记录，请确认服务器的 IPv6 也能到达 Caddy，否则证书机构可能通过 IPv6 验证失败。服务器在 NAT 之后、解析与服务器本机地址不一致时，确认无误后可设置 `JUNPANEL_SKIP_DNS_CHECK=1` 跳过解析比对。
@@ -91,7 +104,7 @@ IP 浏览器连接通常不发送 SNI；本机测试已复现没有默认名称�
 curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-access.sh | sudo bash -s -- --disable
 ```
 
-重新运行带 IP 的命令可更改直连 IP（也会把域名入口改回 IP 入口）；不传地址时优先沿用已配置的公网入口，无论它是 IP 还是域名。更改面板后端端口后，也需重新运行入口配置。卸载面板前建议先关闭公网入口。
+重新运行带 IP 的命令可更改直连 IP，域名入口保留；不传地址时沿用已配置的全部公网入口。更改面板后端端口后，也需重新运行入口配置。卸载面板前建议先关闭公网入口。
 
 证书尚未就绪、入口无法打开时，在服务器查看：
 
