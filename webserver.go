@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/hmac"
 	"fmt"
+	"html"
 	"io/fs"
 	"log"
 	"mime"
@@ -92,6 +93,8 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 	out.Header().Set("X-Frame-Options", "DENY")
 	out.Header().Set("Referrer-Policy", "no-referrer")
 	out.Header().Set("Cache-Control", "no-store")
+	// An open page compares this with the version it was loaded with and reloads after an upgrade.
+	out.Header().Set("X-JunPanel-Version", version)
 	out.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	expected := fmt.Sprintf("127.0.0.1:%d", w.port)
 	local := fmt.Sprintf("localhost:%d", w.port)
@@ -123,6 +126,9 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		if e != nil {
 			http.NotFound(out, r)
 			return
+		}
+		if file == "index.html" {
+			data = versionedIndex(data)
 		}
 		out.Header().Set("Content-Type", mime.TypeByExtension(file[strings.LastIndex(file, "."):]))
 		out.Write(data)
@@ -343,4 +349,15 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 	r.Header.Del("X-CSRF-Token")
 	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
 	w.proxy.ServeHTTP(out, r)
+}
+
+// versionedIndex records the version in the page and adds it to asset URLs, so a page always
+// knows which release it came from and no cache in between can pair it with older files.
+func versionedIndex(page []byte) []byte {
+	v := html.EscapeString(version)
+	text := strings.Replace(string(page), `<meta charset="utf-8">`, `<meta charset="utf-8">`+"\n  "+`<meta name="junpanel-version" content="`+v+`">`, 1)
+	for _, asset := range []string{"/style.css", "/app.js", "/favicon.svg", "/logo.svg"} {
+		text = strings.ReplaceAll(text, `"`+asset+`"`, `"`+asset+"?v="+v+`"`)
+	}
+	return []byte(text)
 }

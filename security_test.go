@@ -277,6 +277,15 @@ func TestHTTPBoundary(t *testing.T) {
 	if w = request(h, "GET", "/style.css", "", nil, nil); w.Code != 200 {
 		t.Fatal("JunPanel design stylesheet missing")
 	}
+	if w = request(h, "GET", "/style.css?v="+version, "", nil, nil); w.Code != 200 || w.Header().Get("X-JunPanel-Version") != version {
+		t.Fatal("versioned asset URL or version header")
+	}
+	if w = request(h, "GET", "/", "", nil, nil); w.Code != 200 || !strings.Contains(w.Body.String(), `<meta name="junpanel-version" content="`+version+`">`) || !strings.Contains(w.Body.String(), `src="/app.js?v=`+version+`"`) || !strings.Contains(w.Body.String(), `href="/style.css?v=`+version+`"`) || strings.Contains(w.Body.String(), `"/app.js"`) {
+		t.Fatal("page does not carry its version")
+	}
+	if w = request(h, "GET", "/api/meta", "", nil, nil); w.Header().Get("X-JunPanel-Version") != version {
+		t.Fatal("API response without version header")
+	}
 	if w = request(h, "GET", "/account.json", "", nil, cookie); w.Code != 404 {
 		t.Fatal("arbitrary asset served")
 	}
