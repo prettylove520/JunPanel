@@ -47,12 +47,16 @@ type dataPart struct {
 }
 
 var appData = map[string][]dataPart{
-	"wordpress": {{"app", "/var/www/html", "web"}, {"database", "/var/lib/mysql", "database"}},
-	"gitea":     {{"app", "/data", "data"}},
-	"kuma":      {{"app", "/app/data", "data"}},
-	"postgres":  {{"app", "/var/lib/postgresql/data", "data"}},
-	"mysql":     {{"app", "/var/lib/mysql", "data"}},
-	"redis":     {{"app", "/data", "data"}},
+	"wordpress":   {{"app", "/var/www/html", "web"}, {"database", "/var/lib/mysql", "database"}},
+	"gitea":       {{"app", "/data", "data"}},
+	"kuma":        {{"app", "/app/data", "data"}},
+	"postgres":    {{"app", "/var/lib/postgresql/data", "data"}},
+	"mysql":       {{"app", "/var/lib/mysql", "data"}},
+	"redis":       {{"app", "/data", "data"}},
+	"vaultwarden": {{"app", "/data", "data"}},
+	"memos":       {{"app", "/var/opt/memos", "data"}},
+	"n8n":         {{"app", "/home/node/.n8n", "data"}},
+	"openwebui":   {{"app", "/app/backend/data", "data"}},
 }
 
 // backupTag labels a backup: a note for the list and the schedule that made it.

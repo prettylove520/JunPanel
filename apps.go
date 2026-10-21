@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -21,15 +22,29 @@ type appTemplate struct {
 	ServicePort int    `json:"service_port"`
 	Database    string `json:"database,omitempty"`
 	Color       string `json:"color"`
+	Note        string `json:"note,omitempty"`
+	Backup      bool   `json:"backup"`
 }
 
 var appCatalog = []appTemplate{
-	{"wordpress", "WordPress", "网站应用", "内容网站与博客，包含独立 MariaDB 服务", "wordpress:php8.3-apache", 8080, 80, "", "#6fa8ff"},
-	{"gitea", "Gitea", "开发工具", "轻量的私有 Git 服务，使用内置 SQLite", "docker.gitea.com/gitea:1", 3000, 3000, "", "#9bcf9b"},
-	{"kuma", "Uptime Kuma", "运维工具", "可视化服务可用性监控", "louislam/uptime-kuma:2", 3001, 3001, "", "#70d9b9"},
-	{"postgres", "PostgreSQL", "数据库", "PostgreSQL 17，可在面板中查询与导出", "postgres:17-alpine", 5432, 5432, "postgres", "#87aef0"},
-	{"mysql", "MySQL", "数据库", "MySQL 8.4，可在面板中查询与导出", "mysql:8.4", 3306, 3306, "mysql", "#efbe7c"},
-	{"redis", "Redis", "数据库", "Redis 7，仅启用密码认证的本机端口", "redis:7-alpine", 6379, 6379, "redis", "#e88e91"},
+	{"wordpress", "WordPress", "网站应用", "内容网站与博客，包含独立 MariaDB 服务", "wordpress:php8.3-apache", 8080, 80, "", "#6fa8ff", "", false},
+	{"gitea", "Gitea", "开发工具", "轻量的私有 Git 服务，使用内置 SQLite", "docker.gitea.com/gitea:1", 3000, 3000, "", "#9bcf9b", "", false},
+	{"kuma", "Uptime Kuma", "运维工具", "可视化服务可用性监控", "louislam/uptime-kuma:2", 3001, 3001, "", "#70d9b9", "", false},
+	{"postgres", "PostgreSQL", "数据库", "PostgreSQL 17，可在面板中查询与导出", "postgres:17-alpine", 5432, 5432, "postgres", "#87aef0", "", false},
+	{"mysql", "MySQL", "数据库", "MySQL 8.4，可在面板中查询与导出", "mysql:8.4", 3306, 3306, "mysql", "#efbe7c", "", false},
+	{"redis", "Redis", "数据库", "Redis 7，仅启用密码认证的本机端口", "redis:7-alpine", 6379, 6379, "redis", "#e88e91", "", false},
+	{"vaultwarden", "Vaultwarden", "效率工具", "兼容 Bitwarden 客户端的轻量密码管理器", "vaultwarden/server:latest", 8000, 80, "", "#175ddc", "网页端需要 HTTPS 才能使用，请先绑定域名。默认开放注册，建议注册自己的账号后关闭开放注册。", false},
+	{"memos", "Memos", "效率工具", "轻量的自托管笔记与备忘录", "neosmemo/memos:stable", 5230, 5230, "", "#2f855a", "第一个注册的账号成为管理员。", false},
+	{"n8n", "n8n", "效率工具", "可视化的工作流自动化平台", "docker.n8n.io/n8nio/n8n:latest", 5678, 5678, "", "#ea4b71", "默认只允许通过 HTTPS 登录，请先绑定域名再访问。", false},
+	{"openwebui", "Open WebUI", "AI 工具", "连接本地或在线大模型的聊天界面", "ghcr.io/open-webui/open-webui:main", 3080, 8080, "", "#111827", "镜像较大（数 GB），首次部署需要较长时间。第一个注册的账号成为管理员。", false},
+	{"ittools", "IT-Tools", "开发工具", "开发者常用的在线小工具合集，无需保存数据", "corentinth/it-tools:latest", 8090, 80, "", "#18a058", "", false},
+	{"excalidraw", "Excalidraw", "效率工具", "手绘风格的在线白板，画布保存在浏览器中", "excalidraw/excalidraw:latest", 8091, 80, "", "#6965db", "画布只保存在访问者的浏览器里，服务器不保存数据。", false},
+}
+
+func init() {
+	for i := range appCatalog {
+		appCatalog[i].Backup = len(appData[appCatalog[i].Key]) > 0
+	}
 }
 
 func findTemplate(key string) (appTemplate, bool) {
@@ -150,6 +165,10 @@ func composeFor(r appRecord) ([]byte, error) {
 		service["command"] = []string{"redis-server", "--appendonly", "yes", "--requirepass", r.Password}
 		service["volumes"] = []string{"data:/data"}
 		volumes["data"] = map[string]any{}
+	case "vaultwarden", "memos", "n8n", "openwebui":
+		part := appData[r.Template][0]
+		service["volumes"] = []string{part.Volume + ":" + part.Path}
+		volumes[part.Volume] = map[string]any{}
 	}
 	return json.MarshalIndent(map[string]any{"name": name, "services": services, "volumes": volumes}, "", "  ")
 }
@@ -274,6 +293,7 @@ func (a *agent) launchAppThen(record appRecord, action string, done func(error))
 		switch action {
 		case "deploy", "restore":
 			args = append(args, "up", "--detach", "--no-build", "--pull", "missing")
+		case "upgrade":
 		case "start":
 			args = append(args, "start")
 		case "stop":
@@ -286,7 +306,12 @@ func (a *agent) launchAppThen(record appRecord, action string, done func(error))
 			return bad(400, "应用操作无效")
 		}
 		fmt.Fprintln(out, "正在调用现有 Docker Compose；镜像下载可能需要几分钟。")
-		e := a.stream(ctx, a.appDir(record.ID), out, []string{record.Password, record.DBPassword}, "docker", args...)
+		var e error
+		if action == "upgrade" {
+			e = a.upgradeApp(ctx, out, record)
+		} else {
+			e = a.stream(ctx, a.appDir(record.ID), out, []string{record.Password, record.DBPassword}, "docker", args...)
+		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		rows, loadErr := a.readApps()
@@ -335,7 +360,7 @@ func (a *agent) appAction(w http.ResponseWriter, r *http.Request) error {
 
 // appActionJob validates an app action, marks the app busy and starts the job.
 func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
-	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" {
+	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" && action != "upgrade" {
 		return job{}, bad(400, "操作无效")
 	}
 	a.mu.Lock()
@@ -379,4 +404,26 @@ func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
 		return j, nil
 	}
 	return job{}, bad(404, "应用不存在")
+}
+
+// upgradeApp backs the app's data up, pulls newer images for the tags it uses and
+// recreates whatever changed. Without a backup nothing is pulled.
+func (a *agent) upgradeApp(ctx context.Context, out io.Writer, record appRecord) error {
+	if len(appData[record.Template]) > 0 {
+		fmt.Fprintln(out, "升级前先备份应用数据（应用会短暂停止）…")
+		meta, e := a.backupApp(ctx, out, record, backupTag{Note: "升级前自动备份"})
+		if e != nil {
+			fmt.Fprintf(out, "升级前备份失败：%v\n应用没有升级。\n", e)
+			return e
+		}
+		fmt.Fprintf(out, "已创建升级前备份 %s，升级后如有问题可在“备份”页恢复。\n", meta.ID)
+	} else {
+		fmt.Fprintln(out, "此应用不保存数据，跳过升级前备份。")
+	}
+	fmt.Fprintln(out, "正在拉取最新镜像…")
+	if e := a.compose(ctx, out, record, "pull"); e != nil {
+		return e
+	}
+	fmt.Fprintln(out, "正在用新镜像重建容器（未变化的容器保持运行）…")
+	return a.compose(ctx, out, record, "up", "--detach", "--no-build")
 }
