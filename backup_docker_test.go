@@ -240,9 +240,11 @@ func TestDockerDatabaseBackupStreams(t *testing.T) {
 	if len(sql) < 9<<20 || !strings.Contains(string(sql), "CREATE TABLE public.big") || !strings.Contains(string(sql), "PostgreSQL database dump complete") {
 		t.Fatalf("dump incomplete: %d bytes", len(sql))
 	}
-	if r = request(h, "POST", "/backups/"+list.Backups[0].ID+"/restore", `{"confirm":true}`, nil, nil); r.Code != 400 {
-		t.Fatal("database dump restore should point to native tools")
+	// The large dump also restores, streamed into a new database.
+	if r = request(h, "POST", "/backups/"+list.Backups[0].ID+"/restore", `{"confirm":true,"database":"streamed"}`, nil, nil); r.Code != 202 {
+		t.Fatalf("restore: %d %s", r.Code, r.Body.String())
 	}
+	waitJob(t, a, r.Body.Bytes(), 5*time.Minute)
 	if r = request(h, "POST", "/backups", `{"type":"database","target":"bk-pg","database":"junpanel; DROP"}`, nil, nil); r.Code != 400 {
 		t.Fatal("bad database name accepted")
 	}

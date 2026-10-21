@@ -261,7 +261,7 @@ func TestDockerStackLifecycle(t *testing.T) {
 		defer cancel()
 		dockerCLI(ctx, "", io.Discard, "docker", "compose", "--project-name", name, "down", "--volumes", "--timeout", "1")
 	})
-	src := "services:\n  app:\n    image: alpine:3.20\n    command: [\"sh\", \"-c\", \"echo $$GREETING > /out/hello && sleep 600\"]\n    environment:\n      GREETING: hi\n    volumes:\n      - ./out:/out\n      - data:/data\nvolumes:\n  data: {}\n"
+	src := "services:\n  app:\n    image: alpine:3.20\n    command: [\"sh\", \"-c\", \"echo $$GREETING > /out/hello && chmod -R a+rwX /out && sleep 600\"]\n    environment:\n      GREETING: hi\n    volumes:\n      - ./out:/out\n      - data:/data\nvolumes:\n  data: {}\n"
 	body, _ := json.Marshal(map[string]any{"name": name, "source": src, "create": true, "deploy": true})
 	r := request(h, "POST", "/stacks", string(body), nil, nil)
 	if r.Code != 202 {
