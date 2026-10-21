@@ -17,7 +17,20 @@ func demoContainers() []container {
 	}
 }
 func demoSites() []site {
-	return []site{{"s_" + strings.Repeat("a", 20), "个人主页", []string{"www.example.com"}, "static", "", "/srv/junpanel/sites/s_" + strings.Repeat("a", 20), true, time.Now().Add(-72 * time.Hour)}, {"s_" + strings.Repeat("b", 20), "工作室博客", []string{"blog.example.com"}, "proxy", "http://127.0.0.1:8080", "", true, time.Now().Add(-48 * time.Hour)}, {"s_" + strings.Repeat("c", 20), "代码仓库", []string{"git.example.com"}, "proxy", "http://127.0.0.1:3000", "", true, time.Now().Add(-24 * time.Hour)}}
+	a, b, c, d := "s_"+strings.Repeat("a", 20), "s_"+strings.Repeat("b", 20), "s_"+strings.Repeat("c", 20), "s_"+strings.Repeat("d", 20)
+	return []site{
+		{ID: a, Name: "个人主页", Domains: []string{"www.example.com"}, Kind: "static", Root: "/srv/junpanel/sites/" + a, Enabled: true, Created: time.Now().Add(-72 * time.Hour)},
+		{ID: b, Name: "工作室博客", Domains: []string{"blog.example.com"}, Kind: "proxy", Upstream: "http://127.0.0.1:8080", Enabled: true, Created: time.Now().Add(-48 * time.Hour)},
+		{ID: c, Name: "代码仓库", Domains: []string{"git.example.com"}, Kind: "proxy", Upstream: "http://127.0.0.1:3000", Enabled: true, Created: time.Now().Add(-24 * time.Hour), AuthUser: "team", AuthHash: "demo", AllowIPs: []string{"203.0.113.0/24"}},
+		{ID: d, Name: "旧域名跳转", Domains: []string{"old.example.com"}, Kind: "redirect", Target: "https://www.example.com", Permanent: true, KeepPath: true, Enabled: true, Created: time.Now().Add(-12 * time.Hour)},
+	}
+}
+func demoPublicSites() []map[string]any {
+	out := []map[string]any{}
+	for _, s := range demoSites() {
+		out = append(out, publicSite(s))
+	}
+	return out
 }
 func demoApps() []map[string]any {
 	return []map[string]any{{"id": "studio", "name": "工作室博客", "template": "wordpress", "port": 8080, "created": time.Now().Add(-72 * time.Hour), "removed": false, "busy": false, "project": "junpanel-studio", "category": "网站应用", "image": "wordpress:php8.3-apache", "database": "", "containers": 2, "running": 2, "docker_available": true}, {"id": "notes", "name": "代码仓库", "template": "gitea", "port": 3000, "created": time.Now().Add(-24 * time.Hour), "removed": false, "busy": false, "project": "junpanel-notes", "category": "开发工具", "image": "docker.gitea.com/gitea:1", "database": "", "containers": 1, "running": 1, "docker_available": true}}
@@ -42,13 +55,13 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 	var value any
 	switch path {
 	case "/overview":
-		value = map[string]any{"host": demoHost(), "host_error": "", "containers": demoContainers(), "docker_error": "", "sites": demoSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "apps": demoApps(), "caddy_state": "active", "alerts_active": 2, "update_available": "9.9.9", "jobs": demoJobs(), "time": time.Now(), "version": version, "demo": true}
+		value = map[string]any{"host": demoHost(), "host_error": "", "containers": demoContainers(), "docker_error": "", "sites": demoPublicSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "apps": demoApps(), "caddy_state": "active", "alerts_active": 2, "update_available": "9.9.9", "jobs": demoJobs(), "time": time.Now(), "version": version, "demo": true}
 	case "/containers":
 		value = demoContainers()
 	case "/projects":
 		value = grouped(demoContainers())
 	case "/sites":
-		value = map[string]any{"sites": demoSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
+		value = map[string]any{"sites": demoPublicSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
 	case "/catalog":
 		value = appCatalog
 	case "/apps":
