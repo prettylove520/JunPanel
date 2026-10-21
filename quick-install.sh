@@ -8,8 +8,8 @@ main() (
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   local version=0.1.11
   local expected=a735e272b2a06d7f24b1e10c240221f4253e47cfbf4079a6732c9871832bf629
-  local public_ref=1109e8c37025347fe860a73dc138a43d5258acea
-  local public_hash=fba97a4be376e3e21bd1a21ad6ab75a0e0617ba25faeec9bcc678e6bd1e541e7
+  local public_ref=dfca8704170deed924ae00f0e0609c7e3b637670
+  local public_hash=a10426f7c68355a7807fcecb147137ecdff9e2e57f0edd4c64122ea1e813bc2b
   local archive="JunPanel-$version-linux.tar.gz"
   local url="https://github.com/prettylove520/JunPanel/releases/download/v$version/$archive"
   local public_url="https://raw.githubusercontent.com/prettylove520/JunPanel/$public_ref/public-access.sh"
