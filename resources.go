@@ -117,7 +117,9 @@ func (a *agent) networkList(w http.ResponseWriter, r *http.Request) error {
 		Name, Id, Driver, Scope, Created string
 		Internal                         bool
 		Labels                           map[string]string
-		IPAM                             struct{ Config []struct{ Subnet, Gateway string } }
+		IPAM                             struct {
+			Config []struct{ Subnet, Gateway string }
+		}
 	}
 	if e = decodeObject(raw, &list); e != nil {
 		return e

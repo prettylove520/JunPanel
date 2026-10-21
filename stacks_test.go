@@ -103,16 +103,16 @@ func TestCheckStackAcceptsOrdinaryStack(t *testing.T) {
 	      "security_opt": ["no-new-privileges:true"], "healthcheck": {"test": ["CMD", "true"]}, "depends_on": {"db": {"condition": "service_started"}},
 	      "networks": {"default": null}, "x-note": "kept",
 	      "volumes": [
-	        {"type": "bind", "source": "` + root + `/stacks/demo/html", "target": "/usr/share/nginx/html", "read_only": true},
-	        {"type": "bind", "source": "` + root + `/stacks/demo/not-yet-created", "target": "/data"},
+	        {"type": "bind", "source": "`+root+`/stacks/demo/html", "target": "/usr/share/nginx/html", "read_only": true},
+	        {"type": "bind", "source": "`+root+`/stacks/demo/not-yet-created", "target": "/data"},
 	        {"type": "volume", "source": "data", "target": "/var/lib/x"},
 	        {"type": "tmpfs", "target": "/tmp"}
 	      ]},
 	    "db": {"image": "postgres:17-alpine", "environment": {"POSTGRES_PASSWORD": "x"}, "volumes": [{"type": "volume", "source": "pg", "target": "/var/lib/postgresql/data"}]}
 	  },
-	  "volumes": {"data": {}, "pg": {"driver": "local", "driver_opts": {"type": "none", "o": "bind", "device": "` + root + `/stacks/demo/pg"}}},
+	  "volumes": {"data": {}, "pg": {"driver": "local", "driver_opts": {"type": "none", "o": "bind", "device": "`+root+`/stacks/demo/pg"}}},
 	  "networks": {"default": {"name": "demo_default"}},
-	  "secrets": {"s": {"file": "` + root + `/stacks/demo/secret.txt"}, "e": {"environment": "X"}},
+	  "secrets": {"s": {"file": "`+root+`/stacks/demo/secret.txt"}, "e": {"environment": "X"}},
 	  "x-common": {"a": 1}
 	}`).(map[string]any)
 	if problems := checkStack(cfg, root); len(problems) > 0 {
