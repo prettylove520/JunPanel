@@ -111,6 +111,7 @@ type container struct {
 	Ports     []portInfo `json:"ports"`
 	Protected bool       `json:"protected"`
 	Oneoff    bool       `json:"oneoff"`
+	Stack     string     `json:"stack,omitempty"`
 }
 type portInfo struct {
 	IP       string `json:"ip"`
@@ -147,7 +148,7 @@ func (d *dockerClient) list() ([]container, error) {
 		if len(row.Names) > 0 {
 			name = strings.TrimPrefix(row.Names[0], "/")
 		}
-		c := container{ID: row.Id, Name: name, Image: row.Image, State: row.State, Status: row.Status, Project: row.Labels["com.docker.compose.project"], Service: row.Labels["com.docker.compose.service"], Protected: strings.EqualFold(row.Labels["junpanel.protected"], "true"), Oneoff: strings.EqualFold(row.Labels["com.docker.compose.oneoff"], "true"), Ports: []portInfo{}}
+		c := container{ID: row.Id, Name: name, Image: row.Image, State: row.State, Status: row.Status, Project: row.Labels["com.docker.compose.project"], Service: row.Labels["com.docker.compose.service"], Protected: strings.EqualFold(row.Labels["junpanel.protected"], "true"), Oneoff: strings.EqualFold(row.Labels["com.docker.compose.oneoff"], "true"), Stack: row.Labels["junpanel.stack"], Ports: []portInfo{}}
 		for _, p := range row.Ports {
 			c.Ports = append(c.Ports, portInfo{p.IP, p.PublicPort, p.PrivatePort, p.Type})
 		}

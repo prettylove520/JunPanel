@@ -51,6 +51,10 @@ type agent struct {
 	upPage         string
 	upMax          int64
 	upSystemd      string
+	composeConfig  func(ctx context.Context, dir string, env []string, name string, args ...string) (string, string, error)
+	stackMu        sync.Mutex
+	stackBusy      map[string]bool
+	stackErr       map[string]string
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -63,7 +67,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 			return nil, e
 		}
 	}
-	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}, upHTTP: upgradeClient(), upRaw: "https://raw.githubusercontent.com/" + updateRepo + "/main", upAPI: "https://api.github.com/repos/" + updateRepo, upDL: "https://github.com/" + updateRepo + "/releases/download", upPage: "https://github.com/" + updateRepo, upMax: maxDownload, upSystemd: "/usr/bin/systemd-run"}
+	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}, upHTTP: upgradeClient(), upRaw: "https://raw.githubusercontent.com/" + updateRepo + "/main", upAPI: "https://api.github.com/repos/" + updateRepo, upDL: "https://github.com/" + updateRepo + "/releases/download", upPage: "https://github.com/" + updateRepo, upMax: maxDownload, upSystemd: "/usr/bin/systemd-run", composeConfig: runAsNobody, stackBusy: map[string]bool{}, stackErr: map[string]string{}}
 	rows, e := a.readApps()
 	if e != nil {
 		return nil, e
@@ -101,6 +105,18 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /containers/{id}/logs", endpoint(a.containerLogs))
 	m.HandleFunc("POST /containers/{id}/action", endpoint(a.containerAction))
 	m.HandleFunc("GET /images", endpoint(a.images))
+	m.HandleFunc("GET /stacks", endpoint(a.stackList))
+	m.HandleFunc("GET /stacks/{name}", endpoint(a.stackRead))
+	m.HandleFunc("POST /stacks/check", endpoint(a.stackCheck))
+	m.HandleFunc("POST /stacks", endpoint(a.stackSave))
+	m.HandleFunc("POST /stacks/{name}/action", endpoint(a.stackAction))
+	m.HandleFunc("DELETE /stacks/{name}", endpoint(a.stackDelete))
+	m.HandleFunc("GET /volumes", endpoint(a.volumeList))
+	m.HandleFunc("POST /volumes", endpoint(a.volumeCreate))
+	m.HandleFunc("DELETE /volumes/{name}", endpoint(a.volumeDelete))
+	m.HandleFunc("GET /networks", endpoint(a.networkList))
+	m.HandleFunc("POST /networks", endpoint(a.networkCreate))
+	m.HandleFunc("DELETE /networks/{id}", endpoint(a.networkDelete))
 	m.HandleFunc("POST /images/pull", endpoint(a.imagePull))
 	m.HandleFunc("DELETE /images/{id}", endpoint(a.imageDelete))
 	m.HandleFunc("GET /projects", endpoint(a.projects))
