@@ -793,8 +793,10 @@ async function upgradePage() {
   const rows = [['当前版本', `v${d.current}`], ['最新版本', latest ? `v${latest.version}` : '尚未检查'], ['上次检查', d.checked_at && d.checked_at !== '0001-01-01T00:00:00Z' ? date(d.checked_at) : '—']];
   const list = el('dl', 'details'); rows.forEach(([k, v]) => { list.append(el('dt', '', k), el('dd', '', v)); }); versions.append(list);
   if (d.check_error) versions.append(note(`检查更新失败：${d.check_error}`, true));
-  const auto = field('自动检查更新', d.auto_check ? '1' : '0', { select: [['1', '开启（每 6 小时）'], ['0', '关闭']], help: '检查只读取 GitHub 上公开的版本信息，不会发送你的服务器信息。关闭后仍可手动检查。' });
-  auto.input.onchange = async () => { try { await api('/upgrade/config', { auto_check: auto.input.value === '1' }); toast('设置已保存'); } catch (e) { toast(e.message, true); } };
+  const every = [[1, '每小时'], [3, '每 3 小时'], [6, '每 6 小时（默认）'], [12, '每 12 小时'], [24, '每天'], [72, '每 3 天'], [168, '每周']], hours = d.interval_hours || 6;
+  const auto = field('自动检查更新', d.auto_check ? String(hours) : 'off', { select: [...every.map(([h, t]) => [String(h), t]), ['off', '关闭']], help: '检查只读取 GitHub 上公开的版本信息，不会发送你的服务器信息。关闭后仍可手动检查；手动检查的结果会立即提示。' });
+  let chosen = hours;
+  auto.input.onchange = async () => { try { const off = auto.input.value === 'off'; if (!off) chosen = Number(auto.input.value); await api('/upgrade/config', { auto_check: !off, interval_hours: chosen }); toast(off ? '已关闭自动检查更新' : `已设置：${every.find(([h]) => h === chosen)[1]}检查一次更新`); } catch (e) { toast(e.message, true); } };
   versions.append(auto.n); n.append(versions);
 
   if (d.run) {
