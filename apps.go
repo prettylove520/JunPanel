@@ -90,13 +90,14 @@ var multiInstance = map[string]bool{"wordpress": true, "postgres": true, "mysql"
 
 type catalogEntry struct {
 	appTemplate
-	Multi bool `json:"multi"`
+	Multi bool     `json:"multi"`
+	Guide []string `json:"guide"`
 }
 
 func catalogView() []catalogEntry {
 	out := make([]catalogEntry, 0, len(appCatalog))
 	for _, t := range appCatalog {
-		out = append(out, catalogEntry{t, multiInstance[t.Key]})
+		out = append(out, catalogEntry{t, multiInstance[t.Key], appGuides[t.Key]})
 	}
 	return out
 }

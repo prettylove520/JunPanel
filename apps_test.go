@@ -307,3 +307,33 @@ func TestCatalogMarksMultiInstanceTemplates(t *testing.T) {
 		t.Fatalf("%d multi-instance templates", multi)
 	}
 }
+
+func TestEveryTemplateHasAGuide(t *testing.T) {
+	for _, tpl := range appCatalog {
+		steps := appGuides[tpl.Key]
+		if len(steps) < 2 {
+			t.Fatalf("%s has %d guide steps", tpl.Key, len(steps))
+		}
+		for _, step := range steps {
+			if strings.TrimSpace(step) == "" || strings.Contains(step, "{") && !strings.Contains(step, "curl") {
+				t.Fatalf("%s: bad step %q", tpl.Key, step)
+			}
+		}
+	}
+	for key := range appGuides {
+		if _, ok := findTemplate(key); !ok {
+			t.Fatalf("guide for unknown template %q", key)
+		}
+	}
+	raw, _ := json.Marshal(catalogView())
+	var rows []struct {
+		Key   string   `json:"key"`
+		Guide []string `json:"guide"`
+	}
+	json.Unmarshal(raw, &rows)
+	for _, r := range rows {
+		if len(r.Guide) != len(appGuides[r.Key]) {
+			t.Fatalf("%s: guide missing from the catalog", r.Key)
+		}
+	}
+}
