@@ -96,7 +96,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 
 | 模块 | 本版实际支持 |
 | --- | --- |
-| 概览 | 网站、应用、容器与告警计数；负载、CPU、内存、根分区的状态仪表；CPU、内存、上下行流量趋势（5 秒采样、内存保留 120 点，约 10 分钟）；系统信息、Caddy/Docker 状态、网站与最近任务 |
+| 概览 | 网站、应用、容器与告警计数；负载、CPU、内存、根分区的状态仪表；CPU、内存、上下行流量趋势（5 秒采样、内存保留 120 点，约 10 分钟）；系统信息、Caddy/Docker 状态、网站与最近任务 ；**监控历史**：除实时图外可切换 1 小时 / 6 小时 / 24 小时 / 7 天，每分钟记录一次平均值（CPU、内存、磁盘、流量），保存在代理私有目录，重启不丢，超过 7 天自动清理 |
 | 网站 | 创建、编辑、启停、移除静态网站、反向代理及跳转（301/302，可保留路径）；多域名；域名冲突检查；高级设置：密码访问（bcrypt）、IP 白名单、关闭压缩；Caddy 校验与重载；失败回退；现有域名只读概览，并显示每个网站是否在运行（由面板向本机 Caddy 询问，不访问外网）和每个域名当前解析到哪个 IP（指向本机、其它服务器或没有解析）；“证书”页列出 Caddy 证书与到期时间 |
 | 应用商店 | 独立编写的 23 种模板：网站与协作（WordPress、Nextcloud）、效率工具（Vaultwarden、Memos、Trilium Notes、linkding、FreshRSS、Excalidraw）、影音（Jellyfin、Navidrome）、开发工具（Gitea、code-server、Stirling-PDF、draw.io、IT Tools）、运维（Uptime Kuma、Gotify、ntfy）、数据库（PostgreSQL、MySQL、Redis）、AI（n8n、Open WebUI）；安装、启停、重启、重新部署、**升级**（先自动备份，再拉取新镜像并重建）、卸载保留数据、恢复部署、绑定域名、**应用设置**（改本机端口、关闭 Vaultwarden/Open WebUI/Gitea 的新用户注册、添加环境变量，保存后自动重新部署；面板生成的数据库密码不可改，密码类变量不回显） |
 | 容器 | 现有容器列表与状态、启停重启、最近日志；“编排”页新建和编辑 Compose 编排（保存前逐项安全检查），部署、拉取更新、启停、停用、删除，并分组展示其它 Compose 项目；“镜像”页列表、拉取及非强制删除；“网络”“卷”页列表、创建和非强制删除 |

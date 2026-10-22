@@ -211,7 +211,7 @@ function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || 
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).
-function chart(history, series, max = 100) {
+function chart(history, series, max = 100, withDate = false) {
   const canvas = el('canvas','chart'); canvas.setAttribute('aria-label',series.map(s=>s[1]).join(' / ')); canvas.setAttribute('role','img');
   canvas._draw = () => {
     const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1, w = rect.width, h = 220, left = 58, right = 10, top = 28, bottom = 26;
@@ -222,7 +222,7 @@ function chart(history, series, max = 100) {
     for (let i = 0; i <= 4; i++) { const y = top + (h - top - bottom) * i / 4; ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.fillText(max ? `${Math.round(peak * (1 - i / 4))}%` : `${bytes(peak * (1 - i / 4))}/s`, left - 8, y); }
     let lx = left; series.forEach(([, label, color]) => { ctx.fillStyle = cssVar(color); ctx.fillRect(lx, 8, 12, 3); ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(label, lx + 18, 10); lx += ctx.measureText(label).width + 40; });
     if (history.length < 2) { ctx.textAlign = 'center'; ctx.fillText('等待更多采样…', (left + w) / 2, h / 2); return; }
-    const time = s => new Date(s).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const time = s => withDate ? new Date(s).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : new Date(s).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
     ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(time(history[0].at), left, h - 10); ctx.textAlign = 'right'; ctx.fillText(time(history[history.length - 1].at), w - right, h - 10);
     series.forEach(([key, , colorVar]) => {
       const color = cssVar(colorVar), points = history.map((p, i) => [left + (w - left - right) * i / (history.length - 1), h - bottom - Math.min(peak, Number(p[key] || 0)) / peak * (h - top - bottom)]);
@@ -264,7 +264,10 @@ function inventorySites(data) {
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
 async function overviewPage() {
-  const data = await api('/overview'), n = el('div'); let choice = 0;
+  const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0;
+  const ranges = [['live', '实时'], ['1h', '1 小时'], ['6h', '6 小时'], ['24h', '24 小时'], ['7d', '7 天']];
+  async function loadPast() { if (range === 'live') return; const want = range; try { const r = await api(`/history?range=${want}`); if (range === want) { past = r; pastAt = Date.now(); drawMonitor && drawMonitor(); } } catch (e) { toast(e.message, true); } }
+  let drawMonitor = null;
   function paint(d) {
     const visibleSites = inventorySites(d), h = d.host || {}, disk = h.disk || {}, containers = d.containers || [], running = containers.filter(c => c.state === 'running').length;
     state.sites = visibleSites; state.apps = d.apps || []; setSiteBadge(d.sites_error || d.caddy_error ? null : visibleSites.length); setAlertBadge(d.alerts_active); setUpgradeBadge(d.update_available);
@@ -285,11 +288,15 @@ async function overviewPage() {
     status.append(gg);
 
     const choices = [['CPU', [['cpu','CPU','--primary']], 100], ['内存', [['memory','内存','--success']], 100], ['流量', [['rx','下行','--primary'], ['tx','上行','--warning']], 0]];
+    if (range !== 'live') choices.push(['磁盘', [['disk','磁盘 /','--warning']], 100]);
+    if (choice >= choices.length) choice = 0;
     const tabs = el('div','segmented'), now = el('div','monitor-now'), head = el('div','monitor-head'), box = el('div');
     now.append(...[['↓ 下行', `${bytes(h.rx)}/s`], ['↑ 上行', `${bytes(h.tx)}/s`], ['累计', `${bytes(h.rx_total)} / ${bytes(h.tx_total)}`]].map(([a, b]) => { const s = el('span','',a + ' '); s.append(el('b','',b)); return s; }));
-    const choose = i => { choice = i; tabs.replaceChildren(...choices.map((c, j) => { const b = button(c[0], () => choose(j), 'quiet small'); b.classList.toggle('active', j === i); return b; })); box.replaceChildren(chart(h.history || [], choices[i][1], choices[i][2])); };
+    const choose = i => { choice = i; tabs.replaceChildren(...choices.map((c, j) => { const b = button(c[0], () => choose(j), 'quiet small'); b.classList.toggle('active', j === i); return b; })); drawMonitor = () => { const live = range === 'live'; if (!live && (!past || past.range !== range)) { box.replaceChildren(el('p', 'muted', '加载中…')); return; } box.replaceChildren(live || past.points.length ? chart(live ? h.history || [] : past.points, choices[i][1], choices[i][2], !live && range !== '1h' && range !== '6h') : empty('还没有历史数据', '面板每分钟记录一次，稍后再来看。')); }; drawMonitor(); };
+    const rangeTabs = el('div', 'segmented'); rangeTabs.append(...ranges.map(([v, t]) => { const b = button(t, () => { range = v; past = null; paint(d); }, 'quiet small'); b.classList.toggle('active', v === range); return b; }));
     choose(choice); head.append(tabs, now);
-    const monitor = panel('监控', tag('最近 10 分钟')); monitor.append(head, box, el('p','chart-caption','每 5 秒采样一次，保存在内存中，面板重启后重新采样。流量已排除容器虚拟网卡。'));
+    if (range !== 'live' && (!past || Date.now() - pastAt > 60000)) loadPast();
+    const monitor = panel('监控', rangeTabs); monitor.append(head, box, el('p','chart-caption', range === 'live' ? '实时：每 5 秒采样，保存最近 10 分钟，面板重启后重新开始。流量已排除容器虚拟网卡。' : '历史：每分钟记录一次平均值，保存 7 天，重启不丢失；时间较长时会合并成更粗的点。'));
 
     const dockerPanel = panel('容器', button('全部容器', () => navigate('containers'), 'quiet small'));
     if (d.docker_error) dockerPanel.append(note(d.docker_error, true));

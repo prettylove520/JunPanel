@@ -89,6 +89,18 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = catalogView()
 	case "/apps":
 		value = demoApps()
+	case "/history":
+		span := historySpans[r.URL.Query().Get("range")]
+		if span == 0 {
+			span = time.Hour
+		}
+		now, points := time.Now(), []histPoint{}
+		step := span / 120
+		for i := 0; i < 120; i++ {
+			x := float64(i)
+			points = append(points, histPoint{At: now.Add(-span + time.Duration(i)*step), CPU: 14 + 6*math.Sin(x/9) + 2*math.Cos(x/3), Memory: 38 + 4*math.Sin(x/31), Disk: 30 + x/120, RX: 21000 + 9000*math.Sin(x/12), TX: 7000 + 2000*math.Cos(x/9)})
+		}
+		value = map[string]any{"points": points, "step": int(step.Seconds()), "range": r.URL.Query().Get("range")}
 	case "/offsite":
 		value = map[string]any{"config": offsiteConfig{}, "has_secret": false}
 	case "/apps/notes/settings", "/apps/studio/settings":

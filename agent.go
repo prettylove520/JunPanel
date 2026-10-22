@@ -19,6 +19,7 @@ type agent struct {
 	jobs           *jobQueue
 	mu             sync.Mutex
 	metrics        *hostSampler
+	history        *historyStore
 	runner         func(time.Duration, string, ...string) (string, error)
 	stream         func(ctx context.Context, dir string, out io.Writer, secrets []string, name string, args ...string) error
 	capture        func(time.Duration, string, ...string) (string, error)
@@ -82,6 +83,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	if e != nil {
 		return nil, e
 	}
+	a.history = newHistoryStore(historyPath(cfg.State))
 	if e = os.MkdirAll(filepath.Join(cfg.State, "backups"), 0700); e != nil {
 		return nil, e
 	}
@@ -166,6 +168,7 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("DELETE /backups/{id}", endpoint(a.backupDelete))
 	m.HandleFunc("POST /backups/{id}/restore", endpoint(a.backupRestore))
 	m.HandleFunc("POST /backups/{id}/upload", endpoint(a.backupUpload))
+	m.HandleFunc("GET /history", endpoint(a.historyGet))
 	m.HandleFunc("GET /offsite", endpoint(a.offsiteGet))
 	m.HandleFunc("POST /offsite", endpoint(a.offsiteSave))
 	m.HandleFunc("POST /offsite/test", endpoint(a.offsiteTest))
