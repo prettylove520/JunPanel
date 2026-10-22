@@ -429,3 +429,8 @@ dl.details dd { margin: 0; }
 .job-mark.spin { border-color: var(--primary-line); border-top-color: var(--primary); animation: jp-spin 0.9s linear infinite; }
 @keyframes jp-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .job-mark.spin { animation-duration: 3s; } }
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 58px; }
+.pw-toggle { position: absolute; top: 0; right: 0; height: 32px; padding: 0 12px; border: 0; background: none; color: var(--primary); font-size: 13px; cursor: pointer; }
+.pw-toggle:hover { color: var(--primary-hover); text-decoration: underline; text-underline-offset: 3px; }
+.pw-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--radius); }
