@@ -285,3 +285,45 @@ func TestCaddyFailureShowsTheReasonWithoutSecrets(t *testing.T) {
 		t.Fatalf("error: %v", e)
 	}
 }
+
+func TestCaddyValidationRunsInATransientUnit(t *testing.T) {
+	a := testAgent(t)
+	os.WriteFile(a.cfg.Caddy, []byte("import "+filepath.ToSlash(a.cfg.Fragments)+"/*.caddy\n"), 0644)
+	var name string
+	var args []string
+	a.runner = func(_ time.Duration, n string, as ...string) (string, error) {
+		if strings.Contains(strings.Join(as, " "), "validate") {
+			name, args = n, as
+		}
+		return "active", nil
+	}
+	rows := []site{{ID: "s_" + strings.Repeat("a", 20), Name: "Vault", Kind: "proxy", Domains: []string{"vault.example.com"}, Upstream: "http://127.0.0.1:8000", Enabled: true, Created: time.Now()}}
+
+	// Without systemd-run the check is run directly.
+	a.upSystemd = filepath.Join(t.TempDir(), "missing")
+	if e := a.applySites(rows); e != nil || name != "/usr/sbin/runuser" {
+		t.Fatalf("direct: %v %q", e, name)
+	}
+	// With it, the same command runs inside a transient unit and the result is waited for.
+	fake := filepath.Join(t.TempDir(), "systemd-run")
+	os.WriteFile(fake, []byte("#!/bin/sh\n"), 0755)
+	a.upSystemd = fake
+	name, args = "", nil
+	if e := a.applySites(rows); e != nil {
+		t.Fatal(e)
+	}
+	joined := strings.Join(args, " ")
+	if name != fake || !strings.Contains(joined, "--wait") || !strings.Contains(joined, "--pipe") || !strings.Contains(joined, "--collect") || !strings.Contains(joined, "--pipe -- /usr/sbin/runuser -u caddy -- /usr/bin/caddy validate --config "+a.cfg.Caddy) {
+		t.Fatalf("transient unit: %q %v", name, args)
+	}
+	// A failure inside the unit still rolls back and shows Caddy's reason.
+	a.runner = func(_ time.Duration, n string, as ...string) (string, error) {
+		if strings.Contains(strings.Join(as, " "), "validate") {
+			return "Error: adapting config using caddyfile: unknown directive 'bogus'", errors.New("exit status 1")
+		}
+		return "active", nil
+	}
+	if e := a.applySites(rows); e == nil || !strings.Contains(e.Error(), "unknown directive") || !strings.Contains(e.Error(), "原片段已恢复") {
+		t.Fatalf("failure: %v", e)
+	}
+}

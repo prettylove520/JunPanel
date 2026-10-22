@@ -223,6 +223,19 @@ func (a *agent) externalHosts(managed []site, hosts []string) []string {
 	return out
 }
 
+// caddyValidate checks the whole Caddy configuration as the caddy user. The agent's own
+// service cannot always switch users ("runuser: cannot set user id: Operation not
+// permitted"), so the check runs in a transient systemd unit, which is how the panel's
+// public-entry changes already run; without systemd-run it is run directly.
+func (a *agent) caddyValidate() (string, error) {
+	check := []string{"/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", "validate", "--config", a.cfg.Caddy, "--adapter", "caddyfile"}
+	if st, e := os.Stat(a.upSystemd); e == nil && !st.IsDir() {
+		args := []string{"--unit", "junpanel-validate-" + randomID(8), "--description", "JunPanel Caddy validation", "--collect", "--quiet", "--wait", "--pipe", "--"}
+		return a.runner(45*time.Second, a.upSystemd, append(args, check...)...)
+	}
+	return a.runner(20*time.Second, check[0], check[1:]...)
+}
+
 var bcryptHash = regexp.MustCompile(`\$2[abxy]\$\d\d\$[./A-Za-z0-9]{53}`)
 
 // caddyReason picks what Caddy said went wrong out of its validate or reload output: the
@@ -285,7 +298,7 @@ func (a *agent) applySites(sites []site) error {
 		_, e := a.runner(20*time.Second, "/usr/bin/systemctl", "reload", "caddy.service")
 		return e
 	}
-	if out, e := a.runner(20*time.Second, "/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", "validate", "--config", a.cfg.Caddy, "--adapter", "caddyfile"); e != nil {
+	if out, e := a.caddyValidate(); e != nil {
 		if e = restore(); e != nil {
 			return bad(500, "校验失败，恢复后的 Caddy 重载也失败；请立即通过 SSH 检查")
 		}
