@@ -788,7 +788,7 @@ function setUpgradeBadge(ver) { const b = $('#upgrade-badge'); if (!b) return; b
 async function upgradePage() {
   const d = await api('/upgrade'), n = el('div'), latest = d.latest;
   setUpgradeBadge(d.available ? latest.version : '');
-  action(button('立即检查', async () => { await api('/upgrade/check', {}); toast('检查完成'); await render(); }, 'secondary', 'refresh'));
+  action(button('立即检查', async () => { const r = await api('/upgrade/check', {}); if (r.check_error) toast(`检查更新失败：${r.check_error}`, true); else if (r.available && r.latest) toast(`发现新版本 v${r.latest.version}（当前 v${r.current}），可以升级`); else toast(`已是最新版本 v${r.current}，没有可用更新`); await render(); }, 'secondary', 'refresh'));
   const versions = panel('版本', tag(d.available ? '有新版本' : '已是最新', d.available ? 'blue' : 'ok'));
   const rows = [['当前版本', `v${d.current}`], ['最新版本', latest ? `v${latest.version}` : '尚未检查'], ['上次检查', d.checked_at && d.checked_at !== '0001-01-01T00:00:00Z' ? date(d.checked_at) : '—']];
   const list = el('dl', 'details'); rows.forEach(([k, v]) => { list.append(el('dt', '', k), el('dd', '', v)); }); versions.append(list);
