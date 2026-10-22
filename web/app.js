@@ -666,8 +666,9 @@ function uploadFile(target, file) {
 const backupTypes = { site: '网站文件', app: '应用数据', database: '数据库' };
 async function backupsPage() {
   const data = await api('/backups'), rows = data.backups, n = el('div');
-  action(button('刷新', render, 'secondary', 'refresh'), button('新建备份', newBackup, 'primary', 'plus'));
-  n.append(note(`备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份，请及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
+  const offsite = await api('/offsite');
+  action(button('刷新', render, 'secondary', 'refresh'), button('异地备份', () => offsiteForm(offsite), 'secondary', 'disk'), button('新建备份', newBackup, 'primary', 'plus'));
+  n.append(note(offsite.config.type ? `异地备份已开启（${offsite.config.type === 's3' ? 'S3' : 'WebDAV'}${offsite.config.auto ? '，新备份自动上传' : '，手动上传'}）。本地备份保存在 ${data.directory}。` : `备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份：点“异地备份”设置 WebDAV 或 S3 存储，或及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
   if (!rows.length) { n.append(empty('还没有备份', '点击“新建备份”，为网站文件、应用数据或数据库留一份副本。')); return n; }
   const t = table(['时间', '类型', '对象', '大小', '说明', '操作']);
   rows.forEach(b => {
@@ -675,11 +676,31 @@ async function backupsPage() {
     what.append(el('strong', '', b.name), el('small', 'muted', b.type === 'database' ? `${b.target} / ${b.database}` : b.target));
     download.removeAttribute('target');
     buttons.push(button('恢复', () => b.type === 'database' ? restoreDatabaseBackup(b) : restoreBackup(b), 'quiet small'));
+    if (offsite.config.type) buttons.push(button(b.remote ? '重新上传' : '上传', () => confirm('上传到异地备份', '将把这份备份上传到已设置的异地存储，同名文件会被覆盖。', () => mutation(`/backups/${b.id}/upload`, {})), 'quiet small'));
     buttons.push(button('删除', () => confirm('删除备份', '将永久删除这份备份文件，无法恢复。', () => mutation(`/backups/${b.id}`, undefined, 'DELETE'), true), 'quiet small'));
-    cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), b.note || '手动备份', ops(...buttons));
+    cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), (b.note || '手动备份') + (b.remote ? ' · 已异地备份' : ''), ops(...buttons));
+    if (b.remote_error) t.body.lastElementChild.children[4].append(el('small', 'error-text', ` 异地上传失败：${b.remote_error}`));
   });
   n.append(t.n);
   return n;
+}
+function offsiteForm(current) {
+  const c = current.config, kind = field('异地存储', c.type, { select: [['', '不使用'], ['webdav', 'WebDAV（坚果云、Nextcloud 等）'], ['s3', 'S3 兼容（AWS、Cloudflare R2、阿里云 OSS、MinIO 等）']], required: false });
+  const url = field('地址', c.url, { type: 'url', required: false, placeholder: 'https://dav.example.com/remote.php/dav/files/me', help: 'WebDAV 填目录地址；S3 填服务端点，如 https://s3.us-east-1.amazonaws.com。' });
+  const user = field('账号 / Access Key', c.user, { required: false, max: 200 });
+  const secret = field('密码 / Secret Key', '', { type: 'password', required: false, max: 500, help: current.has_secret ? '已保存。留空表示不修改。' : '' });
+  secret.input.autocomplete = 'new-password'; user.input.autocomplete = 'off';
+  const bucket = field('存储桶', c.bucket || '', { required: false, max: 63 });
+  const region = field('区域', c.region || 'us-east-1', { required: false, max: 30, help: '多数 S3 兼容服务保留 us-east-1 即可；Cloudflare R2 填 auto；AWS 等按存储桶所在区域填写。' });
+  const prefix = field('目录', c.prefix || 'junpanel', { required: false, max: 200, help: '备份放在此目录下，可用 / 分层。' });
+  const auto = field('新备份自动上传', c.auto ? '1' : '0', { select: [['1', '是（含计划任务产生的备份）'], ['0', '否，只在点“上传”时上传']], required: false });
+  const s3only = [bucket.n, region.n];
+  const sync = () => { const k = kind.input.value; [url.n, user.n, secret.n, prefix.n, auto.n].forEach(x => x.hidden = !k); s3only.forEach(x => x.hidden = k !== 's3'); };
+  kind.input.onchange = sync; sync();
+  const payload = () => ({ type: kind.input.value, url: url.val(), user: user.val(), secret: secret.input.value, bucket: bucket.val(), region: region.val(), prefix: prefix.val(), auto: auto.input.value === '1' });
+  const form = formModal('异地备份', [kind, url, user, secret, bucket, region, prefix, auto], '保存', async () => { await api('/offsite', payload()); closeModal(); toast('异地备份设置已保存'); await render(); }, { note: '备份仍先保存在本机，再上传一份到这里。恢复时使用本机副本；本机副本丢失时，可从异地存储下载文件后在“文件”页处理。密钥只保存在服务器的私有目录，不会再显示。' });
+  const test = button('测试连接', async () => { test.disabled = true; try { await api('/offsite/test', payload()); toast('连接成功，可以上传'); } catch (e) { toast(e.message, true); } finally { test.disabled = false; } }, 'secondary');
+  $('#modal-footer').prepend(test);
 }
 async function newBackup() {
   const [sites, apps, databases, catalog] = await Promise.all([api('/sites'), api('/apps'), api('/databases'), api('/catalog')]);
