@@ -610,7 +610,8 @@ func TestTemplatesAndDatabaseArguments(t *testing.T) {
 		if json.Unmarshal(b, &cfg) != nil {
 			t.Fatal("invalid compose JSON")
 		}
-		if strings.Contains(string(b), "0.0.0.0") || strings.Contains(string(b), "docker.sock") || strings.Contains(string(b), "privileged") {
+		// A listen address inside the container (linkding) is fine; published ports are checked below.
+		if strings.Contains(string(b), "0.0.0.0:") || strings.Contains(string(b), "docker.sock") || strings.Contains(string(b), "privileged") {
 			t.Fatal("overbroad template")
 		}
 		services := cfg["services"].(map[string]any)
