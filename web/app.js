@@ -35,6 +35,7 @@ const paths = {
   play: '<path d="m7 3 14 9-14 9Z"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>',
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
   cert: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 9h10M7 13h5"/><circle cx="16" cy="17" r="2.5"/><path d="m14.8 19.2-.8 2.8 2-1 2 1-.8-2.8"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
@@ -157,10 +158,20 @@ $('#show-password').onclick = () => { const i = $('#login-password'); i.type = i
 $('#logout').onclick = async () => { try { await api('/logout', {}); } finally { showLogin(); } };
 $('#mobile-menu').onclick = () => $('#sidebar').classList.toggle('open');
 $('#sidebar-mask').onclick = () => $('#sidebar').classList.remove('open');
-function applyTheme(t) { document.documentElement.dataset.theme = t; $('#theme-toggle').replaceChildren(icon(t === 'dark' ? 'sun' : 'moon')); $$('.chart').forEach(c => c._draw && c._draw()); }
-let savedTheme = null; try { savedTheme = localStorage.getItem('junpanel-theme'); } catch {}
-applyTheme(savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-$('#theme-toggle').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; applyTheme(t); try { localStorage.setItem('junpanel-theme', t); } catch {} };
+// The theme setting is "auto" (follow the system, also while the page is open), "light" or "dark".
+const themeModes = ['auto', 'light', 'dark'], themeNames = { auto: '跟随系统', light: '浅色', dark: '深色' }, themeIcons = { auto: 'monitor', light: 'sun', dark: 'moon' };
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+let themeMode = 'auto'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
+function applyTheme(mode = themeMode) {
+  themeMode = mode;
+  document.documentElement.dataset.theme = mode === 'auto' ? (systemDark.matches ? 'dark' : 'light') : mode;
+  const toggle = $('#theme-toggle'), title = `主题：${themeNames[mode]}（点击切换）`;
+  toggle.replaceChildren(icon(themeIcons[mode])); toggle.title = title; toggle.setAttribute('aria-label', title);
+  $$('.chart').forEach(c => c._draw && c._draw());
+}
+applyTheme();
+systemDark.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
+$('#theme-toggle').onclick = () => { const next = themeModes[(themeModes.indexOf(themeMode) + 1) % themeModes.length]; applyTheme(next); try { localStorage.setItem('junpanel-theme', next); } catch {} toast(`主题：${themeNames[next]}`); };
 $$('#nav [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
 window.addEventListener('hashchange', () => { const r = location.hash.slice(1).split('?')[0]; if (state.csrf && r !== state.route) navigate(r); });
 let lastActivity = 0;
@@ -775,26 +786,43 @@ function startUpgrade(target) {
   }, { note: '为安全起见需要再次验证密码。升级期间面板会重启，请不要关闭此页面。', warning: true, danger: true });
 }
 function watchUpgrade(target, jobId) {
-  const out = el('pre', 'log-view', '正在下载并校验安装包…'), content = el('div');
-  content.append(el('p', 'muted', `正在升级到 v${target}，面板重启期间连接会短暂中断，属于正常现象。`), out);
+  const steps = ['下载', '校验', '解包', '安装', '重启'], stageIndex = { download: 0, verify: 1, unpack: 2, install: 3 };
+  const content = el('div', 'upgrade-progress'), bar = el('div', 'bar'), fill = el('div', 'bar-fill'), percent = el('strong', 'bar-percent', '0%');
+  bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.append(fill);
+  const head = el('div', 'bar-head'), label = el('span', '', '正在下载并校验安装包…'); head.append(label, percent);
+  const list = el('ol', 'steps'), items = steps.map(s => { const li = el('li', '', s); list.append(li); return li; });
+  const out = el('pre', 'log-view', ''), details = el('details', 'upgrade-log'); details.append(el('summary', '', '查看详细输出'), out);
+  content.append(el('p', 'muted', `正在升级到 v${target}。面板重启期间连接会短暂中断，属于正常现象，请不要关闭此页面。`), head, bar, list, details);
   openModal(`升级到 v${target}`, content, [button('关闭', closeModal)]);
+  let shown = 0, current = 0, restartedAt = 0;
+  const draw = (value, text) => {
+    shown = Math.max(shown, Math.min(100, Math.round(value))); fill.style.width = `${shown}%`; percent.textContent = `${shown}%`; bar.setAttribute('aria-valuenow', String(shown));
+    if (text) label.textContent = text;
+    items.forEach((li, i) => { li.className = i < current ? 'done' : i === current ? 'active' : ''; });
+  };
+  draw(1);
   const started = Date.now(); let phase = 1;
   const timer = setInterval(async () => {
     try {
       if (phase === 1) {
-        let jobs; try { jobs = await api('/jobs'); } catch { phase = 2; out.textContent += '\n管理代理正在重启…'; return; }
-        const j = jobs.find(x => x.id === jobId); if (!j) { phase = 2; return; }
+        let jobs, status; try { [jobs, status] = await Promise.all([api('/jobs'), api('/upgrade')]); } catch { phase = 2; restartedAt = Date.now(); current = 4; draw(shown, '管理代理正在重启…'); out.textContent += '\n管理代理正在重启…'; return; }
+        const j = jobs.find(x => x.id === jobId); if (!j) { phase = 2; restartedAt = Date.now(); current = 4; return; }
         out.textContent = j.output || '正在下载并校验安装包…';
-        if (j.state === 'failed') { clearInterval(timer); out.textContent += `\n升级失败：${j.error}`; return; }
-        if (j.state === 'success') { phase = 2; out.textContent += '\n安装器已启动，等待面板重启…'; }
+        const run = status.run;
+        if (run && run.target === target && run.stage in stageIndex) { current = stageIndex[run.stage]; draw(run.percent, ['正在下载安装包…', '正在校验 SHA-256…', '正在解包并核对版本…', '正在运行安装器…'][current]); }
+        if (j.state === 'failed') { clearInterval(timer); label.textContent = '升级失败'; fill.classList.add('failed'); out.textContent += `\n升级失败：${j.error}`; details.open = true; return; }
+        if (j.state === 'success') { phase = 2; restartedAt = Date.now(); current = 3; draw(Math.max(shown, 78), '安装器已启动，等待面板重启…'); }
       } else {
+        // The installer reports nothing while the services restart, so the bar eases toward 97%.
+        const waited = (Date.now() - restartedAt) / 1000; draw(78 + 19 * (1 - Math.exp(-waited / 25)), current === 4 ? '正在重启面板…' : '安装器运行中，等待面板重启…');
         const r = await fetch('/api/meta', { signal: AbortSignal.timeout(4000), cache: 'no-store' }).catch(() => null);
         const meta = r && r.ok ? await r.json().catch(() => null) : null;
-        if (meta && meta.version === target) { clearInterval(timer); out.textContent += `\n已升级到 v${target}，正在重新加载…`; setTimeout(() => location.reload(), 1500); return; }
-        if (Date.now() - started > 8 * 60 * 1000) { clearInterval(timer); out.textContent += '\n等待超时。请刷新页面后到“版本升级”页查看结果和安装日志；如果面板打不开，请通过 SSH 查看 journalctl -u junpanel-agent -u junpanel-web。'; }
+        if (meta && meta.version === target) { clearInterval(timer); current = steps.length; draw(100, `已升级到 v${target}，正在重新加载…`); out.textContent += `\n已升级到 v${target}，正在重新加载…`; setTimeout(() => location.reload(), 1500); return; }
+        if (!meta && current < 4) current = 4;
+        if (Date.now() - started > 8 * 60 * 1000) { clearInterval(timer); fill.classList.add('failed'); label.textContent = '等待超时'; out.textContent += '\n等待超时。请刷新页面后到“版本升级”页查看结果和安装日志；如果面板打不开，请通过 SSH 查看 journalctl -u junpanel-agent -u junpanel-web。'; details.open = true; }
       }
     } catch (e) { out.textContent += `\n${e.message}`; }
-  }, 2500);
+  }, 1000);
   // The password dialog closed just before this one opened, and its 'close' event is delivered
   // asynchronously, so only start listening after that has passed.
   setTimeout(() => modal.addEventListener('close', () => clearInterval(timer), { once: true }), 200);

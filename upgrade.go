@@ -76,6 +76,8 @@ type upgradeRun struct {
 	State    string    `json:"state"`
 	Target   string    `json:"target"`
 	Message  string    `json:"message,omitempty"`
+	Stage    string    `json:"stage,omitempty"`
+	Percent  int       `json:"percent,omitempty"`
 	Started  time.Time `json:"started"`
 	Finished time.Time `json:"finished,omitempty"`
 }
@@ -265,6 +267,38 @@ func (a *agent) setRun(run upgradeRun) {
 	}
 }
 
+// progress records where a running upgrade is, for the progress bar. It only moves
+// forward and only touches a run that is still "running".
+func (a *agent) progress(target, stage string, percent int) {
+	a.upMu.Lock()
+	defer a.upMu.Unlock()
+	st, e := a.readUpgrade()
+	if e != nil || st.Run == nil || st.Run.State != "running" || st.Run.Target != target || percent < st.Run.Percent {
+		return
+	}
+	st.Run.Stage, st.Run.Percent = stage, percent
+	a.writeUpgrade(st)
+}
+
+// countingReader reports download progress at most a few times a second.
+type countingReader struct {
+	r     io.Reader
+	n     int64
+	total int64
+	last  time.Time
+	on    func(done, total int64)
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, e := c.r.Read(p)
+	c.n += int64(n)
+	if time.Since(c.last) > 400*time.Millisecond {
+		c.last = time.Now()
+		c.on(c.n, c.total)
+	}
+	return n, e
+}
+
 // runUpgrade downloads, verifies and unpacks the release, then starts its installer
 // outside the agent's own control group so that stopping the agent cannot kill it.
 func (a *agent) runUpgrade(ctx context.Context, out io.Writer, info upgradeInfo) error {
@@ -301,6 +335,7 @@ func (a *agent) runUpgrade(ctx context.Context, out io.Writer, info upgradeInfo)
 
 	url := fmt.Sprintf("%s/v%s/JunPanel-%s-linux.tar.gz", a.upDL, target, target)
 	fmt.Fprintf(out, "正在下载 v%s 安装包…\n", target)
+	a.progress(target, "download", 2)
 	req, e := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if e != nil {
 		return fail("下载地址无效", e)
@@ -319,7 +354,12 @@ func (a *agent) runUpgrade(ctx context.Context, out io.Writer, info upgradeInfo)
 		return fail("无法写入安装包", e)
 	}
 	sum := sha256.New()
-	n, e := io.Copy(io.MultiWriter(f, sum), io.LimitReader(resp.Body, a.upMax+1))
+	counted := &countingReader{r: io.LimitReader(resp.Body, a.upMax+1), total: resp.ContentLength, on: func(done, total int64) {
+		if total > 0 {
+			a.progress(target, "download", 2+int(55*done/total))
+		}
+	}}
+	n, e := io.Copy(io.MultiWriter(f, sum), counted)
 	if ce := f.Close(); e == nil {
 		e = ce
 	}
@@ -330,10 +370,12 @@ func (a *agent) runUpgrade(ctx context.Context, out io.Writer, info upgradeInfo)
 		return fail("安装包超过大小上限，已拒绝", nil)
 	}
 	fmt.Fprintf(out, "已下载 %.1f MB，正在校验 SHA-256…\n", float64(n)/1e6)
+	a.progress(target, "verify", 60)
 	if hex.EncodeToString(sum.Sum(nil)) != info.Expected {
 		return fail("安装包校验失败（与发布的固定值不一致），已拒绝使用", nil)
 	}
 	fmt.Fprintln(out, "校验通过，正在解包…")
+	a.progress(target, "unpack", 68)
 	pf, e := os.Open(pkg)
 	if e != nil {
 		return fail("无法读取安装包", e)
@@ -366,11 +408,12 @@ func (a *agent) runUpgrade(ctx context.Context, out io.Writer, info upgradeInfo)
 		return fail("安装包中的程序版本与预期不符，已拒绝", e)
 	}
 	fmt.Fprintln(out, "程序版本核对通过。")
+	a.progress(target, "unpack", 75)
 
 	if e = os.WriteFile(script, []byte(runScript(logFile, exitFile, stage)), 0700); e != nil {
 		return fail("无法写入升级脚本", e)
 	}
-	a.setRun(upgradeRun{State: "running", Target: target, Started: started})
+	a.setRun(upgradeRun{State: "running", Target: target, Started: started, Stage: "install", Percent: 78})
 	fmt.Fprintln(out, "正在启动安装器；面板和管理代理即将重启，约 1 分钟后恢复。")
 	if _, e = a.runner(20*time.Second, a.upSystemd, "--unit", "junpanel-upgrade", "--description", "JunPanel upgrade to v"+target, "--collect", "/bin/bash", script); e != nil {
 		os.Remove(script)
@@ -401,6 +444,9 @@ func (a *agent) refreshRun(now time.Time) {
 	run := st.Run
 	finish := func(state, message string) {
 		run.State, run.Message, run.Finished = state, message, now
+		if state == "done" {
+			run.Stage, run.Percent = "done", 100
+		}
 		a.writeUpgrade(st)
 	}
 	raw, readErr := os.ReadFile(filepath.Join(a.upgradeDir(), "exit-code"))
@@ -542,7 +588,7 @@ func (a *agent) upgradeStart(w http.ResponseWriter, r *http.Request) error {
 		return bad(409, "请等这些任务结束后再升级："+strings.Join(blockers, "；"))
 	}
 	info := *st.Latest
-	st.Run = &upgradeRun{State: "running", Target: info.Version, Started: now, Message: "正在下载并校验"}
+	st.Run = &upgradeRun{State: "running", Target: info.Version, Started: now, Message: "正在下载并校验", Stage: "download", Percent: 1}
 	e = a.writeUpgrade(st)
 	a.upMu.Unlock()
 	if e != nil {

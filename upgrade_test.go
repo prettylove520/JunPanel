@@ -638,6 +638,24 @@ func TestUpgradePreconditions(t *testing.T) {
 	}
 }
 
+func TestUpgradeProgressOnlyMovesForward(t *testing.T) {
+	g := newUpRig(t)
+	g.srv.publish(t, newVer, releaseFiles(newVer, "exit 0\n"))
+	g.check()
+	g.a.setRun(upgradeRun{State: "running", Target: newVer, Started: g.now, Percent: 1})
+	g.a.progress(newVer, "download", 40)
+	g.a.progress(newVer, "download", 20)
+	if run := g.run(); run.Percent != 40 || run.Stage != "download" {
+		t.Fatalf("%+v", run)
+	}
+	g.a.progress("9.9.9", "install", 90) // another target: ignored
+	g.a.setRun(upgradeRun{State: "failed", Target: newVer, Started: g.now})
+	g.a.progress(newVer, "install", 90) // not running any more: ignored
+	if run := g.run(); run.Percent != 0 || run.State != "failed" {
+		t.Fatalf("%+v", run)
+	}
+}
+
 func TestInterruptedUpgradeIsSettledAfterRestart(t *testing.T) {
 	g := newUpRig(t)
 	g.srv.publish(t, newVer, releaseFiles(newVer, "exit 0\n"))
@@ -663,6 +681,9 @@ func TestInterruptedUpgradeIsSettledAfterRestart(t *testing.T) {
 	restarted.now = g.a.now
 	if st, _ := restarted.readUpgrade(); st.Run.State != "done" || !strings.Contains(st.Run.Message, newVer) || st.Latest == nil {
 		t.Fatalf("after restart: %+v", st.Run)
+	}
+	if st, _ := restarted.readUpgrade(); st.Run.Percent != 100 || st.Run.Stage != "done" {
+		t.Fatalf("finished upgrade not at 100%%: %+v", st.Run)
 	}
 	if restarted.updateAvailable() != "" {
 		t.Fatal("update still offered after installing it")
