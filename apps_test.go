@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ func TestCatalogTemplates(t *testing.T) {
 			t.Fatalf("%s keeps data but cannot be backed up", tpl.Key)
 		}
 	}
-	if len(appCatalog) != 12 {
+	if len(appCatalog) != 23 {
 		t.Fatalf("catalog has %d templates", len(appCatalog))
 	}
 }
@@ -148,5 +149,132 @@ func TestDockerMemosTemplate(t *testing.T) {
 	names := strings.Join(tarNames(t, raw), "\n")
 	if !strings.Contains(names, "parts/app/memos/memos_prod.db") {
 		t.Fatalf("Memos database not in the backup:\n%s", names)
+	}
+}
+
+// waitHTTP polls until the app answers with one of the wanted status codes.
+func waitHTTP(t *testing.T, port int, path string, within time.Duration, want ...int) int {
+	t.Helper()
+	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	deadline, last := time.Now().Add(within), 0
+	for time.Now().Before(deadline) {
+		req, _ := http.NewRequest("GET", "http://127.0.0.1:"+itoa(port)+path, nil)
+		if resp, e := client.Do(req); e == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			last = resp.StatusCode
+			for _, w := range want {
+				if last == w {
+					return last
+				}
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return last
+}
+
+// Every plain template starts, answers on its port, and (where it keeps data) is backed up
+// from the paths the backup reads. JUNPANEL_APPS limits the run to some templates.
+func TestDockerPlainTemplates(t *testing.T) {
+	a := dockerAgent(t)
+	h := a.routes()
+	checks := map[string]struct {
+		path string
+		want []int
+	}{
+		"nextcloud":   {"/status.php", []int{200}},
+		"jellyfin":    {"/", []int{200, 302}},
+		"navidrome":   {"/", []int{200, 302}},
+		"trilium":     {"/", []int{200, 302}},
+		"linkding":    {"/login/", []int{200}},
+		"freshrss":    {"/", []int{200, 302}},
+		"gotify":      {"/", []int{200}},
+		"ntfy":        {"/", []int{200}},
+		"stirlingpdf": {"/", []int{200, 302}},
+		"drawio":      {"/", []int{200}},
+		"codeserver":  {"/healthz", []int{200}},
+	}
+	only := map[string]bool{}
+	for _, k := range strings.Split(os.Getenv("JUNPANEL_APPS"), ",") {
+		if k != "" {
+			only[k] = true
+		}
+	}
+	for key, c := range checks {
+		if len(only) > 0 && !only[key] {
+			continue
+		}
+		t.Run(key, func(t *testing.T) {
+			rec := installApp(t, a, "t"+randomID(5), key)
+			if code := waitHTTP(t, rec.Port, c.path, 6*time.Minute, c.want...); code == 0 || !contains(c.want, code) {
+				t.Fatalf("%s: HTTP %d, want one of %v", key, code, c.want)
+			}
+			if key == "gotify" {
+				req, _ := http.NewRequest("GET", "http://127.0.0.1:"+itoa(rec.Port)+"/current/user", nil)
+				req.SetBasicAuth("admin", rec.Password)
+				resp, e := http.DefaultClient.Do(req)
+				if e != nil || resp.StatusCode != 200 {
+					t.Fatalf("gotify login with the generated password failed: %v %v", e, resp)
+				}
+				resp.Body.Close()
+			}
+			if tpl, _ := findTemplate(key); tpl.Backup {
+				r := request(h, "POST", "/backups", `{"type":"app","target":"`+rec.ID+`"}`, nil, nil)
+				if r.Code != 202 {
+					t.Fatalf("backup: %d %s", r.Code, r.Body.String())
+				}
+				j := waitJob(t, a, r.Body.Bytes(), 8*time.Minute)
+				for _, part := range appData[key] {
+					if !strings.Contains(j.Output, "已备份 "+part.Path) {
+						t.Fatalf("%s not backed up:\n%s", part.Path, j.Output)
+					}
+				}
+			}
+		})
+	}
+}
+
+func contains(list []int, v int) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// Templates only touch what they should: loopback ports, named volumes and the panel's own
+// media folders; secrets reach an app only through its environment.
+func TestPlainTemplateSafety(t *testing.T) {
+	for key, spec := range appSpecs {
+		if _, ok := findTemplate(key); !ok {
+			t.Fatalf("spec for unknown template %q", key)
+		}
+		needsLogin := false
+		for _, v := range spec.Env {
+			needsLogin = needsLogin || strings.Contains(v, "{password}")
+		}
+		if needsLogin != (spec.Login != "") {
+			t.Fatalf("%s: a generated password must come with a login name for the connection info", key)
+		}
+		for _, v := range spec.Volumes {
+			src := strings.SplitN(v, ":", 2)[0]
+			if strings.Contains(v, "docker.sock") || strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "{root}/") {
+				t.Fatalf("%s mounts %s", key, v)
+			}
+		}
+		raw, e := composeForRoot(appRecord{ID: "demo", Template: key, Port: 9999, Password: "s3cret"}, "/data/root")
+		if e != nil {
+			t.Fatal(e)
+		}
+		for _, bad := range []string{"privileged", "network_mode", "cap_add", "docker.sock", "{root}", "{password}"} {
+			if strings.Contains(string(raw), bad) {
+				t.Fatalf("%s: compose contains %q:\n%s", key, bad, raw)
+			}
+		}
+		if (strings.Contains(string(raw), "s3cret")) != (spec.Login != "") {
+			t.Fatalf("%s: password in compose = %v, login %q", key, strings.Contains(string(raw), "s3cret"), spec.Login)
+		}
 	}
 }
