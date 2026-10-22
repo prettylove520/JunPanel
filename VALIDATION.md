@@ -40,9 +40,9 @@
 - 界面：演示模式下用 Playwright 在 1440 与 390 像素、浅色与深色主题检查新页面（编排、网络、卷、操作日志、登录日志、公网入口、网站与备份的新表单），没有 JavaScript 错误；公网入口的两步确认流程、网络删除按钮按内置/使用中禁用。
 - 未在真实 systemd 上从面板修改公网入口（沙箱没有运行 systemd），也没有申请真实证书。
 
-应用商店扩充到 24 个模板（新增 Nextcloud、Jellyfin、Navidrome、Trilium Notes、linkding、FreshRSS、Gotify、ntfy、Stirling-PDF、draw.io、code-server、LibreSpeed）：模板用小型数据表描述（环境变量、命令、卷），`TestPlainTemplateSafety` 检查它们只绑定本机端口、不含特权、网络模式、Docker socket，只挂载命名卷或面板文件区的 media、music 目录，生成的密码只出现在需要登录的应用的环境变量里；`TestDockerPlainTemplates`（`JUNPANEL_DOCKER_TEST=1`，可用 `JUNPANEL_APPS=a,b` 选择应用）在真实 Docker 上逐个安装、等待端口响应，有数据的应用再做一次备份并核对备份路径，Gotify 另用生成的密码实际登录。
+应用商店扩充到 23 个模板（新增 Nextcloud、Jellyfin、Navidrome、Trilium Notes、linkding、FreshRSS、Gotify、ntfy、Stirling-PDF、draw.io、code-server）：模板用小型数据表描述（环境变量、命令、卷），`TestPlainTemplateSafety` 检查它们只绑定本机端口、不含特权、网络模式、Docker socket，只挂载命名卷或面板文件区的 media、music 目录，生成的密码只出现在需要登录的应用的环境变量里；`TestDockerPlainTemplates`（`JUNPANEL_DOCKER_TEST=1`，可用 `JUNPANEL_APPS=a,b` 选择应用）在真实 Docker 上逐个安装、等待端口响应，有数据的应用再做一次备份并核对备份路径，Gotify 另用生成的密码实际登录。
 - 在沙箱里发现并修复：linkding 默认监听 IPv6，在没有 IPv6 的主机上无法启动，已设置 `LD_SERVER_HOST=0.0.0.0`。
-- 沙箱无法下载 ghcr.io 的镜像，因此 LibreSpeed 改用 Docker Hub 上的 `linuxserver/librespeed`，并同样做了真实 Docker 验证；Open WebUI 使用 ghcr.io 镜像，未在沙箱里拉取验证。
+- 沙箱无法下载 ghcr.io 的镜像；候选的 LibreSpeed 在沙箱里无法验证（官方镜像在 ghcr.io，Docker Hub 上的镜像要么监听 IPv6、要么自 2022 年起不再更新），因此没有加入商店。Open WebUI 使用 ghcr.io 镜像，未在沙箱里拉取验证。
 
 自动测试覆盖以下有实际风险的路径：
 

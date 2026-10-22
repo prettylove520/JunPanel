@@ -51,7 +51,6 @@ var appCatalog = []appTemplate{
 	{"stirlingpdf", "Stirling-PDF", "开发工具", "PDF 工具箱：合并、拆分、转换、压缩、加水印与 OCR", "stirlingtools/stirling-pdf:latest", 8093, 8080, "", "#e53935", "无需保存数据，镜像较大，运行时占用内存可能超过 1 GB。", false},
 	{"drawio", "draw.io", "开发工具", "流程图、架构图与思维导图在线绘制工具，文件保存在浏览器或本地", "jgraph/drawio:latest", 8098, 8080, "", "#f08705", "文件只保存在访问者的浏览器或本机，服务器不保存数据。", false},
 	{"codeserver", "code-server", "开发工具", "在浏览器里运行的 VS Code，随时随地写代码", "codercom/code-server:latest", 8088, 8080, "", "#2e7ff6", "登录密码在“连接信息”中查看。它带有容器内的终端，等同于一个可写代码的 Linux 环境，务必只通过 HTTPS 域名使用，并保管好密码。", false},
-	{"librespeed", "LibreSpeed", "运维工具", "测量服务器与你之间的下载、上传速度和延迟", "linuxserver/librespeed:latest", 8099, 80, "", "#e5a400", "用来测量访问这台服务器的实际速度（包括经过线路机转发后的速度），无需保存数据。", false},
 }
 
 // appSpec describes the plain single-container templates: a few settings and the
@@ -76,7 +75,6 @@ var appSpecs = map[string]appSpec{
 	"stirlingpdf": {},
 	"drawio":      {},
 	"codeserver":  {Env: map[string]string{"PASSWORD": "{password}"}, Volumes: []string{"data:/home/coder"}, Login: "coder"},
-	"librespeed":  {},
 }
 
 func init() {
@@ -149,7 +147,7 @@ func (a *agent) appCredentials(w http.ResponseWriter, r *http.Request) error {
 			values["database"] = "junpanel"
 			values["password"] = record.Password
 			values["note"] = "此处为数据库管理员凭据，请妥善保管。"
-		case "nextcloud", "jellyfin", "navidrome", "trilium", "freshrss", "ntfy", "stirlingpdf", "drawio", "librespeed":
+		case "nextcloud", "jellyfin", "navidrome", "trilium", "freshrss", "ntfy", "stirlingpdf", "drawio":
 			values["note"] = "此应用没有预设的登录凭据；首次访问时按页面提示创建账号或设置密码。界面端口仅监听本机，请通过绑定的域名访问。"
 		case "linkding", "gotify", "codeserver":
 			values["user"] = appSpecs[record.Template].Login

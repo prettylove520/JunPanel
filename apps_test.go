@@ -59,7 +59,7 @@ func TestCatalogTemplates(t *testing.T) {
 			t.Fatalf("%s keeps data but cannot be backed up", tpl.Key)
 		}
 	}
-	if len(appCatalog) != 24 {
+	if len(appCatalog) != 23 {
 		t.Fatalf("catalog has %d templates", len(appCatalog))
 	}
 }
@@ -194,7 +194,6 @@ func TestDockerPlainTemplates(t *testing.T) {
 		"stirlingpdf": {"/", []int{200, 302}},
 		"drawio":      {"/", []int{200}},
 		"codeserver":  {"/healthz", []int{200}},
-		"librespeed":  {"/", []int{200}},
 	}
 	only := map[string]bool{}
 	for _, k := range strings.Split(os.Getenv("JUNPANEL_APPS"), ",") {
