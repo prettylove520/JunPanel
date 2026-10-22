@@ -154,6 +154,8 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /apps", endpoint(a.appList))
 	m.HandleFunc("POST /apps", endpoint(a.appInstall))
 	m.HandleFunc("POST /apps/{id}/action", endpoint(a.appAction))
+	m.HandleFunc("GET /apps/{id}/settings", endpoint(a.appSettings))
+	m.HandleFunc("POST /apps/{id}/settings", endpoint(a.appSettingsSave))
 	m.HandleFunc("GET /apps/{id}/credentials", endpoint(a.appCredentials))
 	m.HandleFunc("GET /databases", endpoint(a.databaseList))
 	m.HandleFunc("POST /databases/{id}/query", endpoint(a.databaseQuery))

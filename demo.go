@@ -89,6 +89,8 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = catalogView()
 	case "/apps":
 		value = demoApps()
+	case "/apps/notes/settings", "/apps/studio/settings":
+		value = map[string]any{"id": "notes", "name": "代码仓库", "template": "gitea", "port": 3000, "env": map[string]string{"GITEA__service__REQUIRE_SIGNIN_VIEW": "true"}, "presets": appPresets["gitea"], "builtin_env": []string{}, "removed": false, "busy": false}
 	case "/jobs":
 		value = demoJobs()
 	case "/databases":
