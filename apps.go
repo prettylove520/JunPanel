@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -39,6 +40,43 @@ var appCatalog = []appTemplate{
 	{"openwebui", "Open WebUI", "AI 工具", "连接本地或在线大模型的聊天界面", "ghcr.io/open-webui/open-webui:main", 3080, 8080, "", "#111827", "镜像较大（数 GB），首次部署需要较长时间。第一个注册的账号成为管理员。", false},
 	{"ittools", "IT-Tools", "开发工具", "开发者常用的在线小工具合集，无需保存数据", "corentinth/it-tools:latest", 8090, 80, "", "#18a058", "", false},
 	{"excalidraw", "Excalidraw", "效率工具", "手绘风格的在线白板，画布保存在浏览器中", "excalidraw/excalidraw:latest", 8091, 80, "", "#6965db", "画布只保存在访问者的浏览器里，服务器不保存数据。", false},
+	{"nextcloud", "Nextcloud", "网盘与协作", "私有网盘：文件同步、日历、联系人与在线协作，使用内置 SQLite", "nextcloud:apache", 8082, 80, "", "#0082c9", "镜像约 2 GB，首次启动需要几分钟。必须通过绑定好的 HTTPS 域名访问，并在首次打开的页面里创建管理员账号（数据库保持 SQLite 即可，个人使用足够）。", false},
+	{"jellyfin", "Jellyfin", "影音娱乐", "自托管影音服务器：电影、剧集与音乐，自动整理海报与字幕", "jellyfin/jellyfin:latest", 8096, 8096, "", "#7b5bd6", "媒体文件放在“文件”页的 media 目录（/srv/junpanel/media），在首次设置向导里把媒体库路径选为 /media。备份只包含设置和库信息，不包含媒体文件。", false},
+	{"navidrome", "Navidrome", "影音娱乐", "轻量的私人音乐流媒体服务，兼容 Subsonic 客户端", "deluan/navidrome:latest", 4533, 4533, "", "#0a8ea0", "音乐文件放在“文件”页的 music 目录（/srv/junpanel/music）。第一个创建的账号成为管理员。备份只包含库信息，不包含音乐文件。", false},
+	{"trilium", "Trilium Notes", "效率工具", "层级化的知识库笔记，支持富文本、代码与关系图", "triliumnext/notes:latest", 8094, 8080, "", "#4a6cf7", "首次打开时设置密码。", false},
+	{"linkding", "linkding", "效率工具", "简洁的书签管理器，支持标签与全文搜索", "sissbruecker/linkding:latest", 9090, 9090, "", "#5856e0", "管理员用户名 admin，密码在“连接信息”中查看，登录后可在设置里修改。", false},
+	{"freshrss", "FreshRSS", "效率工具", "自托管的 RSS 订阅阅读器，兼容多种手机客户端", "freshrss/freshrss:latest", 8097, 80, "", "#e07b00", "首次打开会出现安装向导，数据库选 SQLite 即可。", false},
+	{"gotify", "Gotify", "运维工具", "自托管的推送通知服务，可接收脚本和应用发来的消息", "gotify/server:latest", 8095, 80, "", "#4a90d9", "管理员用户名 admin，密码在“连接信息”中查看。", false},
+	{"ntfy", "ntfy", "运维工具", "基于 HTTP 的简单推送通知服务，一条 curl 即可发消息", "binwiederhier/ntfy:latest", 8100, 80, "", "#338574", "默认任何人都可以向主题发布和订阅，请只绑定域名后给自己用，不要公开主题名。", false},
+	{"stirlingpdf", "Stirling-PDF", "开发工具", "PDF 工具箱：合并、拆分、转换、压缩、加水印与 OCR", "stirlingtools/stirling-pdf:latest", 8093, 8080, "", "#e53935", "无需保存数据，镜像较大，运行时占用内存可能超过 1 GB。", false},
+	{"drawio", "draw.io", "开发工具", "流程图、架构图与思维导图在线绘制工具，文件保存在浏览器或本地", "jgraph/drawio:latest", 8098, 8080, "", "#f08705", "文件只保存在访问者的浏览器或本机，服务器不保存数据。", false},
+	{"codeserver", "code-server", "开发工具", "在浏览器里运行的 VS Code，随时随地写代码", "codercom/code-server:latest", 8088, 8080, "", "#2e7ff6", "登录密码在“连接信息”中查看。它带有容器内的终端，等同于一个可写代码的 Linux 环境，务必只通过 HTTPS 域名使用，并保管好密码。", false},
+	{"librespeed", "LibreSpeed", "运维工具", "测量服务器与你之间的下载、上传速度和延迟", "ghcr.io/librespeed/speedtest:latest", 8099, 8080, "", "#e5a400", "用来测量访问这台服务器的实际速度（包括经过线路机转发后的速度），无需保存数据。", false},
+}
+
+// appSpec describes the plain single-container templates: a few settings and the
+// data volumes. "{password}" in a value is replaced by the app's generated password.
+// Volumes starting with "/" are folders of the panel's file area, created by Docker.
+type appSpec struct {
+	Env     map[string]string
+	Command []string
+	Volumes []string
+	Login   string
+}
+
+var appSpecs = map[string]appSpec{
+	"nextcloud":   {Env: map[string]string{"OVERWRITEPROTOCOL": "https"}, Volumes: []string{"data:/var/www/html"}},
+	"jellyfin":    {Volumes: []string{"config:/config", "cache:/cache", "{root}/media:/media"}},
+	"navidrome":   {Volumes: []string{"data:/data", "{root}/music:/music:ro"}},
+	"trilium":     {Volumes: []string{"data:/home/node/trilium-data"}},
+	"linkding":    {Env: map[string]string{"LD_SUPERUSER_NAME": "admin", "LD_SUPERUSER_PASSWORD": "{password}"}, Volumes: []string{"data:/etc/linkding/data"}, Login: "admin"},
+	"freshrss":    {Env: map[string]string{"CRON_MIN": "13,43"}, Volumes: []string{"data:/var/www/FreshRSS/data", "extensions:/var/www/FreshRSS/extensions"}},
+	"gotify":      {Env: map[string]string{"GOTIFY_DEFAULTUSER_NAME": "admin", "GOTIFY_DEFAULTUSER_PASS": "{password}"}, Volumes: []string{"data:/app/data"}, Login: "admin"},
+	"ntfy":        {Command: []string{"serve"}},
+	"stirlingpdf": {},
+	"drawio":      {},
+	"codeserver":  {Env: map[string]string{"PASSWORD": "{password}"}, Volumes: []string{"data:/home/coder"}, Login: "coder"},
+	"librespeed":  {Env: map[string]string{"MODE": "standalone"}},
 }
 
 func init() {
@@ -111,6 +149,12 @@ func (a *agent) appCredentials(w http.ResponseWriter, r *http.Request) error {
 			values["database"] = "junpanel"
 			values["password"] = record.Password
 			values["note"] = "此处为数据库管理员凭据，请妥善保管。"
+		case "nextcloud", "jellyfin", "navidrome", "trilium", "freshrss", "ntfy", "stirlingpdf", "drawio", "librespeed":
+			values["note"] = "此应用没有预设的登录凭据；首次访问时按页面提示创建账号或设置密码。界面端口仅监听本机，请通过绑定的域名访问。"
+		case "linkding", "gotify", "codeserver":
+			values["user"] = appSpecs[record.Template].Login
+			values["password"] = record.Password
+			values["note"] = "这是此应用的初始登录账号。登录后建议在应用内修改密码；如在应用内修改，这里显示的仍是初始密码。"
 		case "redis":
 			values["user"] = "default"
 			values["password"] = record.Password
@@ -129,7 +173,9 @@ func publicApps(rows []appRecord) []map[string]any {
 	}
 	return out
 }
-func composeFor(r appRecord) ([]byte, error) {
+func composeFor(r appRecord) ([]byte, error) { return composeForRoot(r, "/srv/junpanel") }
+
+func composeForRoot(r appRecord, root string) ([]byte, error) {
 	t, ok := findTemplate(r.Template)
 	if !ok {
 		return nil, bad(400, "未知应用模板")
@@ -169,6 +215,32 @@ func composeFor(r appRecord) ([]byte, error) {
 		part := appData[r.Template][0]
 		service["volumes"] = []string{part.Volume + ":" + part.Path}
 		volumes[part.Volume] = map[string]any{}
+	default:
+		spec, ok := appSpecs[r.Template]
+		if !ok {
+			break
+		}
+		if len(spec.Env) > 0 {
+			env := map[string]string{}
+			for k, v := range spec.Env {
+				env[k] = strings.ReplaceAll(v, "{password}", r.Password)
+			}
+			service["environment"] = env
+		}
+		if len(spec.Command) > 0 {
+			service["command"] = spec.Command
+		}
+		mounts := []string{}
+		for _, v := range spec.Volumes {
+			v = strings.ReplaceAll(v, "{root}", root)
+			mounts = append(mounts, v)
+			if !strings.HasPrefix(v, "/") {
+				volumes[strings.SplitN(v, ":", 2)[0]] = map[string]any{}
+			}
+		}
+		if len(mounts) > 0 {
+			service["volumes"] = mounts
+		}
 	}
 	return json.MarshalIndent(map[string]any{"name": name, "services": services, "volumes": volumes}, "", "  ")
 }
@@ -178,7 +250,7 @@ func (a *agent) writeCompose(record appRecord) error {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return e
 	}
-	b, e := composeFor(record)
+	b, e := composeForRoot(record, a.cfg.Root)
 	if e != nil {
 		return e
 	}

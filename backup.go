@@ -57,6 +57,14 @@ var appData = map[string][]dataPart{
 	"memos":       {{"app", "/var/opt/memos", "data"}},
 	"n8n":         {{"app", "/home/node/.n8n", "data"}},
 	"openwebui":   {{"app", "/app/backend/data", "data"}},
+	"nextcloud":   {{"app", "/var/www/html", "data"}},
+	"jellyfin":    {{"app", "/config", "config"}},
+	"navidrome":   {{"app", "/data", "data"}},
+	"trilium":     {{"app", "/home/node/trilium-data", "data"}},
+	"linkding":    {{"app", "/etc/linkding/data", "data"}},
+	"freshrss":    {{"app", "/var/www/FreshRSS/data", "data"}, {"app", "/var/www/FreshRSS/extensions", "extensions"}},
+	"gotify":      {{"app", "/app/data", "data"}},
+	"codeserver":  {{"app", "/home/coder", "data"}},
 }
 
 // backupTag labels a backup: a note for the list and the schedule that made it.
