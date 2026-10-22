@@ -131,6 +131,7 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /projects/{name}/action", endpoint(a.projectAction))
 	m.HandleFunc("GET /sites", endpoint(a.siteList))
 	m.HandleFunc("GET /sites/health", endpoint(a.siteHealthStatus))
+	m.HandleFunc("GET /logs", endpoint(a.serviceLogs))
 	m.HandleFunc("POST /sites", endpoint(a.siteSave))
 	m.HandleFunc("POST /sites/{id}/toggle", endpoint(a.siteToggle))
 	m.HandleFunc("DELETE /sites/{id}", endpoint(a.siteDelete))

@@ -64,6 +64,7 @@ const routes = {
   jobs: ['任务', '每一次部署、备份和容器操作的执行记录。', 'activity', 'logs'],
   audit: ['操作日志', '谁在什么时间、从哪里做了什么修改，以及结果。', 'file', 'logs'],
   logins: ['登录日志', '登录、退出和再次验证密码失败的记录。', 'lock', 'logs'],
+  syslog: ['服务日志', 'Caddy、面板、Docker 等服务最近的运行日志，遇到问题先看这里。', 'terminal', 'logs'],
   security: ['安全', '管理员密码、两步验证与面板的权限边界。', 'shield', 'settings'],
   access: ['公网入口', '用域名或服务器 IP 通过 HTTPS 访问面板。', 'globe', 'settings'],
   upgrade: ['版本升级', '检查新版本，校验后在面板内一键升级。', 'refresh', 'settings'],
@@ -190,7 +191,7 @@ function drawChrome() {
   $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
   $('#page-description').textContent = r[1]; $('#page-bar').hidden = state.route === 'overview';
 }
-const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, security: securityPage, access: accessPage, upgrade: upgradePage });
+const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, syslog: syslogPage, security: securityPage, access: accessPage, upgrade: upgradePage });
 async function render() {
   clearPage(); const epoch = state.epoch; drawChrome(); $('#connection-error').hidden = true;
   $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在加载…'));
@@ -482,6 +483,29 @@ async function auditRows(kind, headers, row) {
 const auditResultTag = e => tag(e.result === 'ok' ? '成功' : '失败', e.result === 'ok' ? 'ok' : 'bad');
 function auditPage() { return auditRows('operation', ['时间', '操作', '对象', '来源 IP', '结果'], e => [date(e.time), titleCell(e.action, `${e.method} ${e.path}`, 'activity'), e.detail || '—', el('code', '', e.ip), auditResultTag(e)]); }
 function loginsPage() { return auditRows('login', ['时间', '事件', '来源 IP', '结果'], e => [date(e.time), e.action, el('code', '', e.ip), auditResultTag(e)]); }
+async function syslogPage() {
+  const n = el('div'), units = [['caddy', 'Caddy（网站）'], ['agent', '面板管理代理'], ['web', '面板网页服务'], ['docker', 'Docker'], ['upgrade', '面板升级']];
+  const unit = field('服务', state.syslog?.unit || 'caddy', { select: units }), lines = field('行数', state.syslog?.lines || '200', { select: [['100', '最近 100 行'], ['200', '最近 200 行'], ['500', '最近 500 行'], ['1000', '最近 1000 行']] });
+  const level = field('级别', state.syslog?.level ?? '', { select: [['', '全部'], ['warning', '警告及以上'], ['err', '仅错误']], required: false }), search = field('搜索', state.syslog?.search || '', { required: false, max: 100, placeholder: '输入关键字，例如域名或 error' });
+  const bar = el('div', 'database-controls'), out = el('pre', 'log-view', '正在读取…'), info = el('p', 'muted', ''), auto = field('自动刷新', state.syslog?.auto ? '1' : '0', { select: [['0', '关闭'], ['1', '每 5 秒']] });
+  out.style.maxHeight = '60vh'; out.style.minHeight = '240px'; out.style.overflow = 'auto';
+  const load = async () => {
+    state.syslog = { unit: unit.val(), lines: lines.val(), level: level.input.value, search: search.val(), auto: auto.input.value === '1' };
+    const q = new URLSearchParams({ unit: unit.val(), lines: lines.val() }); if (level.input.value) q.set('level', level.input.value); if (search.val()) q.set('search', search.val());
+    try {
+      const d = await api(`/logs?${q}`), atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+      out.textContent = d.text || '没有符合条件的日志。'; info.textContent = `${d.label} · ${d.lines} 行${d.trimmed ? '（内容过长，只显示最后一部分）' : ''} · 更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+      if (atBottom || !out.dataset.shown) out.scrollTop = out.scrollHeight; out.dataset.shown = '1';
+    } catch (e) { if (!(e instanceof Superseded)) { out.textContent = e.message; info.textContent = ''; } }
+  };
+  [unit, lines, level].forEach(f => f.input.onchange = () => { out.dataset.shown = ''; load(); }); search.input.onkeydown = e => { if (e.key === 'Enter') { out.dataset.shown = ''; load(); } };
+  auto.input.onchange = load;
+  const go = button('刷新', () => { out.dataset.shown = ''; return load(); }, 'primary', 'refresh');
+  const grid = el('div', 'form-grid'); [unit, lines, level, search, auto].forEach(f => grid.append(f.n)); search.n.classList.add('span-2');
+  bar.append(go); n.append(note('日志里可能含有域名、IP 等信息，请勿公开贴出。读取的是系统日志的最近部分，搜索不区分大小写。'), grid, bar, info, out);
+  interval(async () => { if (auto.input.value === '1') await load(); }, 5000);
+  await load(); return n;
+}
 async function accessPage() {
   const data = await api('/access'), n = el('div', 'security-grid'), here = location.hostname;
   action(button('刷新', render, 'secondary', 'refresh'));
