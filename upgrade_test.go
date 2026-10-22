@@ -719,15 +719,6 @@ func TestUpgradeNeedsThePasswordAgain(t *testing.T) {
 	cookie := &http.Cookie{Name: "junpanel_session", Value: token}
 	count := func() int { mu.Lock(); defer mu.Unlock(); return len(forwarded) }
 
-	if r := request(h, "POST", "/api/upgrade", `{"password":"wrong password","otp":""}`, headers, cookie); r.Code != 403 || count() != 0 {
-		t.Fatalf("wrong password: %d, forwarded %d", r.Code, count())
-	}
-	if r := request(h, "POST", "/api/upgrade", `{}`, headers, cookie); r.Code != 403 || count() != 0 {
-		t.Fatalf("no password: %d, forwarded %d", r.Code, count())
-	}
-	if r := request(h, "POST", "/api/upgrade", `{"password":"`+pw+`","extra":1}`, headers, cookie); r.Code != 400 || count() != 0 {
-		t.Fatalf("unknown field: %d", r.Code)
-	}
 	// The agent's start endpoint cannot be reached around the check.
 	for _, path := range []string{"/api/upgrade/start", "/api/upgrade/start/", "/api//upgrade/start", "/api/x/../upgrade/start", "/api/upgrade/./start", "/api/upgrade/start/anything"} {
 		for _, method := range []string{"POST", "GET"} {
@@ -737,14 +728,20 @@ func TestUpgradeNeedsThePasswordAgain(t *testing.T) {
 		}
 	}
 	noCSRF := map[string]string{"Origin": "http://127.0.0.1:8787", "Content-Type": "application/json"}
-	if r := request(h, "POST", "/api/upgrade", `{"password":"`+pw+`"}`, noCSRF, cookie); r.Code != 403 || count() != 0 {
+	if r := request(h, "POST", "/api/upgrade", `{}`, noCSRF, cookie); r.Code != 403 || count() != 0 {
 		t.Fatalf("no CSRF token: %d", r.Code)
 	}
-	if r := request(h, "POST", "/api/upgrade", `{"password":"`+pw+`"}`, headers, nil); r.Code != 401 || count() != 0 {
+	if r := request(h, "POST", "/api/upgrade", `{}`, headers, nil); r.Code != 401 || count() != 0 {
 		t.Fatalf("no session: %d", r.Code)
 	}
-	if r := request(h, "POST", "/api/upgrade", `{"password":"`+pw+`","otp":""}`, headers, cookie); r.Code != 200 {
-		t.Fatalf("correct password: %d %s", r.Code, r.Body.String())
+	badOrigin := map[string]string{"Origin": "http://evil.example", "X-CSRF-Token": session.CSRF, "Content-Type": "application/json"}
+	if r := request(h, "POST", "/api/upgrade", `{}`, badOrigin, cookie); r.Code != 403 || count() != 0 {
+		t.Fatalf("foreign origin: %d", r.Code)
+	}
+	// A signed-in administrator starts it without a password; whatever the body says,
+	// nothing but an empty request reaches the agent.
+	if r := request(h, "POST", "/api/upgrade", `{"version":"9.9.9","url":"http://evil.example/x.tgz"}`, headers, cookie); r.Code != 200 {
+		t.Fatalf("signed in: %d %s", r.Code, r.Body.String())
 	}
 	if count() != 1 || forwarded[0] != "POST /upgrade/start body=" {
 		t.Fatalf("forwarded: %v", forwarded)
@@ -754,23 +751,6 @@ func TestUpgradeNeedsThePasswordAgain(t *testing.T) {
 	request(h, "POST", "/api/upgrade/check", `{}`, headers, cookie)
 	if want := []string{"POST /upgrade/start body=", "GET /upgrade body=", "POST /upgrade/check body={}"}; fmt.Sprint(forwarded) != fmt.Sprint(want) {
 		t.Fatalf("forwarded: %v", forwarded)
-	}
-	// With two-step verification on, the code is required too.
-	secret, e := web.auth.setupOTP(token, pw)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = web.auth.enableOTP(token, currentOTP(secret)); e != nil {
-		t.Fatal(e)
-	}
-	token, session, _ = web.auth.login("127.0.0.1", "admin", pw, currentOTP(secret))
-	headers["X-CSRF-Token"], cookie = session.CSRF, &http.Cookie{Name: "junpanel_session", Value: token}
-	before := count()
-	if r := request(h, "POST", "/api/upgrade", `{"password":"`+pw+`","otp":"000000"}`, headers, cookie); r.Code != 403 || count() != before {
-		t.Fatalf("wrong code: %d", r.Code)
-	}
-	if r := request(h, "POST", "/api/upgrade", `{"password":"`+pw+`","otp":"`+otpAt(secret, time.Now().Add(30*time.Second))+`"}`, headers, cookie); r.Code != 200 || count() != before+1 {
-		t.Fatalf("right code: %d %s", r.Code, r.Body.String())
 	}
 }
 
@@ -786,7 +766,7 @@ func TestDemoModeNeverUpgrades(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &session)
 	headers["X-CSRF-Token"] = session.CSRF
 	cookie := w.Result().Cookies()[0]
-	if r := request(h, "POST", "/api/upgrade", `{"password":"JunPanelPreview2026!"}`, headers, cookie); r.Code != 403 || !strings.Contains(r.Body.String(), "演示") {
+	if r := request(h, "POST", "/api/upgrade", `{}`, headers, cookie); r.Code != 403 || !strings.Contains(r.Body.String(), "演示") {
 		t.Fatalf("demo upgrade: %d %s", r.Code, r.Body.String())
 	}
 	if r := request(h, "GET", "/api/upgrade", "", nil, cookie); r.Code != 200 || !strings.Contains(r.Body.String(), `"current"`) {

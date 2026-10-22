@@ -777,13 +777,10 @@ async function upgradePage() {
   return n;
 }
 function startUpgrade(target) {
-  const password = field('当前密码', '', { type: 'password', required: true }), fields = [password];
-  const otp = state.totp ? field('动态码', '', { max: 6, placeholder: '6 位数字' }) : null;
-  if (otp) fields.push(otp);
-  formModal(`升级到 v${target}`, fields, '开始升级', async () => {
-    const result = await api('/upgrade', { password: password.input.value, otp: otp ? otp.val() : '' });
+  confirm(`升级到 v${target}`, '升级会下载并校验安装包，然后重启面板和管理代理，约 1 分钟后恢复；现有应用和 Caddy 不受影响，登录会话会清空，安装失败会自动回滚。升级期间请不要关闭此页面。', async () => {
+    const result = await api('/upgrade', {});
     closeModal(); watchUpgrade(target, result.id);
-  }, { note: '为安全起见需要再次验证密码。升级期间面板会重启，请不要关闭此页面。', warning: true, danger: true });
+  });
 }
 function watchUpgrade(target, jobId) {
   const steps = ['下载', '校验', '解包', '安装', '重启'], stageIndex = { download: 0, verify: 1, unpack: 2, install: 3 };
@@ -823,7 +820,7 @@ function watchUpgrade(target, jobId) {
       }
     } catch (e) { out.textContent += `\n${e.message}`; }
   }, 1000);
-  // The password dialog closed just before this one opened, and its 'close' event is delivered
+  // The confirmation dialog closed just before this one opened, and its 'close' event is delivered
   // asynchronously, so only start listening after that has passed.
   setTimeout(() => modal.addEventListener('close', () => clearInterval(timer), { once: true }), 200);
 }
