@@ -418,3 +418,14 @@ dl.details dd { margin: 0; }
 .steps li.done::before { content: '✓ '; }
 .upgrade-log summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
 @media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
+.job-banner { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--primary-line); border-radius: var(--radius); background: var(--primary-softer); }
+.job-banner strong { display: block; font-size: 16px; }
+.job-banner small { display: block; margin-top: 3px; color: var(--text-2); line-height: 1.5; white-space: pre-line; }
+.job-banner.success { border-color: var(--success-line); background: var(--success-soft); }
+.job-banner.success strong, .job-banner.success .job-mark { color: var(--success); }
+.job-banner.failed { border-color: var(--danger-line); background: var(--danger-soft); }
+.job-banner.failed strong, .job-banner.failed .job-mark { color: var(--danger); }
+.job-mark { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid currentColor; border-radius: 50%; font-size: 18px; font-weight: 700; line-height: 1; }
+.job-mark.spin { border-color: var(--primary-line); border-top-color: var(--primary); animation: jp-spin 0.9s linear infinite; }
+@keyframes jp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .job-mark.spin { animation-duration: 3s; } }
