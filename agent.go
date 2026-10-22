@@ -57,6 +57,9 @@ type agent struct {
 	stackErr       map[string]string
 	access         accessState
 	accessRun      func(ctx context.Context, systemdRun string, script []byte, env []string, out io.Writer, args ...string) (int, error)
+	invHosts       []string
+	invSources     []caddyConfig
+	invErr         error
 	healthHTTPS    string
 	healthHTTP     string
 	health         healthCache

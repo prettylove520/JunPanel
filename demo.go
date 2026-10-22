@@ -111,7 +111,7 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			"notes_url": "https://github.com/prettylove520/JunPanel/releases", "release_url": "https://github.com/prettylove520/JunPanel/releases"}
 	case "/alerts":
 		value = map[string]any{
-			"config":  alertView{Format: "wecom", URLSet: true, URLHost: "qyapi.weixin.qq.com", Notify: true, DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, RepeatHours: 12},
+			"config":  alertView{Format: "wecom", URLSet: true, URLHost: "qyapi.weixin.qq.com", Notify: true, DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, SiteOn: true, RepeatHours: 12},
 			"formats": alertFormats,
 			"active": []activeAlert{
 				{Key: "disk:/", Title: "磁盘空间不足：/", Detail: "已用 92%，剩余 6.4 GB（阈值 90%）", Severity: "warning", Since: time.Now().Add(-3 * time.Hour)},

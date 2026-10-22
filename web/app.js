@@ -763,15 +763,16 @@ async function alertsPage() {
   const cert = field('证书到期', cfg.cert_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] }), certDays = field('证书提前提醒（天）', String(cfg.cert_days), { type: 'number', help: '有效期不足 30 天的短期证书（如 IP 证书）只在最后 1/5 有效期内提醒。' });
   const container = field('容器停止', cfg.container_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] });
   const service = field('Docker 与 Caddy 服务', cfg.service_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] });
+  const siteWatch = field('网站无法访问', cfg.site_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']], help: '面板创建的网站和主 Caddy 配置里的网站，连续约 2 分钟打不开才会告警。' });
   const repeat = field('未解决时的重复提醒间隔（小时）', String(cfg.repeat_hours), { type: 'number' });
   const error = el('div', 'form-error'), save = button('保存设置', () => form.requestSubmit(), 'primary');
   const test = button('发送测试通知', async () => { await api('/alerts/test', {}); toast('测试通知已发送，请到接收端确认'); }, 'secondary');
   form.className = 'form-grid'; url.n.classList.add('span-2'); error.classList.add('span-2');
-  form.append(format.n, notify.n, url.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, repeat.n, error);
+  form.append(format.n, notify.n, url.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, siteWatch.n, repeat.n, error);
   form.onsubmit = async e => {
     e.preventDefault(); error.textContent = ''; save.disabled = true;
     try {
-      await api('/alerts/config', { format: format.input.value, url: url.val(), clear_url: false, notify: notify.input.value === '1', disk_on: disk.input.value === '1', disk_percent: Number(diskPercent.val()), cert_on: cert.input.value === '1', cert_days: Number(certDays.val()), container_on: container.input.value === '1', service_on: service.input.value === '1', repeat_hours: Number(repeat.val()) });
+      await api('/alerts/config', { format: format.input.value, url: url.val(), clear_url: false, notify: notify.input.value === '1', disk_on: disk.input.value === '1', disk_percent: Number(diskPercent.val()), cert_on: cert.input.value === '1', cert_days: Number(certDays.val()), container_on: container.input.value === '1', service_on: service.input.value === '1', site_on: siteWatch.input.value === '1', repeat_hours: Number(repeat.val()) });
       toast('设置已保存'); await render();
     } catch (err) { error.textContent = err.message; } finally { save.disabled = false; }
   };

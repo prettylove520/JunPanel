@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -163,4 +164,91 @@ func (a *agent) siteHealthStatus(w http.ResponseWriter, r *http.Request) error {
 	}
 	send(w, 200, map[string]any{"hosts": a.siteHealthAll(r.Context(), list), "checked": a.now()})
 	return nil
+}
+
+// monitoredHosts are the sites whose state is watched: the panel's own sites that are on,
+// and the sites in the main Caddyfile. Sites that only another Caddy instance serves are
+// left out, because they may listen on ports this check does not look at.
+func (a *agent) monitoredHosts() ([]string, bool) {
+	a.mu.Lock()
+	sites, e := a.readSites()
+	a.mu.Unlock()
+	if e != nil {
+		return nil, false
+	}
+	// The Caddy host list comes from the shared, periodically refreshed inventory.
+	a.certificates(a.now(), false)
+	a.certMu.Lock()
+	sources, he := a.invSources, a.invErr
+	a.certMu.Unlock()
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(h string) {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h != "" && !strings.ContainsAny(h, "*:/ ") && !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	for _, s := range sites {
+		if s.Enabled {
+			for _, d := range s.Domains {
+				add(d)
+			}
+		}
+	}
+	for _, src := range sources {
+		if src.Primary && src.Error == "" {
+			for _, h := range src.Hosts {
+				add(h)
+			}
+		}
+	}
+	// Without a readable inventory the hosts from the main Caddyfile are unknown: keep
+	// whatever was already being reported rather than calling those sites recovered.
+	return out, he == nil || len(out) > 0
+}
+
+// siteFindings reports sites that do not answer. A site counts as down only after several
+// checks in a row (the rule's Need), so a reload or a short glitch does not raise an alert.
+func (a *agent) siteFindings(st *alertState) []finding {
+	hosts, ok := a.monitoredHosts()
+	if !ok {
+		return a.keepSiteAlerts(st)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	// Always probe afresh: the alert's own timing, not the page cache, decides.
+	a.health.mu.Lock()
+	a.health.data = nil
+	a.health.mu.Unlock()
+	states := a.siteHealthAll(ctx, hosts)
+	var out []finding
+	for _, h := range hosts {
+		v := states[h]
+		var title, detail, severity string
+		switch v.State {
+		case "down":
+			title, detail, severity = "网站无法访问："+h, "本机的 Caddy 没有应答这个域名，请检查 Caddy 和网站配置。", "critical"
+		case "error":
+			title, detail, severity = "网站后端异常："+h, "Caddy 在运行，但网站后端返回了 "+strconv.Itoa(v.Code)+"，请检查对应的应用或服务。", "critical"
+		case "tls":
+			title, detail, severity = "网站证书未就绪："+h, "HTTPS 握手失败，证书可能还没签发好或已失效。", "warning"
+		default:
+			continue
+		}
+		out = append(out, finding{Key: "site:" + h, Title: title, Detail: detail, Severity: severity, Need: siteFailPolls})
+	}
+	return out
+}
+
+// keepSiteAlerts carries the current site alerts over when the host list could not be read.
+func (a *agent) keepSiteAlerts(st *alertState) []finding {
+	var out []finding
+	for key, v := range st.Active {
+		if strings.HasPrefix(key, "site:") {
+			out = append(out, finding{Key: key, Title: v.Title, Detail: v.Detail, Severity: v.Severity, Need: 1})
+		}
+	}
+	return out
 }
