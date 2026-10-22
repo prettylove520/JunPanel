@@ -2,7 +2,7 @@
 
 ![JunPanel](logo-preview.png)
 
-[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.0.0](https://github.com/prettylove520/JunPanel/releases/tag/v1.0.0) · [MIT 许可证](LICENSE)
+[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.1.0](https://github.com/prettylove520/JunPanel/releases/tag/v1.1.0) · [MIT 许可证](LICENSE)
 
 中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用石墨色与薄荷绿设计，支持深浅主题和手机布局。
 
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 自动完成下载、校验、解压、环境检查、面板安装、**公网 IPv4 识别和 HTTPS 管理入口配置**。结束时集中显示账号、随机密码和登录链接：证书及面板响应检查通过后可直接打开 `https://服务器IP`，无需再填 IP 或执行另一条配置命令。公网登录页会公开，仍需管理员认证；建议开启两步验证。HTTPS 入口要求现有 Caddy 至少 2.10.1、公网 80/443 可达。
 
-在线安装器固定下载 v1.0.0 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
+在线安装器固定下载 v1.1.0 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
 
 IP 识别不访问第三方 IP 查询服务：优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。NAT、仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接。证书尚未就绪会标注“准备中”，不会提示已经可登录。
 
@@ -44,17 +44,17 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 1. 在服务器的 SSH 窗口下载安装包并核对校验和：
 
    ```bash
-   curl -fL -o JunPanel-1.0.0-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.0.0/JunPanel-1.0.0-linux.tar.gz
-   curl -fL -o JunPanel-1.0.0-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.0.0/JunPanel-1.0.0-SHA256SUMS.txt
-   sha256sum --ignore-missing -c JunPanel-1.0.0-SHA256SUMS.txt
+   curl -fL -o JunPanel-1.1.0-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.1.0/JunPanel-1.1.0-linux.tar.gz
+   curl -fL -o JunPanel-1.1.0-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.1.0/JunPanel-1.1.0-SHA256SUMS.txt
+   sha256sum --ignore-missing -c JunPanel-1.1.0-SHA256SUMS.txt
    ```
 
-   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.0.0)下载到电脑，再通过 `scp` 上传。
+   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.1.0)下载到电脑，再通过 `scp` 上传。
 
 2. 在服务器的 SSH 窗口执行：
 
    ```bash
-   tar -xzf JunPanel-1.0.0-linux.tar.gz && sudo bash junpanel/install.sh
+   tar -xzf JunPanel-1.1.0-linux.tar.gz && sudo bash junpanel/install.sh
    ```
 
    安装器自动选择架构、验证程序校验和、检查现有服务、创建随机面板密码并启动两个 systemd 服务。记下终端显示的 `admin` 账号与随机密码。**新安装没有默认密码**。
@@ -105,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 | 备份 | 手动备份静态网站文件、有数据的应用、数据库 SQL；列表、下载、校验、删除；网站、应用和数据库都可一键恢复（恢复前自动创建“恢复前备份”） |
 | 计划任务 | 按时间表自动备份（网站、应用、数据库）或重启应用；每天、每周、每隔 N 小时；保留最近 N 份；立即运行、停用、编辑；最近结果可见 |
 | 告警 | 磁盘空间、证书到期、容器意外停止、Docker 与 Caddy 服务状态；面板内显示当前告警和事件，并可推送到 Webhook（通用 JSON、企业微信、钉钉、飞书机器人）；不发送邮件 |
-| 版本升级（面板设置 → 版本升级） | 检查新版本（每 6 小时，可关闭）；有新版本时在面板内校验并一键升级，需再次输入密码；安装失败自动回滚 |
+| 版本升级（面板设置 → 版本升级） | 检查新版本（每 6 小时，可关闭）；有新版本时在面板内校验并一键升级（带进度条，已登录即可，不再重复输入密码）；安装失败自动回滚 |
 | 容器终端（容器 → 终端） | 运行中容器的 `/bin/sh` 基础行终端、输入输出、Ctrl+C、断开；一次性连接票据与并发限制 |
 | 日志 | “任务”页：应用/镜像/容器/编排任务结果与有界输出；“操作日志”：谁在何时、从哪个 IP 做了什么修改及结果（只记操作对象，不记密码、SQL、文件或编排内容）；“登录日志”：登录成功、失败、限速和退出 |
 | 公网入口（面板设置 → 公网入口） | 在面板内设置、更换或移除面板的域名和 IP 入口，可同时保留两者；需再次输入密码；应用前检查域名解析，失败自动恢复 |
@@ -164,7 +164,7 @@ gunzip -c database-blog-20261020-101500.sql.gz | docker exec -i -e MYSQL_PWD=密
 
 ## 面板内升级
 
-左侧 **面板设置 → 版本升级** 页显示当前版本和最新版本，有新版本时概览页和侧栏会提示。点击“升级到 vX”并再次输入密码（开启两步验证时还要动态码）即可升级；也可以继续使用一键安装命令。**这个功能从包含它的版本开始提供，更早的版本需要先用一键安装命令升级一次。**
+左侧 **面板设置 → 版本升级** 页显示当前版本和最新版本，有新版本时概览页和侧栏会提示。点击“升级到 vX”并确认即可升级，已登录的管理员无需再次输入密码，弹窗会显示进度条；也可以继续使用一键安装命令。**这个功能从包含它的版本开始提供，更早的版本需要先用一键安装命令升级一次。**
 
 - **版本和校验值只有一个来源**：管理代理读取 GitHub 上 `main` 分支 `quick-install.sh` 里固定的版本号和安装包 SHA-256，也就是一键安装命令信任的同一个位置。这个固定值只在新版本发布并核对完成后才会合并，所以面板看到的新版本一定是可以安装的。请求里不能指定版本或下载地址。
 - **升级过程**：下载安装包（HTTPS，最多跟随 5 次重定向，不会降到 HTTP）→ 校验 SHA-256 → 安全解包（拒绝路径穿越、链接和设备文件，大小有上限）→ 运行包内程序确认版本一致 → 用 `systemd-run` 在代理之外启动安装包里的 `install.sh`。任何一步失败都不会改动现有安装；安装器自己失败时会回滚，沿用它原有的恢复逻辑。

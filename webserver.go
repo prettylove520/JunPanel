@@ -315,27 +315,15 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		r.Header.Del("Content-Length")
 		r.Header.Del("Content-Type")
 	}
-	// Installing a new version restarts the panel with root rights, so it needs the
-	// password again, and the agent's start endpoint is reachable only through here.
+	// Installing a new version needs a signed-in administrator, whose session and CSRF
+	// token are already checked above; it no longer asks for the password again. The
+	// agent's start endpoint stays reachable only through here, so a request cannot
+	// choose the version or address to install.
 	if strings.HasPrefix(path.Clean(r.URL.Path), "/api/upgrade/start") {
 		fail(out, bad(404, "接口不存在"))
 		return
 	}
 	if r.URL.Path == "/api/upgrade" && r.Method == "POST" {
-		var req struct {
-			Password string `json:"password"`
-			OTP      string `json:"otp"`
-		}
-		if e = body(r, &req); e != nil {
-			fail(out, e)
-			return
-		}
-		if e = w.auth.confirm(clientIP(r), req.Password, req.OTP); e != nil {
-			log.Printf("reauth result=failed ip=%s", clientIP(r))
-			w.auditLogin(r, "再次验证密码失败", "failed")
-			fail(out, e)
-			return
-		}
 		log.Printf("upgrade requested ip=%s", clientIP(r))
 		r.URL.Path = "/api/upgrade/start"
 		r.Body = http.NoBody
