@@ -349,6 +349,44 @@ func TestCheckUpdateIsRateLimitedAndOptional(t *testing.T) {
 	}
 }
 
+func TestUpdateCheckInterval(t *testing.T) {
+	g := newUpRig(t)
+	h := g.a.routes()
+	if g.status()["interval_hours"] != float64(6) {
+		t.Fatalf("default interval: %v", g.status()["interval_hours"])
+	}
+	for _, bad := range []string{`{"auto_check":true,"interval_hours":0}`, `{"auto_check":true,"interval_hours":5}`, `{"auto_check":true,"interval_hours":100000}`, `{"auto_check":true,"interval_hours":-1}`} {
+		if r := request(h, "POST", "/upgrade/config", bad, nil, nil); r.Code != 400 {
+			t.Fatalf("%s accepted: %d", bad, r.Code)
+		}
+	}
+	for _, hours := range updateIntervals {
+		body := fmt.Sprintf(`{"auto_check":true,"interval_hours":%d}`, hours)
+		if r := request(h, "POST", "/upgrade/config", body, nil, nil); r.Code != 200 || g.status()["interval_hours"] != float64(hours) {
+			t.Fatalf("interval %d: %d %v", hours, r.Code, g.status()["interval_hours"])
+		}
+	}
+	// Turning the check off keeps the interval; leaving the field out keeps it too.
+	request(h, "POST", "/upgrade/config", `{"auto_check":true,"interval_hours":24}`, nil, nil)
+	request(h, "POST", "/upgrade/config", `{"auto_check":false}`, nil, nil)
+	if s := g.status(); s["interval_hours"] != float64(24) || s["auto_check"] != false {
+		t.Fatalf("%v", s)
+	}
+	// The background check is due only when it is on and the interval has passed.
+	now := time.Now()
+	st := &upgradeState{IntervalHours: 12, CheckedAt: now.Add(-11 * time.Hour)}
+	if st.autoCheckDue(now) || !st.autoCheckDue(now.Add(2*time.Hour)) || !(&upgradeState{}).autoCheckDue(now) {
+		t.Fatal("due check wrong")
+	}
+	st.NoAutoCheck = true
+	if st.autoCheckDue(now.Add(48 * time.Hour)) {
+		t.Fatal("a disabled check is due")
+	}
+	if (&upgradeState{IntervalHours: 7}).interval() != 6*time.Hour {
+		t.Fatal("an unknown stored interval must fall back to the default")
+	}
+}
+
 func TestRedirectsNeverLeaveHTTPS(t *testing.T) {
 	check := upgradeClient().CheckRedirect
 	mk := func(raw string) *http.Request { u, _ := url.Parse(raw); return &http.Request{URL: u} }

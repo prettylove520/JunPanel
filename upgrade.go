@@ -22,7 +22,7 @@ import (
 
 const (
 	updateRepo       = "prettylove520/JunPanel"
-	updateCheckEvery = 6 * time.Hour
+	updateWake       = 5 * time.Minute
 	updateFirstCheck = 2 * time.Minute
 	updateManualGap  = 20 * time.Second
 	maxScriptBytes   = 1 << 20
@@ -82,11 +82,12 @@ type upgradeRun struct {
 	Finished time.Time `json:"finished,omitempty"`
 }
 type upgradeState struct {
-	NoAutoCheck bool         `json:"no_auto_check"`
-	Latest      *upgradeInfo `json:"latest,omitempty"`
-	CheckError  string       `json:"check_error,omitempty"`
-	CheckedAt   time.Time    `json:"checked_at,omitempty"`
-	Run         *upgradeRun  `json:"run,omitempty"`
+	NoAutoCheck   bool         `json:"no_auto_check"`
+	IntervalHours int          `json:"interval_hours,omitempty"`
+	Latest        *upgradeInfo `json:"latest,omitempty"`
+	CheckError    string       `json:"check_error,omitempty"`
+	CheckedAt     time.Time    `json:"checked_at,omitempty"`
+	Run           *upgradeRun  `json:"run,omitempty"`
 }
 
 func (a *agent) upgradeDir() string       { return filepath.Join(a.cfg.State, "upgrade") }
@@ -478,6 +479,25 @@ func (a *agent) upgradeLog() string {
 	return cleanText(string(raw))
 }
 
+// The automatic check runs every few hours; these are the intervals the page offers.
+var updateIntervals = []int{1, 3, 6, 12, 24, 72, 168}
+
+const defaultUpdateHours = 6
+
+func (st *upgradeState) interval() time.Duration {
+	for _, h := range updateIntervals {
+		if h == st.IntervalHours {
+			return time.Duration(h) * time.Hour
+		}
+	}
+	return defaultUpdateHours * time.Hour
+}
+
+// autoCheckDue says whether the background check should run now.
+func (st *upgradeState) autoCheckDue(now time.Time) bool {
+	return !st.NoAutoCheck && (st.CheckedAt.IsZero() || now.Sub(st.CheckedAt) >= st.interval())
+}
+
 func (a *agent) startUpdateChecks(stop <-chan struct{}) {
 	go func() {
 		select {
@@ -485,13 +505,13 @@ func (a *agent) startUpdateChecks(stop <-chan struct{}) {
 			return
 		case <-time.After(updateFirstCheck):
 		}
-		tick := time.NewTicker(updateCheckEvery)
+		tick := time.NewTicker(updateWake)
 		defer tick.Stop()
 		for {
 			a.upMu.Lock()
 			st, e := a.readUpgrade()
 			a.upMu.Unlock()
-			if e == nil && !st.NoAutoCheck {
+			if e == nil && st.autoCheckDue(a.now()) {
 				if _, e := a.checkUpdate(); e != nil {
 					log.Printf("update_check result=failed")
 				}
@@ -523,7 +543,7 @@ func (a *agent) upgradeStatus(w http.ResponseWriter, r *http.Request) error {
 	running := st.Run != nil && st.Run.State == "running"
 	send(w, 200, map[string]any{
 		"current": version, "latest": st.Latest, "available": available, "checked_at": st.CheckedAt, "check_error": st.CheckError,
-		"auto_check": !st.NoAutoCheck, "supported": supported, "unsupported_reason": reason, "blockers": blockers,
+		"auto_check": !st.NoAutoCheck, "interval_hours": int(st.interval() / time.Hour), "supported": supported, "unsupported_reason": reason, "blockers": blockers,
 		"can_upgrade": available && supported && len(blockers) == 0 && !running, "run": st.Run, "log": a.upgradeLog(), "release_url": a.upPage + "/releases",
 		"notes_url": func() string {
 			if st.Latest != nil {
@@ -542,22 +562,35 @@ func (a *agent) upgradeCheck(w http.ResponseWriter, r *http.Request) error {
 }
 func (a *agent) upgradeConfig(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		AutoCheck bool `json:"auto_check"`
+		AutoCheck     bool `json:"auto_check"`
+		IntervalHours *int `json:"interval_hours"`
 	}
 	if e := body(r, &req); e != nil {
 		return e
+	}
+	if req.IntervalHours != nil {
+		valid := false
+		for _, h := range updateIntervals {
+			valid = valid || h == *req.IntervalHours
+		}
+		if !valid {
+			return bad(400, "检查间隔无效")
+		}
 	}
 	a.upMu.Lock()
 	st, e := a.readUpgrade()
 	if e == nil {
 		st.NoAutoCheck = !req.AutoCheck
+		if req.IntervalHours != nil {
+			st.IntervalHours = *req.IntervalHours
+		}
 		e = a.writeUpgrade(st)
 	}
 	a.upMu.Unlock()
 	if e != nil {
 		return e
 	}
-	send(w, 200, map[string]any{"ok": true, "auto_check": req.AutoCheck})
+	send(w, 200, map[string]any{"ok": true, "auto_check": req.AutoCheck, "interval_hours": int(st.interval() / time.Hour)})
 	return nil
 }
 

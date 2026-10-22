@@ -434,3 +434,7 @@ dl.details dd { margin: 0; }
 .pw-toggle { position: absolute; top: 0; right: 0; height: 32px; padding: 0 12px; border: 0; background: none; color: var(--primary); font-size: 13px; cursor: pointer; }
 .pw-toggle:hover { color: var(--primary-hover); text-decoration: underline; text-underline-offset: 3px; }
 .pw-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--radius); }
+.guide > p { margin: 0 0 12px; }
+.guide ol { margin: 0 0 14px; padding-left: 22px; }
+.guide li { margin: 0 0 10px; line-height: 1.7; word-break: break-word; }
+.guide li::marker { color: var(--primary); font-weight: 600; }
