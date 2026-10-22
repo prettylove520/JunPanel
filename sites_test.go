@@ -256,3 +256,32 @@ func siteOptionsInCaddy(t *testing.T, bin string) {
 		return r.Header.Get("Location") == "https://new.example.com/landing"
 	})
 }
+
+func TestCaddyFailureShowsTheReasonWithoutSecrets(t *testing.T) {
+	hash := "$2a$12$" + strings.Repeat("a", 53)
+	out := "{\"level\":\"info\",\"msg\":\"using config from file\"}\nError: adapting config using caddyfile: /etc/caddy/junpanel.d/managed.caddy:7 - Error during parsing: unknown directive 'basic_auth'\nuser " + hash + "\n"
+	reason := caddyReason(out)
+	if !strings.Contains(reason, "unknown directive 'basic_auth'") || strings.Contains(reason, hash) || strings.Contains(reason, "using config from file") {
+		t.Fatalf("reason: %q", reason)
+	}
+	if len(caddyReason(strings.Repeat("x", 5000))) > 700 {
+		t.Fatal("reason not shortened")
+	}
+	if caddyReason("") != "" || withReason("m", "") != "m" {
+		t.Fatal("empty output")
+	}
+
+	a := testAgent(t)
+	os.WriteFile(a.cfg.Caddy, []byte("import "+filepath.ToSlash(a.cfg.Fragments)+"/*.caddy\n"), 0644)
+	a.runner = func(_ time.Duration, name string, args ...string) (string, error) {
+		if strings.Contains(strings.Join(args, " "), "validate") {
+			return out, errors.New("exit status 1")
+		}
+		return "active", nil
+	}
+	rows := []site{{ID: "s_" + strings.Repeat("a", 20), Name: "Test", Kind: "proxy", Domains: []string{"vault.example.com"}, Upstream: "http://127.0.0.1:8000", Enabled: true, Created: time.Now()}}
+	e := a.applySites(rows)
+	if e == nil || !strings.Contains(e.Error(), "原片段已恢复") || !strings.Contains(e.Error(), "unknown directive") || strings.Contains(e.Error(), hash) {
+		t.Fatalf("error: %v", e)
+	}
+}
