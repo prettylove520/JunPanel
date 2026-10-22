@@ -83,6 +83,24 @@ func init() {
 	}
 }
 
+// multiInstance lists the templates that make sense more than once (several sites or
+// database servers). Every other app is meant to be installed once, and the store shows
+// it as installed after that.
+var multiInstance = map[string]bool{"wordpress": true, "postgres": true, "mysql": true, "redis": true}
+
+type catalogEntry struct {
+	appTemplate
+	Multi bool `json:"multi"`
+}
+
+func catalogView() []catalogEntry {
+	out := make([]catalogEntry, 0, len(appCatalog))
+	for _, t := range appCatalog {
+		out = append(out, catalogEntry{t, multiInstance[t.Key]})
+	}
+	return out
+}
+
 func findTemplate(key string) (appTemplate, bool) {
 	for _, t := range appCatalog {
 		if t.Key == key {
@@ -255,7 +273,7 @@ func (a *agent) writeCompose(record appRecord) error {
 	return atomicBytes(filepath.Join(dir, "compose.json"), b, 0600)
 }
 func (a *agent) catalog(w http.ResponseWriter, r *http.Request) error {
-	send(w, 200, appCatalog)
+	send(w, 200, catalogView())
 	return nil
 }
 func (a *agent) appList(w http.ResponseWriter, r *http.Request) error {

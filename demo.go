@@ -71,7 +71,7 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 	case "/networks":
 		value = []map[string]any{{"id": strings.Repeat("1", 64), "name": "bridge", "driver": "bridge", "scope": "local", "internal": false, "subnets": []string{"172.17.0.0/16"}, "containers": 0, "builtin": true, "project": ""}, {"id": strings.Repeat("2", 64), "name": "junpanel-blog_default", "driver": "bridge", "scope": "local", "internal": false, "subnets": []string{"172.18.0.0/16"}, "containers": 2, "builtin": false, "project": "junpanel-blog"}, {"id": strings.Repeat("3", 64), "name": "backend", "driver": "bridge", "scope": "local", "internal": true, "subnets": []string{"172.19.0.0/16"}, "containers": 0, "builtin": false, "project": ""}}
 	case "/catalog":
-		value = appCatalog
+		value = catalogView()
 	case "/apps":
 		value = demoApps()
 	case "/jobs":

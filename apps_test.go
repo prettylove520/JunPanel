@@ -278,3 +278,32 @@ func TestPlainTemplateSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogMarksMultiInstanceTemplates(t *testing.T) {
+	for key := range multiInstance {
+		if _, ok := findTemplate(key); !ok {
+			t.Fatalf("multi-instance entry for unknown template %q", key)
+		}
+	}
+	raw, _ := json.Marshal(catalogView())
+	var rows []struct {
+		Key   string `json:"key"`
+		Name  string `json:"name"`
+		Multi bool   `json:"multi"`
+	}
+	if e := json.Unmarshal(raw, &rows); e != nil || len(rows) != len(appCatalog) {
+		t.Fatalf("catalog view: %v %s", e, raw)
+	}
+	multi := 0
+	for _, r := range rows {
+		if r.Name == "" || r.Multi != multiInstance[r.Key] {
+			t.Fatalf("%+v", r)
+		}
+		if r.Multi {
+			multi++
+		}
+	}
+	if multi != 4 {
+		t.Fatalf("%d multi-instance templates", multi)
+	}
+}
