@@ -222,6 +222,34 @@ func (a *agent) externalHosts(managed []site, hosts []string) []string {
 	}
 	return out
 }
+
+var bcryptHash = regexp.MustCompile(`\$2[abxy]\$\d\d\$[./A-Za-z0-9]{53}`)
+
+// caddyReason picks what Caddy said went wrong out of its validate or reload output: the
+// error lines, without log noise, password hashes or very long text.
+func caddyReason(out string) string {
+	out = bcryptHash.ReplaceAllString(cleanText(out), "[已隐藏]")
+	keep := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "{") && strings.Contains(line, `"level":"info"`) || strings.Contains(line, "valid configuration") && !strings.Contains(line, "Error") {
+			continue
+		}
+		keep = append(keep, line)
+	}
+	if len(keep) > 4 {
+		keep = keep[len(keep)-4:]
+	}
+	return truncate(strings.Join(keep, "\n"), 600)
+}
+
+func withReason(message, out string) string {
+	if reason := caddyReason(out); reason != "" {
+		return message + "：\n" + reason
+	}
+	return message
+}
+
 func (a *agent) applySites(sites []site) error {
 	raw, e := os.ReadFile(a.cfg.Caddy)
 	if e != nil {
@@ -257,17 +285,17 @@ func (a *agent) applySites(sites []site) error {
 		_, e := a.runner(20*time.Second, "/usr/bin/systemctl", "reload", "caddy.service")
 		return e
 	}
-	if _, e = a.runner(20*time.Second, "/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", "validate", "--config", a.cfg.Caddy, "--adapter", "caddyfile"); e != nil {
+	if out, e := a.runner(20*time.Second, "/usr/sbin/runuser", "-u", "caddy", "--", "/usr/bin/caddy", "validate", "--config", a.cfg.Caddy, "--adapter", "caddyfile"); e != nil {
 		if e = restore(); e != nil {
 			return bad(500, "校验失败，恢复后的 Caddy 重载也失败；请立即通过 SSH 检查")
 		}
-		return bad(409, "Caddy 校验未通过，原片段已恢复")
+		return bad(409, withReason("Caddy 校验未通过，原片段已恢复", out))
 	}
-	if _, e = a.runner(20*time.Second, "/usr/bin/systemctl", "reload", "caddy.service"); e != nil {
+	if out, e := a.runner(20*time.Second, "/usr/bin/systemctl", "reload", "caddy.service"); e != nil {
 		if e = restore(); e != nil {
 			return bad(500, "重载失败，恢复后的重载也失败；请立即通过 SSH 检查")
 		}
-		return bad(409, "Caddy 重载失败，原片段已恢复")
+		return bad(409, withReason("Caddy 重载失败，原片段已恢复", out))
 	}
 	if e = atomicJSON(filepath.Join(a.cfg.State, "sites.json"), sites, 0600); e != nil {
 		if restore() != nil {
