@@ -62,6 +62,12 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = grouped(demoContainers())
 	case "/sites":
 		value = map[string]any{"sites": demoPublicSites(), "external_hosts": []string{"legacy.example.com", "company.example.com", "monitor.example.com"}, "caddy_sources": demoCaddySources(), "existing_hosts": []string{"www.example.com", "blog.example.com", "git.example.com", "legacy.example.com"}, "error": "", "state": "active", "root": "/srv/junpanel"}
+	case "/sites/health":
+		value = map[string]any{"hosts": map[string]siteHealth{
+			"legacy.example.com": {State: "up", Code: 200, Scheme: "https"}, "company.example.com": {State: "up", Code: 301, Scheme: "https"},
+			"monitor.example.com": {State: "error", Code: 502, Scheme: "https"}, "www.example.com": {State: "up", Code: 200, Scheme: "https"},
+			"blog.example.com": {State: "up", Code: 200, Scheme: "https"}, "git.example.com": {State: "down"}, "notes.example.com": {State: "tls"},
+		}, "checked": time.Now()}
 	case "/access":
 		value = map[string]any{"entries": []map[string]string{{"kind": "domain", "address": "panel.example.com"}, {"kind": "ip", "address": "203.0.113.10"}}, "managed": true, "running": false, "supported": true}
 	case "/stacks":
