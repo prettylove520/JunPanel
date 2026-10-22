@@ -9,9 +9,58 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request replaces the run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
-    name: Linux tests and builds
+  # Decides how much has to run: a change that only touches documentation, release notes or the
+  # two pin lines of quick-install.sh gets the short checks, everything else the full set.
+  scope:
+    name: Choose the checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      light: ${{ steps.scope.outputs.light }}
+      pin: ${{ steps.scope.outputs.pin }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bash tests/ci-scope-test.sh
+          bash tests/ci-scope.sh "$EVENT" "$BASE" "$HEAD" | tee -a "$GITHUB_OUTPUT"
+
+  light:
+    name: Short checks
+    needs: scope
+    if: needs.scope.outputs.light == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Installer syntax
+        run: |
+          for script in install.sh quick-install.sh public-access.sh build.sh uninstall.sh; do
+            bash -n "$script"
+          done
+      - name: The pinned version and checksum match the published release
+        if: needs.scope.outputs.pin == 'true'
+        run: bash tests/verify-pin.sh
+
+  go:
+    name: Go tests with race detection
+    needs: scope
+    if: needs.scope.outputs.light != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -22,18 +71,66 @@ jobs:
         with:
           go-version: '1.26.x'
           cache-dependency-path: go.sum
+      - name: Static checks
+        run: go vet ./...
       - name: Tests with race detection
         run: go test -race -cover ./...
-      - name: Backup tests against the real Docker engine
-        run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerAppBackupAndRestore|TestDockerDatabaseBackupStreams|TestDockerScheduledBackupAndRestart|TestDockerContainerAlerts|TestDockerStackLifecycle|TestDockerVolumesAndNetworks|TestDockerAppUpgrade|TestDockerMemosTemplate|TestDockerDatabaseRestore' ./...
+
+  # The Docker tests are split in two so they run side by side.
+  docker-backups:
+    name: Docker tests (backups, restore, upgrade)
+    needs: scope
+    if: needs.scope.outputs.light != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - name: Backup, restore and upgrade tests against the real Docker engine
+        run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerAppBackupAndRestore|TestDockerDatabaseBackupStreams|TestDockerScheduledBackupAndRestart|TestDockerAppUpgrade|TestDockerMemosTemplate|TestDockerDatabaseRestore' ./...
+
+  docker-stacks:
+    name: Docker tests (stacks, networks, alerts, app templates)
+    needs: scope
+    if: needs.scope.outputs.light != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - name: Stacks, volumes, networks and alerts against the real Docker engine
+        run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerContainerAlerts|TestDockerStackLifecycle|TestDockerVolumesAndNetworks' ./...
       - name: Small app templates against the real Docker engine
         run: JUNPANEL_DOCKER_TEST=1 JUNPANEL_APPS=navidrome,trilium,linkding,freshrss,gotify,ntfy,drawio go test -count=1 -timeout 25m -run TestDockerPlainTemplates ./...
       - name: Compose checks that switch to the nobody user
         run: |
           go test -c -o /tmp/junpanel.test .
           sudo /tmp/junpanel.test -test.count=1 -test.run 'TestStackParsedWithoutRoot'
-      - name: Go static checks
-        run: go vet ./...
+
+  scripts:
+    name: Scripts and Caddy
+    needs: scope
+    if: needs.scope.outputs.light != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
       - name: Browser and installer syntax
         run: |
           node --check web/app.js
@@ -42,14 +139,54 @@ jobs:
           done
           bash tests/ip-detection.sh
           bash tests/tls-defaults.sh
+          bash tests/ci-scope-test.sh
       - name: Domain access through a real Caddy
         run: |
           sudo apt-get install -y caddy >/dev/null
           sudo systemctl stop caddy || true
           JUNPANEL_CADDY_TEST=1 bash tests/domain-access.sh
           JUNPANEL_CADDY_TEST=1 go test -count=1 -run 'TestSiteOptionsInRealCaddy|TestAuthDirective' .
-      - name: Linux amd64 and arm64 builds
-        run: |
+
+  build:
+    name: Linux amd64 and arm64 builds
+    needs: scope
+    if: needs.scope.outputs.light != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - run: |
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -buildvcs=false -trimpath -ldflags='-s -w -buildid=' -o "/tmp/junpanel-linux-$arch" .
           done
+
+  # One result for the whole run, under the name the repository already uses.
+  check:
+    name: Linux tests and builds
+    if: always()
+    needs: [scope, light, go, docker-backups, docker-stacks, scripts, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          result() { echo "$NEEDS" | jq -r ".[\"$1\"].result"; }
+          [[ "$(result scope)" == success ]] || { echo "the scope job did not succeed" >&2; exit 1; }
+          if [[ "$(echo "$NEEDS" | jq -r '.scope.outputs.light')" == true ]]; then
+            required=(light)
+          else
+            required=(go docker-backups docker-stacks scripts build)
+          fi
+          for job in "${required[@]}"; do
+            [[ "$(result "$job")" == success ]] || { echo "$job did not succeed: $(result "$job")" >&2; exit 1; }
+          done
+          echo "all required jobs passed"
