@@ -60,6 +60,8 @@ type agent struct {
 	invHosts       []string
 	invSources     []caddyConfig
 	invErr         error
+	lookup         func(ctx context.Context, host string) ([]string, error)
+	dns            dnsCache
 	healthHTTPS    string
 	healthHTTP     string
 	health         healthCache
@@ -131,6 +133,7 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /projects/{name}/action", endpoint(a.projectAction))
 	m.HandleFunc("GET /sites", endpoint(a.siteList))
 	m.HandleFunc("GET /sites/health", endpoint(a.siteHealthStatus))
+	m.HandleFunc("GET /sites/dns", endpoint(a.siteDNSStatus))
 	m.HandleFunc("GET /logs", endpoint(a.serviceLogs))
 	m.HandleFunc("POST /sites", endpoint(a.siteSave))
 	m.HandleFunc("POST /sites/{id}/toggle", endpoint(a.siteToggle))

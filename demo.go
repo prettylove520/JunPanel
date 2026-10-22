@@ -71,6 +71,12 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 	case "/logs":
 		unit := r.URL.Query().Get("unit")
 		value = map[string]any{"unit": unit, "label": unit, "lines": 4, "trimmed": false, "time": time.Now(), "text": "2026-10-22T10:00:01+0800 demo " + unit + "[812]: 服务已启动（演示数据）\n2026-10-22T10:02:11+0800 demo " + unit + "[812]: 已重载配置\n2026-10-22T10:05:40+0800 demo " + unit + "[812]: 演示日志，不是真实服务器的输出\n2026-10-22T10:07:03+0800 demo " + unit + "[812]: 一切正常"}
+	case "/sites/dns":
+		value = map[string]any{"hosts": map[string]dnsInfo{
+			"legacy.example.com": {State: "other", IPs: []string{"198.51.100.7"}}, "company.example.com": {State: "local", IPs: []string{"203.0.113.10"}},
+			"monitor.example.com": {State: "none"}, "www.example.com": {State: "other", IPs: []string{"198.51.100.7"}},
+			"blog.example.com": {State: "other", IPs: []string{"198.51.100.7"}}, "git.example.com": {State: "local", IPs: []string{"203.0.113.10"}},
+		}}
 	case "/access":
 		value = map[string]any{"entries": []map[string]string{{"kind": "domain", "address": "panel.example.com"}, {"kind": "ip", "address": "203.0.113.10"}}, "managed": true, "running": false, "supported": true}
 	case "/stacks":
