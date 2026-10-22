@@ -135,7 +135,7 @@ async function api(path, data, method) {
 }
 const modal = $('#modal');
 let modalTimer = null;
-function closeModal() { modal.close(); clearInterval(modalTimer); modalTimer = null; $('#modal-content').replaceChildren(); $('#modal-footer').replaceChildren(); }
+function closeModal() { modal.close(); delete modal.dataset.job; clearInterval(modalTimer); modalTimer = null; $('#modal-content').replaceChildren(); $('#modal-footer').replaceChildren(); }
 function openModal(title, content, actions = [], large = false) { closeModal(); modal.classList.toggle('large', large); $('#modal-title').textContent = title; $('#modal-content').append(content); $('#modal-footer').append(...actions); modal.showModal(); }
 $('#modal-close').onclick = closeModal;
 modal.addEventListener('cancel', () => { clearInterval(modalTimer); modalTimer = null; });
@@ -515,7 +515,45 @@ function accessChange(req, summary, affectsHere) {
     password.input.value = ''; closeModal(); toast('任务已开始'); showJob(job.id);
   }, { note: text, warning: affectsHere, danger: affectsHere });
 }
-async function showJob(id) { const n=el('div'),status=el('div','log-toolbar'),out=el('pre','log-view','正在读取任务…');n.append(status,out);openModal('任务详情',n,[button('关闭',closeModal)],true);const load=async()=>{const rows=await api('/jobs'),j=rows.find(j=>j.id===id);if(!j){out.textContent='任务已不在当前记录中，可能因服务重启或记录轮换被清除。';clearInterval(modalTimer);return;}$('#modal-title').textContent=j.title;status.replaceChildren(jobTag(j),el('span','muted',`${date(j.started)}${j.ended?' → '+date(j.ended):''}`));out.textContent=[j.output,j.error].filter(Boolean).join('\n\n') || (j.state==='running'?'任务正在执行…':'操作已完成。');out.scrollTop=out.scrollHeight;if(j.state!=='running'){clearInterval(modalTimer);modalTimer=null;}};try{await load();if(!modalTimer && status.textContent.includes('进行中'))modalTimer=setInterval(()=>load().catch(e=>{out.textContent=e.message;}),2000);}catch(e){out.textContent=e.message;} }
+// A finished job is announced three ways: a banner at the top of its dialog, a toast (also
+// when the dialog was closed), and a refresh of the page behind it.
+const trackedJobs = new Set();
+function trackJob(id) {
+  if (trackedJobs.has(id)) return; trackedJobs.add(id);
+  let tries = 0;
+  const timer = setInterval(async () => {
+    if (!state.csrf || ++tries > 900) { clearInterval(timer); return; }
+    let rows; try { rows = await api('/jobs'); } catch { return; }
+    const j = rows.find(x => x.id === id); if (!j) { clearInterval(timer); return; }
+    if (j.state === 'running') return;
+    clearInterval(timer);
+    toast(j.state === 'success' ? `✓ 已完成：${j.title}` : `✕ 失败：${j.title}`, j.state !== 'success');
+    if (!modal.open || modal.dataset.job === id) render().catch(() => {});
+  }, 3000);
+}
+function elapsed(from, to) { const s = Math.max(0, Math.round(((to ? new Date(to) : new Date()) - new Date(from)) / 1000)); return `${Math.floor(s / 60)} 分 ${String(s % 60).padStart(2, '0')} 秒`; }
+function jobBanner(j) {
+  const kind = j.state === 'success' ? 'success' : j.state === 'failed' ? 'failed' : 'running', n = el('div', `job-banner ${kind}`), mark = el('span', 'job-mark', kind === 'success' ? '✓' : kind === 'failed' ? '✕' : ''), text = el('div');
+  const head = kind === 'success' ? '已完成' : kind === 'failed' ? '失败' : '正在进行', sub = kind === 'running' ? `已用时 ${elapsed(j.started)}。完成后这里会变成绿色的“已完成”，也可以先关闭此窗口，完成时会弹出提示。` : kind === 'success' ? `用时 ${elapsed(j.started, j.ended)}，可以关闭此窗口。` : (j.error || '请查看下面的输出了解原因。');
+  if (kind === 'running') mark.classList.add('spin');
+  text.append(el('strong', '', `${head}：${j.title}`), el('small', '', sub)); n.append(mark, text); n.setAttribute('role', 'status'); return n;
+}
+async function showJob(id) {
+  const n = el('div'); let banner = el('div'); const status = el('div', 'log-toolbar'), out = el('pre', 'log-view', '正在读取任务…'), done = button('关闭', closeModal);
+  n.append(banner, status, out); openModal('任务详情', n, [done], true); modal.dataset.job = id;
+  const load = async () => {
+    const rows = await api('/jobs'), j = rows.find(j => j.id === id);
+    if (!j) { out.textContent = '任务已不在当前记录中，可能因服务重启或记录轮换被清除。'; clearInterval(modalTimer); return; }
+    $('#modal-title').textContent = j.state === 'success' ? '任务已完成' : j.state === 'failed' ? '任务失败' : '任务进行中';
+    if (j.state === 'running') trackJob(id);
+    banner.replaceWith(banner = jobBanner(j));
+    status.replaceChildren(jobTag(j), el('span', 'muted', `${date(j.started)}${j.ended ? ' → ' + date(j.ended) : ''}`));
+    out.textContent = [j.output, j.error].filter(Boolean).join('\n\n') || (j.state === 'running' ? '任务正在执行…' : '操作已完成。');
+    out.scrollTop = out.scrollHeight;
+    if (j.state !== 'running') { clearInterval(modalTimer); modalTimer = null; done.textContent = j.state === 'success' ? '完成' : '关闭'; if (j.state === 'success') done.className = 'button primary'; }
+  };
+  try { await load(); if (!modalTimer && banner.classList.contains('running')) modalTimer = setInterval(() => load().catch(e => { out.textContent = e.message; }), 1500); } catch (e) { out.textContent = e.message; }
+}
 async function securityPage() {
   const session=await api('/session');state.totp=session.totp;const n=el('div','security-grid'),account=panel('管理员账号',tag('单管理员','blue'));account.append(line('账号',state.user),line('会话有效期','闲置 30 分钟 / 最长 8 小时'),line('两步验证',state.totp?'已开启':'未开启'));const actions=el('div','security-actions');actions.append(button('修改密码',passwordForm,'secondary','lock'),button(state.totp?'关闭两步验证':'启用两步验证',totpForm,'primary','shield'));account.append(actions);
   const boundaries=panel('访问与权限');[['访问入口',`网页服务监听 127.0.0.1；当前浏览器通过${accessLabel()}进入。`],['网页服务','独立低权限账号，不直接连接 Docker socket。'],['本机代理','通过私有 Unix socket 接收受限接口请求；代理拥有 root 与 Docker 管理能力。'],['文件范围','文件界面限定在 /srv/junpanel。Docker 容器终端仍有其容器内权限。'],['现有服务','继续使用系统 Caddy 与 Docker；不配置防火墙、自动备份或 SSH 登录方式。']].forEach(([title,text])=>{const r=el('div','security-list');r.append(el('strong','',title),el('p','muted',text));boundaries.append(r);});n.append(account,boundaries,note('管理员可执行数据库 SQL、部署容器并进入容器终端。请把面板账号视为服务器管理凭据；不提供公网开放开关。',true));return n;
@@ -789,7 +827,11 @@ function watchUpgrade(target, jobId) {
   const head = el('div', 'bar-head'), label = el('span', '', '正在下载并校验安装包…'); head.append(label, percent);
   const list = el('ol', 'steps'), items = steps.map(s => { const li = el('li', '', s); list.append(li); return li; });
   const out = el('pre', 'log-view', ''), details = el('details', 'upgrade-log'); details.append(el('summary', '', '查看详细输出'), out);
-  content.append(el('p', 'muted', `正在升级到 v${target}。面板重启期间连接会短暂中断，属于正常现象，请不要关闭此页面。`), head, bar, list, details);
+  const banner = el('div', 'job-banner running'), mark = el('span', 'job-mark spin'), bannerText = el('div'), bannerHead = el('strong'), bannerSub = el('small');
+  bannerText.append(bannerHead, bannerSub); banner.append(mark, bannerText); banner.setAttribute('role', 'status');
+  const setBanner = (kind, headText, sub) => { banner.className = `job-banner ${kind}`; mark.className = kind === 'running' ? 'job-mark spin' : 'job-mark'; mark.textContent = kind === 'success' ? '✓' : kind === 'failed' ? '✕' : ''; bannerHead.textContent = headText; bannerSub.textContent = sub; };
+  setBanner('running', `正在升级到 v${target}`, '面板重启期间连接会短暂中断，属于正常现象，请不要关闭此页面。完成后这里会变成绿色的“升级完成”。');
+  content.append(banner, head, bar, list, details);
   openModal(`升级到 v${target}`, content, [button('关闭', closeModal)]);
   let shown = 0, current = 0, restartedAt = 0;
   const draw = (value, text) => {
@@ -807,16 +849,16 @@ function watchUpgrade(target, jobId) {
         out.textContent = j.output || '正在下载并校验安装包…';
         const run = status.run;
         if (run && run.target === target && run.stage in stageIndex) { current = stageIndex[run.stage]; draw(run.percent, ['正在下载安装包…', '正在校验 SHA-256…', '正在解包并核对版本…', '正在运行安装器…'][current]); }
-        if (j.state === 'failed') { clearInterval(timer); label.textContent = '升级失败'; fill.classList.add('failed'); out.textContent += `\n升级失败：${j.error}`; details.open = true; return; }
+        if (j.state === 'failed') { clearInterval(timer); label.textContent = '升级失败'; fill.classList.add('failed'); setBanner('failed', '升级失败', j.error || '请查看详细输出，原版本不受影响。'); out.textContent += `\n升级失败：${j.error}`; details.open = true; return; }
         if (j.state === 'success') { phase = 2; restartedAt = Date.now(); current = 3; draw(Math.max(shown, 78), '安装器已启动，等待面板重启…'); }
       } else {
         // The installer reports nothing while the services restart, so the bar eases toward 97%.
         const waited = (Date.now() - restartedAt) / 1000; draw(78 + 19 * (1 - Math.exp(-waited / 25)), current === 4 ? '正在重启面板…' : '安装器运行中，等待面板重启…');
         const r = await fetch('/api/meta', { signal: AbortSignal.timeout(4000), cache: 'no-store' }).catch(() => null);
         const meta = r && r.ok ? await r.json().catch(() => null) : null;
-        if (meta && meta.version === target) { clearInterval(timer); current = steps.length; draw(100, `已升级到 v${target}，正在重新加载…`); out.textContent += `\n已升级到 v${target}，正在重新加载…`; setTimeout(() => location.reload(), 1500); return; }
+        if (meta && meta.version === target) { clearInterval(timer); current = steps.length; draw(100, `已升级到 v${target}，正在重新加载…`); setBanner('success', `升级完成：已是 v${target}`, '页面即将自动刷新为新版本。'); out.textContent += `\n已升级到 v${target}，正在重新加载…`; setTimeout(() => location.reload(), 1500); return; }
         if (!meta && current < 4) current = 4;
-        if (Date.now() - started > 8 * 60 * 1000) { clearInterval(timer); fill.classList.add('failed'); label.textContent = '等待超时'; out.textContent += '\n等待超时。请刷新页面后到“版本升级”页查看结果和安装日志；如果面板打不开，请通过 SSH 查看 journalctl -u junpanel-agent -u junpanel-web。'; details.open = true; }
+        if (Date.now() - started > 8 * 60 * 1000) { clearInterval(timer); fill.classList.add('failed'); label.textContent = '等待超时'; setBanner('failed', '等待超时', '没有等到新版本启动。请刷新页面查看结果，或查看下面的说明。'); out.textContent += '\n等待超时。请刷新页面后到“版本升级”页查看结果和安装日志；如果面板打不开，请通过 SSH 查看 journalctl -u junpanel-agent -u junpanel-web。'; details.open = true; }
       }
     } catch (e) { out.textContent += `\n${e.message}`; }
   }, 1000);
