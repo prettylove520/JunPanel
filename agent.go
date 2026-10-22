@@ -57,6 +57,9 @@ type agent struct {
 	stackErr       map[string]string
 	access         accessState
 	accessRun      func(ctx context.Context, systemdRun string, script []byte, env []string, out io.Writer, args ...string) (int, error)
+	healthHTTPS    string
+	healthHTTP     string
+	health         healthCache
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -69,7 +72,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 			return nil, e
 		}
 	}
-	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}, upHTTP: upgradeClient(), upRaw: "https://raw.githubusercontent.com/" + updateRepo + "/main", upAPI: "https://api.github.com/repos/" + updateRepo, upDL: "https://github.com/" + updateRepo + "/releases/download", upPage: "https://github.com/" + updateRepo, upMax: maxDownload, upSystemd: "/usr/bin/systemd-run", composeConfig: runAsNobody, stackBusy: map[string]bool{}, stackErr: map[string]string{}, accessRun: runAccess}
+	a := &agent{cfg: cfg, docker: newDocker("/var/run/docker.sock"), jobs: newQueue(), metrics: &hostSampler{}, runner: command, stream: streamCommand, now: time.Now, schedRunning: map[string]time.Time{}, schedTries: map[string]int{}, diskFn: diskSpace, webhook: webhookClient(), streak: map[string]int{}, okStreak: map[string]int{}, expected: map[string]time.Time{}, upHTTP: upgradeClient(), upRaw: "https://raw.githubusercontent.com/" + updateRepo + "/main", upAPI: "https://api.github.com/repos/" + updateRepo, upDL: "https://github.com/" + updateRepo + "/releases/download", upPage: "https://github.com/" + updateRepo, upMax: maxDownload, upSystemd: "/usr/bin/systemd-run", composeConfig: runAsNobody, stackBusy: map[string]bool{}, stackErr: map[string]string{}, accessRun: runAccess, healthHTTPS: "127.0.0.1:443", healthHTTP: "127.0.0.1:80"}
 	rows, e := a.readApps()
 	if e != nil {
 		return nil, e
@@ -124,6 +127,7 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /projects", endpoint(a.projects))
 	m.HandleFunc("POST /projects/{name}/action", endpoint(a.projectAction))
 	m.HandleFunc("GET /sites", endpoint(a.siteList))
+	m.HandleFunc("GET /sites/health", endpoint(a.siteHealthStatus))
 	m.HandleFunc("POST /sites", endpoint(a.siteSave))
 	m.HandleFunc("POST /sites/{id}/toggle", endpoint(a.siteToggle))
 	m.HandleFunc("DELETE /sites/{id}", endpoint(a.siteDelete))
