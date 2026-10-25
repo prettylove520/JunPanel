@@ -143,11 +143,11 @@ modal.addEventListener('cancel', () => { clearInterval(modalTimer); modalTimer =
 function formModal(title, fields, submitText, submit, options = {}) {
   const form = el('form'); if (options.note) form.append(note(options.note, options.warning)); fields.forEach(f => form.append(f.n)); const error = el('div','form-error'); form.append(error);
   const save = button(submitText, () => form.requestSubmit(), options.danger ? 'danger' : 'primary');
-  form.onsubmit = async e => { e.preventDefault(); save.disabled = true; error.textContent = ''; try { await submit(); } catch(e) { error.textContent = e.message; } finally { save.disabled = false; } };
+  form.onsubmit = async e => { e.preventDefault(); save.disabled = true; save.setAttribute('aria-busy', 'true'); error.textContent = ''; try { await submit(); } catch(e) { error.textContent = e.message; } finally { save.disabled = false; save.removeAttribute('aria-busy'); } };
   openModal(title, form, [button('取消', closeModal), save], options.large);
   return form;
 }
-function confirm(title, message, fn, danger = false) { const n = el('div'); n.append(el('p','',message)); const b = button('确认操作', async () => { b.disabled = true; try { await fn(); } finally { b.disabled = false; } }, danger ? 'danger' : 'primary'); openModal(title, n, [button('取消', closeModal), b]); }
+function confirm(title, message, fn, danger = false) { const n = el('div'); n.append(el('p','',message)); const b = button('确认操作', async () => { b.disabled = true; b.setAttribute('aria-busy', 'true'); try { await fn(); } finally { b.disabled = false; b.removeAttribute('aria-busy'); } }, danger ? 'danger' : 'primary'); openModal(title, n, [button('取消', closeModal), b]); }
 async function mutation(path, data, method) { const result = await api(path, data, method); closeModal(); if (result && result.id && result.state) { toast('任务已开始'); showJob(result.id); } else { toast('操作已完成'); await render(); } return result; }
 function clearPage() { state.epoch++; state.timers.forEach(clearInterval); state.timers = []; if (state.socket) { state.socket.close(); state.socket = null; } }
 function interval(fn, ms) { state.timers.push(setInterval(() => { if (!document.hidden) fn().catch(e => { $('#connection-error').hidden = false; $('#connection-error').textContent = e.message; }); }, ms)); }
@@ -171,6 +171,7 @@ function applyTheme(mode = themeMode) {
   $$('.chart').forEach(c => c._draw && c._draw());
 }
 applyTheme();
+requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1'; }));
 systemDark.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
 $('#theme-toggle').onclick = () => { const next = themeModes[(themeModes.indexOf(themeMode) + 1) % themeModes.length]; applyTheme(next); try { localStorage.setItem('junpanel-theme', next); } catch {} toast(`主题：${themeNames[next]}`); };
 $$('#nav [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
@@ -207,7 +208,9 @@ function ops(...buttons) { const n = el('div','table-ops'); n.append(...buttons)
 function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'), texts = el('div'); texts.append(el('strong','',title), el('small','muted',sub)); n.append(icon(symbol),texts); return n; }
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
-function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); if (t.color) n.style.background = t.color; return n; }
+// The letter on an app tile is dark or white, whichever reads better on that tile's colour.
+const tileInk = hex => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return ''; const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4), lum = .2126 * r + .7152 * g + .0722 * b; return (1.05) / (lum + .05) >= (lum + .05) / .0628 ? '#fff' : '#10201b'; };
+function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); if (t.color) { n.style.background = t.color; n.style.color = tileInk(t.color); } return n; }
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).

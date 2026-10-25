@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 80 80" fill="none">
   <defs>
-    <linearGradient id="jp-bg" x1="10" y1="2" x2="70" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#4C9BFF"/><stop offset=".45" stop-color="#1A6BFF"/><stop offset="1" stop-color="#0B3FBF"/></linearGradient>
+    <linearGradient id="jp-bg" x1="10" y1="2" x2="70" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#2F6556"/><stop offset=".45" stop-color="#173129"/><stop offset="1" stop-color="#0A1713"/></linearGradient>
     <radialGradient id="jp-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(22 8) rotate(50) scale(60 52)"><stop stop-color="#FFFFFF" stop-opacity=".42"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
     <linearGradient id="jp-rim" x1="12" y1="2" x2="60" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF" stop-opacity=".65"/><stop offset=".5" stop-color="#FFFFFF" stop-opacity=".08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".25"/></linearGradient>
-    <linearGradient id="jp-j" x1="22" y1="14" x2="54" y2="68" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#D3E4FF"/></linearGradient>
-    <linearGradient id="jp-mint" x1="17" y1="17" x2="31" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#8CF7D0"/><stop offset="1" stop-color="#1FD8A4"/></linearGradient>
-    <filter id="jp-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.4" flood-color="#04245E" flood-opacity=".38"/></filter>
+    <linearGradient id="jp-j" x1="22" y1="14" x2="54" y2="68" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#D6EBE3"/></linearGradient>
+    <linearGradient id="jp-mint" x1="17" y1="17" x2="31" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#FFCB82"/><stop offset="1" stop-color="#F0A144"/></linearGradient>
+    <filter id="jp-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.4" flood-color="#03120E" flood-opacity=".38"/></filter>
     <clipPath id="jp-clip"><rect x="1" y="1" width="78" height="78" rx="22"/></clipPath>
   </defs>
   <rect x="1" y="1" width="78" height="78" rx="22" fill="url(#jp-bg)"/>
   <g clip-path="url(#jp-clip)">
     <rect width="80" height="80" fill="url(#jp-glow)"/>
     <g stroke="#FFFFFF" stroke-opacity=".09" stroke-width="1.2"><path d="M0 22H80M0 40H80M0 58H80"/></g>
-    <circle cx="70" cy="78" r="26" fill="#021E5C" fill-opacity=".22"/>
+    <circle cx="70" cy="78" r="26" fill="#03120E" fill-opacity=".22"/>
   </g>
   <rect x="1.5" y="1.5" width="77" height="77" rx="21.5" stroke="url(#jp-rim)"/>
   <g filter="url(#jp-shadow)">
