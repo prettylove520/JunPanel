@@ -173,8 +173,6 @@ function applyTheme(mode = themeMode) {
 applyTheme();
 requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1'; }));
 systemDark.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
-// A soft light follows the pointer across cards (position only; the look is in the stylesheet).
-document.addEventListener('pointermove', e => { const t = e.target.closest?.('.panel, .app-card, .installed-card, .hero'); if (!t) return; const r = t.getBoundingClientRect(); t.style.setProperty('--mx', `${Math.round(e.clientX - r.left)}px`); t.style.setProperty('--my', `${Math.round(e.clientY - r.top)}px`); }, { passive: true });
 $('#theme-toggle').onclick = () => { const next = themeModes[(themeModes.indexOf(themeMode) + 1) % themeModes.length]; applyTheme(next); try { localStorage.setItem('junpanel-theme', next); } catch {} toast(`主题：${themeNames[next]}`); };
 $$('#nav [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
 window.addEventListener('hashchange', () => { const r = location.hash.slice(1).split('?')[0]; if (state.csrf && r !== state.route) navigate(r); });
@@ -191,7 +189,7 @@ function drawChrome() {
   $$('#nav .nav-link').forEach(n => { const active = n.dataset.group === group; n.classList.toggle('active', active); if (active) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
   const sub = $('#subnav'); sub.hidden = siblings.length < 2;
   sub.replaceChildren(...siblings.map(s => { const b = el('button', `subnav-item${s === state.route ? ' active' : ''}`, routes[s][0]); b.type = 'button'; b.onclick = () => navigate(s); return b; }));
-  $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1; $('#page-eyebrow').textContent = siblings.length > 1 ? '' : state.route;
+  $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
   $('#page-description').textContent = r[1]; $('#page-bar').hidden = state.route === 'overview';
 }
 const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, syslog: syslogPage, security: securityPage, access: accessPage, upgrade: upgradePage });
@@ -210,9 +208,15 @@ function ops(...buttons) { const n = el('div','table-ops'); n.append(...buttons)
 function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'), texts = el('div'); texts.append(el('strong','',title), el('small','muted',sub)); n.append(icon(symbol),texts); return n; }
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
-// The letter on an app tile is dark or white, whichever reads better on that tile's colour.
-const tileInk = hex => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return ''; const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4), lum = .2126 * r + .7152 * g + .0722 * b; return (1.05) / (lum + .05) >= (lum + .05) / .0628 ? '#fff' : '#10201b'; };
-function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); if (t.color) { n.style.background = t.color; n.style.color = tileInk(t.color); } return n; }
+// Bundled logos (web/icons/<template>.svg); any other template shows its initial.
+const appIcons = new Set(["codeserver", "drawio", "excalidraw", "freshrss", "gitea", "gotify", "ittools", "jellyfin", "kuma", "linkding", "memos", "mysql", "n8n", "navidrome", "nextcloud", "ntfy", "openwebui", "postgres", "redis", "stirlingpdf", "trilium", "vaultwarden", "wordpress"]);
+function appLogo(t) {
+  const letter = (t.name || t.key || 'A').slice(0, 1).toUpperCase(), n = el('div', `app-logo ${t.key || ''}`, letter);
+  if (!appIcons.has(t.key)) return n;
+  const img = el('img'); img.src = `/icons/${t.key}.svg`; img.alt = ''; img.width = 26; img.height = 26; img.loading = 'lazy'; img.decoding = 'async';
+  img.onerror = () => { n.classList.remove('has-icon'); n.replaceChildren(letter); };
+  n.classList.add('has-icon'); n.replaceChildren(img); return n;
+}
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).
@@ -256,10 +260,9 @@ function chart(history, series, max = 100, withDate = false) {
   canvas.addEventListener('keydown', e => { if (!geo || !['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(e.key)) return; e.preventDefault(); hover = e.key === 'Escape' ? null : e.key === 'Home' ? 0 : e.key === 'End' ? geo.n - 1 : Math.max(0, Math.min(geo.n - 1, (hover ?? geo.n - 1) + (e.key === 'ArrowLeft' ? -1 : 1))); canvas._draw(); });
   const observer = new ResizeObserver(() => { if (!canvas.isConnected) { observer.disconnect(); return; } canvas._draw(); }); observer.observe(canvas); return canvas;
 }
-function gauge(title, value, text, sub, sweep = false) {
+function gauge(title, value, text, sub) {
   const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div','gauge'), ring = el('div', `gauge-ring${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), r = 46, c = 2 * Math.PI * r;
-  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(sweep ? c : c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
-  if (sweep) requestAnimationFrame(() => requestAnimationFrame(() => ring.querySelector(".value").style.strokeDashoffset = (c * (1 - pct / 100)).toFixed(1)));
+  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
   const t = el('div','gauge-text'); t.append(el('strong','',text)); ring.append(t); n.append(ring, el('span','',title), el('small','',sub)); return n;
 }
 function loadText(p) { return p < 50 ? '运行流畅' : p < 75 ? '运行正常' : p < 90 ? '运行缓慢' : '运行堵塞'; }
@@ -288,17 +291,8 @@ function inventorySites(data) {
   return [...(data.sites || []), ...(data.external_hosts || []).map(host=>({name:host,domains:[host],kind:'existing',readonly:true,sources:(data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config)}))];
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
-// Numbers on the overview count up once when the page opens; never for people who ask for less motion.
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-function countUp(node, text) {
-  if (reduceMotion.matches || !/\d/.test(text)) return;
-  const parts = text.split(/(\d+)/), nums = parts.map(p => /^\d+$/.test(p) ? Number(p) : null), t0 = performance.now(), dur = 700;
-  const show = k => { node.textContent = parts.map((p, i) => nums[i] == null ? p : Math.round(nums[i] * k)).join(''); };
-  const frame = now => { const k = Math.min(1, (now - t0) / dur); show(1 - Math.pow(1 - k, 3)); if (k < 1) requestAnimationFrame(frame); };
-  show(0); requestAnimationFrame(frame);
-}
 async function overviewPage() {
-  const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0, firstPaint = true;
+  const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0;
   const ranges = [['live', '实时'], ['1h', '1 小时'], ['6h', '6 小时'], ['24h', '24 小时'], ['7d', '7 天']];
   async function loadPast() { if (range === 'live') return; const want = range; try { const r = await api(`/history?range=${want}`); if (range === want) { past = r; pastAt = Date.now(); drawMonitor && drawMonitor(); } } catch (e) { toast(e.message, true); } }
   let drawMonitor = null;
@@ -307,25 +301,33 @@ async function overviewPage() {
     state.sites = visibleSites; state.apps = d.apps || []; setSiteBadge(d.sites_error || d.caddy_error ? null : visibleSites.length); setAlertBadge(d.alerts_active); setUpgradeBadge(d.update_available);
     n.replaceChildren();
     for (const problem of [d.host_error, d.sites_error, d.apps_error, d.caddy_error, d.docker_error]) if (problem) n.append(note(problem, true));
-    if (d.alerts_active > 0) { const b = note(`有 ${d.alerts_active} 条告警尚未解决。`, true); b.append(button('查看告警', () => navigate('alerts'), 'quiet small')); n.append(b); }
     if (d.update_available) { const b = note(`JunPanel v${d.update_available} 已发布，当前版本 v${d.version}。`); b.append(button('查看并升级', () => navigate('upgrade'), 'quiet small')); n.append(b); }
     const grid = el('div','home-grid'), main = el('div','home-col'), side = el('div','home-col');
 
     const calm = !(d.alerts_active > 0), counts = el('div', 'hero-wrap'), hero = el('section', 'hero'), heroHead = el('div', 'hero-head'), heroText = el('div'), cg = el('div', 'count-grid');
     heroText.append(el('strong', '', calm ? '一切运行正常' : `${d.alerts_active} 条告警待处理`), el('small', '', `${h.hostname || '本机'} · 已运行 ${uptime(h.uptime)}`));
     heroHead.append(el('span', `lamp ${calm ? 'ok' : 'warn'}`), heroText);
+    if (!calm) heroHead.append(button('查看告警', () => navigate('alerts'), 'secondary small'));
     [['网站', d.sites_error || d.caddy_error ? '—' : visibleSites.length, 'sites'], ['已安装应用', d.apps_error ? '—' : (d.apps || []).filter(a => !a.removed).length, 'installed'], ['容器', d.docker_error ? '—' : `${running} / ${containers.length}`, 'containers'], ['告警', d.alerts_active || 0, 'alerts']].forEach(([label, value, route]) => {
       const b = el('button', `count-item${route === 'alerts' && d.alerts_active ? ' alarm' : ''}`), num = el('strong', '', String(value)); b.type = 'button'; b.append(el('span', '', label), num); b.onclick = () => navigate(route); cg.append(b);
-      if (firstPaint) countUp(num, String(value));
     });
-    hero.append(heroHead, cg); counts.append(hero);
+    hero.append(heroHead, cg);
+    // A quiet trend line of the last ten minutes of CPU under the readings.
+    const pts = (h.history || []).map(p => Number(p.cpu) || 0);
+    if (pts.length > 1) {
+      const peak = Math.max(10, ...pts) * 1.15, xy = pts.map((v, i) => `${(i / (pts.length - 1) * 100).toFixed(2)},${(32 - v / peak * 30).toFixed(2)}`).join(' ');
+      const trend = el('div', 'hero-trend'); trend.setAttribute('aria-label', `最近 10 分钟 CPU 走势，当前 ${Number(h.cpu || 0).toFixed(1)}%`); trend.setAttribute('role', 'img');
+      trend.innerHTML = `<svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,32 ${xy} 100,32"/><polyline points="${xy}"/></svg><span>CPU · 最近 10 分钟</span>`;
+      hero.append(trend);
+    }
+    counts.append(hero);
 
     const status = panel('状态'), gg = el('div','gauge-grid'), cores = h.cores || 1, load = (h.load || [])[0] || 0, loadPct = load / cores * 100, mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, used = disk.total ? disk.used / disk.total * 100 : 0;
-    gg.append(gauge('负载', loadPct, `${Math.round(Math.min(loadPct, 100))}%`, loadText(loadPct), firstPaint), gauge('CPU', h.cpu, h.cpu == null ? '—' : `${Number(h.cpu).toFixed(1)}%`, `${cores} 核`, firstPaint), gauge('内存', mem, `${mem.toFixed(1)}%`, `${bytes(h.mem_used)} / ${bytes(h.mem_total)}`, firstPaint), gauge('磁盘 /', used, `${used.toFixed(1)}%`, `${bytes(disk.used)} / ${bytes(disk.total)}`, firstPaint));
+    gg.append(gauge('负载', loadPct, `${Math.round(Math.min(loadPct, 100))}%`, loadText(loadPct)), gauge('CPU', h.cpu, h.cpu == null ? '—' : `${Number(h.cpu).toFixed(1)}%`, `${cores} 核`), gauge('内存', mem, `${mem.toFixed(1)}%`, `${bytes(h.mem_used)} / ${bytes(h.mem_total)}`), gauge('磁盘 /', used, `${used.toFixed(1)}%`, `${bytes(disk.used)} / ${bytes(disk.total)}`));
     status.append(gg);
 
-    const choices = [['CPU', [['cpu','CPU','--primary']], 100], ['内存', [['memory','内存','--success']], 100], ['流量', [['rx','下行','--primary'], ['tx','上行','--warning']], 0]];
-    if (range !== 'live') choices.push(['磁盘', [['disk','磁盘 /','--warning']], 100]);
+    const choices = [['CPU', [['cpu','CPU','--primary']], 100], ['内存', [['memory','内存','--primary']], 100], ['流量', [['rx','下行','--primary'], ['tx','上行','--chart-2']], 0]];
+    if (range !== 'live') choices.push(['磁盘', [['disk','磁盘 /','--primary']], 100]);
     if (choice >= choices.length) choice = 0;
     const tabs = el('div','segmented'), now = el('div','monitor-now'), head = el('div','monitor-head'), box = el('div');
     now.append(...[['↓ 下行', `${bytes(h.rx)}/s`], ['↑ 上行', `${bytes(h.tx)}/s`], ['累计', `${bytes(h.rx_total)} / ${bytes(h.tx_total)}`]].map(([a, b]) => { const s = el('span','',a + ' '); s.append(el('b','',b)); return s; }));
@@ -356,7 +358,7 @@ async function overviewPage() {
     side.append(info, services, sites, activity);
     grid.append(main, side); n.append(grid);
   }
-  paint(data); firstPaint = false;
+  paint(data);
   const epoch = state.epoch; interval(async () => { const d = await api('/overview'); if (epoch === state.epoch) { paint(d); $('#connection-error').hidden = true; } }, 10000); return n;
 }
 async function sitesPage() {

@@ -2,13 +2,13 @@
 
 ![JunPanel](logo-preview.png)
 
-[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.4.0](https://github.com/prettylove520/JunPanel/releases/tag/v1.4.0) · [MIT 许可证](LICENSE)
+[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.4.1](https://github.com/prettylove520/JunPanel/releases/tag/v1.4.1) · [MIT 许可证](LICENSE)
 
 中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用石墨色与薄荷绿设计，支持深浅主题和手机布局。
 
 品牌素材：[矢量标识](web/logo.svg) · [标识预览](logo-preview.png)
 
-界面参照 1Panel 的布局，视觉为深墨色侧栏 + 暖灰底色 + 青绿主色 + 琥珀强调色的“仪表盘”风格；左侧一级菜单（概览、应用商店、网站、数据库、容器、文件、计划任务、备份、告警、日志、面板设置），同一模块下的页面用顶部标签切换；支持浅色与深色主题（默认跟随系统），小屏幕自动收起菜单。概览与网站列表同时显示面板网站和原有 Caddy 域名（只读，按域名统计）。除主配置外，还会从运行中的系统 Caddy 进程发现其他配置文件，显示配置路径、PID 和读取结果；相同域名去重，其他实例不会被面板重载。读取的是磁盘配置，并非运行时管理 API 快照；使用 `--resume`、自定义适配器或被隐藏的进程不在自动发现范围内；Docker 列表包含系统 Docker 中运行和已停止的全部容器。直接运行的程序和 systemd 服务不属于 Docker 容器，“面板安装应用”只统计通过 JunPanel 安装的应用。读取失败会显示错误，不当作零项。 界面字体（DM Sans、Barlow Condensed、JetBrains Mono，SIL OFL 授权，见 `web/fonts/LICENSE.txt`）随程序内置，不访问外部字体服务。
+界面参照 1Panel 的布局，视觉沿用常见服务器面板的结构（左侧菜单、首页四个圆环仪表、卡片和表格），细节参照 Vercel、Linear：一套中性灰阶、近黑色操作按钮、只用一种靛蓝表示选中/链接/图表，状态以“圆点 + 文字”显示；左侧一级菜单（概览、应用商店、网站、数据库、容器、文件、计划任务、备份、告警、日志、面板设置），同一模块下的页面用顶部标签切换；支持浅色与深色主题（默认跟随系统），小屏幕自动收起菜单。概览与网站列表同时显示面板网站和原有 Caddy 域名（只读，按域名统计）。除主配置外，还会从运行中的系统 Caddy 进程发现其他配置文件，显示配置路径、PID 和读取结果；相同域名去重，其他实例不会被面板重载。读取的是磁盘配置，并非运行时管理 API 快照；使用 `--resume`、自定义适配器或被隐藏的进程不在自动发现范围内；Docker 列表包含系统 Docker 中运行和已停止的全部容器。直接运行的程序和 systemd 服务不属于 Docker 容器，“面板安装应用”只统计通过 JunPanel 安装的应用。读取失败会显示错误，不当作零项。 界面字体（Geist、Geist Mono，中文为思源黑体 Noto Sans SC，均为 SIL OFL 授权，见 `web/fonts/LICENSE.txt`）随程序内置，不访问外部字体服务；中文字体按 Unicode 分片，页面只下载实际用到的字。应用商店显示各应用自己的 Logo（来源与授权见 `third-party/app-icons-NOTICE.txt`），仅用于标识应用。
 
 界面预览（模拟数据）：[概览](preview.png) · [应用商店](app-center.png)
 
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 自动完成下载、校验、解压、环境检查、面板安装、**公网 IPv4 识别和 HTTPS 管理入口配置**。结束时集中显示账号、随机密码和登录链接：证书及面板响应检查通过后可直接打开 `https://服务器IP`，无需再填 IP 或执行另一条配置命令。公网登录页会公开，仍需管理员认证；建议开启两步验证。HTTPS 入口要求现有 Caddy 至少 2.10.1、公网 80/443 可达。
 
-在线安装器固定下载 v1.4.0 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
+在线安装器固定下载 v1.4.1 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
 
 IP 识别不访问第三方 IP 查询服务：优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。NAT、仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接。证书尚未就绪会标注“准备中”，不会提示已经可登录。
 
@@ -44,17 +44,17 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 1. 在服务器的 SSH 窗口下载安装包并核对校验和：
 
    ```bash
-   curl -fL -o JunPanel-1.4.0-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.4.0/JunPanel-1.4.0-linux.tar.gz
-   curl -fL -o JunPanel-1.4.0-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.4.0/JunPanel-1.4.0-SHA256SUMS.txt
-   sha256sum --ignore-missing -c JunPanel-1.4.0-SHA256SUMS.txt
+   curl -fL -o JunPanel-1.4.1-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.4.1/JunPanel-1.4.1-linux.tar.gz
+   curl -fL -o JunPanel-1.4.1-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.4.1/JunPanel-1.4.1-SHA256SUMS.txt
+   sha256sum --ignore-missing -c JunPanel-1.4.1-SHA256SUMS.txt
    ```
 
-   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.4.0)下载到电脑，再通过 `scp` 上传。
+   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.4.1)下载到电脑，再通过 `scp` 上传。
 
 2. 在服务器的 SSH 窗口执行：
 
    ```bash
-   tar -xzf JunPanel-1.4.0-linux.tar.gz && sudo bash junpanel/install.sh
+   tar -xzf JunPanel-1.4.1-linux.tar.gz && sudo bash junpanel/install.sh
    ```
 
    安装器自动选择架构、验证程序校验和、检查现有服务、创建随机面板密码并启动两个 systemd 服务。记下终端显示的 `admin` 账号与随机密码。**新安装没有默认密码**。

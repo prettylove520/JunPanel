@@ -286,10 +286,16 @@ func TestHTTPBoundary(t *testing.T) {
 	if w = request(h, "GET", "/api/meta", "", nil, nil); w.Header().Get("X-JunPanel-Version") != version {
 		t.Fatal("API response without version header")
 	}
-	if w = request(h, "GET", "/fonts/dm-sans-latin-400-normal.woff2", "", nil, nil); w.Code != 200 || w.Header().Get("Content-Type") != "font/woff2" || w.Body.Len() < 1000 {
+	if w = request(h, "GET", "/fonts/geist-variable.woff2", "", nil, nil); w.Code != 200 || w.Header().Get("Content-Type") != "font/woff2" || w.Body.Len() < 1000 {
 		t.Fatalf("bundled font not served: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
-	for _, path := range []string{"/fonts/LICENSE.txt", "/fonts/../app.js", "/fonts/%2e%2e/account.json", "/fonts/nope.woff2", "/fonts/a/b.woff2", "/fonts/"} {
+	if w = request(h, "GET", "/icons/wordpress.svg", "", nil, nil); w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "image/svg+xml") {
+		t.Fatalf("app icon not served: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+	if w = request(h, "GET", "/icons/../app.js", "", nil, nil); w.Code == 200 && strings.Contains(w.Header().Get("Content-Type"), "svg") {
+		t.Fatal("icon path escaped")
+	}
+	for _, path := range []string{"/fonts/LICENSE.txt", "/icons/x.png", "/icons/a/b.svg", "/icons/nope.svg", "/fonts/../app.js", "/fonts/%2e%2e/account.json", "/fonts/nope.woff2", "/fonts/a/b.woff2", "/fonts/"} {
 		if w = request(h, "GET", path, "", nil, nil); w.Code == 200 && path != "/fonts/../app.js" {
 			t.Fatalf("%s served", path)
 		}

@@ -1,0 +1,18 @@
+App logos in web/icons/ identify the applications in the app store. Each logo is a trademark of its
+project and is shown only to name that project; JunPanel is not affiliated with or endorsed by them.
+
+From Simple Icons (https://simpleicons.org), CC0 1.0 — path data recoloured with the brand colour
+listed by Simple Icons:
+  wordpress, gitea, kuma (Uptime Kuma), postgres (PostgreSQL), mysql (MySQL), redis, vaultwarden,
+  n8n, excalidraw, nextcloud, jellyfin, trilium, freshrss, ntfy, drawio (diagrams.net),
+  codeserver (Coder).
+
+From the projects' own repositories (logo files, used unchanged except where noted):
+  memos        usememos/memos web/public/logo.svg (MIT) — theme style and background removed
+  openwebui    open-webui/open-webui static/static/favicon.svg (Open WebUI License)
+  ittools      CorentinTh/it-tools public/safari-pinned-tab.svg (GPL-3.0)
+  navidrome    navidrome/navidrome ui/public/safari-pinned-tab.svg (GPL-3.0)
+  linkding     sissbruecker/linkding bookmarks/static/logo.svg (MIT)
+  gotify       gotify/logo gotify-logo-small.svg (CC BY 4.0) — Illustrator metadata removed
+  stirlingpdf  Stirling-Tools/Stirling-PDF app/core/src/main/resources/static/favicon.svg (MIT) —
+               mark redrawn without its background tile, in the tile's colour
