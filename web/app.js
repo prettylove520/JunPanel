@@ -103,7 +103,8 @@ const bytes = n => { if (n == null || !Number.isFinite(Number(n))) return '—';
 const percent = n => n == null ? '采样中' : `${Number(n).toFixed(1)}%`;
 const date = s => s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '—';
 const uptime = s => s ? `${Math.floor(s / 86400)} 天 ${Math.floor(s % 86400 / 3600)} 小时` : '—';
-function toast(message, error = false) { const n = el('div', `toast${error ? ' error' : ''}`, message); $('#toasts').append(n); setTimeout(() => n.remove(), 5500); }
+// Toasts live in a popover so they sit in the top layer, above an open modal dialog.
+function toast(message, error = false) { const box = $('#toasts'), n = el('div', `toast${error ? ' error' : ''}`, message); n.setAttribute('role', error ? 'alert' : 'status'); box.append(n); try { if (!box.matches(':popover-open')) box.showPopover(); } catch {} setTimeout(() => { n.remove(); if (!box.children.length) try { box.hidePopover(); } catch {} }, 5500); }
 const destructive = /^(删除|卸载|移除|永久删除|清空回收站)$/;
 function button(text, fn, kind = 'secondary', symbol) { const b = el('button', `button ${kind}`, text); b.type = 'button'; if (kind.includes('quiet') && destructive.test(text)) b.classList.add('danger-text'); if (symbol) b.prepend(icon(symbol)); b.addEventListener('click', async () => { try { await fn(b); } catch(e) { toast(e.message, true); } }); return b; }
 function tag(text, cls = '') { return el('span', `tag ${cls}`, text); }
@@ -748,7 +749,8 @@ function offsiteForm(current) {
   kind.input.onchange = sync; sync();
   const payload = () => ({ type: kind.input.value, url: url.val(), user: user.val(), secret: secret.input.value, bucket: bucket.val(), region: region.val(), prefix: prefix.val(), auto: auto.input.value === '1' });
   const form = formModal('异地备份', [kind, url, user, secret, bucket, region, prefix, auto], '保存', async () => { await api('/offsite', payload()); closeModal(); toast('异地备份设置已保存'); await render(); }, { note: '备份仍先保存在本机，再上传一份到这里。恢复时使用本机副本；本机副本丢失时，可从异地存储下载文件后在“文件”页处理。密钥只保存在服务器的私有目录，不会再显示。' });
-  const test = button('测试连接', async () => { test.disabled = true; try { await api('/offsite/test', payload()); toast('连接成功，可以上传'); } catch (e) { toast(e.message, true); } finally { test.disabled = false; } }, 'secondary');
+  const result = el('div', 'form-result'); result.setAttribute('role', 'status'); form.append(result);
+  const test = button('测试连接', async () => { test.disabled = true; test.setAttribute('aria-busy', 'true'); test.lastChild.textContent = '测试中…'; result.className = 'form-result'; result.textContent = ''; try { await api('/offsite/test', payload()); result.className = 'form-result ok'; result.textContent = '连接成功，可以上传。'; toast('连接成功，可以上传'); } catch (e) { result.className = 'form-result bad'; result.textContent = `连接失败：${e.message}`; toast(e.message, true); } finally { test.disabled = false; test.removeAttribute('aria-busy'); test.lastChild.textContent = '测试连接'; } }, 'secondary');
   $('#modal-footer').prepend(test);
 }
 async function newBackup() {
