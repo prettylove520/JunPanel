@@ -671,16 +671,11 @@ body { letter-spacing: -.006em; font-feature-settings: "ss01" 0; }
 .app-logo.has-icon img { display: block; width: 26px; height: 26px; object-fit: contain; }
 :root[data-theme=dark] .app-logo.has-icon { border-color: transparent; }
 
-/* ---- Sidebar: sections at the top, settings and status at the foot ---- */
-.nav-section + .nav-section { margin-top: 16px; }
+/* ---- Sidebar: sections read top-down; row height and spacing grow with the window height ---- */
+.nav-link { height: clamp(34px, 4vh, 44px); font-size: clamp(14px, 1.45vh, 15px); }
+.nav-section + .nav-section { margin-top: clamp(12px, 2.4vh, 28px); }
 .nav-heading { padding: 0 12px 6px; color: var(--side-muted); font-size: 12px; font-weight: 500; }
-.nav-foot { padding: 8px 12px; border-top: 1px solid var(--side-line); }
-.nav-foot .nav-link { margin: 0; }
-@media (min-height: 900px) {
-  .nav-link { height: 38px; }
-  .nav-section + .nav-section { margin-top: 20px; }
-  #nav { padding-top: 16px; }
-}
+#nav { padding-top: clamp(12px, 1.8vh, 20px); }
 /* ---- Wide screens: the content column is centred, so the margins match ---- */
 main { margin-inline: auto; }
 @container (min-width: 900px) {
@@ -688,14 +683,6 @@ main { margin-inline: auto; }
   .hero-head > div { flex-basis: calc(100% - 20px); }
   .hero-head > .button { margin-left: 20px; }
 }
-.side-meter { margin: 4px 0 10px; padding: 12px; border: 1px solid var(--side-line); border-radius: var(--radius-card); background: var(--card); }
-.side-meter-title { display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--side-muted); font-size: 12px; }
-.side-meter-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 36px; align-items: center; gap: 8px; margin-top: 8px; color: var(--side-text); font-size: 12px; }
-.side-meter-bar { height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; }
-.side-meter-bar span { display: block; height: 100%; border-radius: 2px; background: var(--primary); transition: width .4s ease; }
-.side-meter-bar span.warn { background: var(--dot-warn); } .side-meter-bar span.bad { background: var(--dot-bad); }
-.side-meter-row b { font-family: var(--font-mono); font-weight: 500; text-align: right; color: var(--side-strong); }
-@media (max-height: 760px) { .side-meter { display: none !important; } }
 /* Content width grows with very wide screens, so 2K-at-100% and ultrawide monitors are not two thirds empty. */
 main { max-width: clamp(1680px, 82vw, 2400px); }
 /* Phones: the sign-in form fits on the first screen. */
