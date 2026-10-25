@@ -671,11 +671,22 @@ body { letter-spacing: -.006em; font-feature-settings: "ss01" 0; }
 .app-logo.has-icon img { display: block; width: 26px; height: 26px; object-fit: contain; }
 :root[data-theme=dark] .app-logo.has-icon { border-color: transparent; }
 
-/* ---- Sidebar: sections read top-down; row height and spacing grow with the window height ---- */
-.nav-link { height: clamp(34px, 4vh, 44px); font-size: clamp(14px, 1.45vh, 15px); }
-.nav-section + .nav-section { margin-top: clamp(12px, 2.4vh, 28px); }
-.nav-heading { padding: 0 12px 6px; color: var(--side-muted); font-size: 12px; font-weight: 500; }
-#nav { padding-top: clamp(12px, 1.8vh, 20px); }
+/* ---- Sidebar: sections read top-down; rows, type and spacing grow with the window height so tall screens are not left half empty ---- */
+.nav-link { height: clamp(34px, 5vh, 52px); font-size: clamp(14px, 1.55vh, 16px); gap: clamp(10px, 1.2vh, 13px); }
+.nav-link svg.icon { width: clamp(16px, 1.8vh, 19px); height: clamp(16px, 1.8vh, 19px); }
+.nav-section + .nav-section { margin-top: clamp(12px, 3.2vh, 36px); }
+.nav-heading { padding: 0 12px clamp(6px, .8vh, 10px); color: var(--side-muted); font-size: clamp(12px, 1.25vh, 13px); font-weight: 500; }
+#nav { padding-top: clamp(12px, 2.4vh, 28px); }
+/* The foot of the sidebar is the signed-in account: who, how the panel is reached, which version, and sign out. */
+.sidebar-bottom { gap: 10px; padding: clamp(10px, 1.6vh, 16px) 12px clamp(10px, 1.6vh, 16px) 16px; color: var(--side-text); }
+.sidebar-bottom .user-avatar { width: 32px; height: 32px; font-size: 13px; }
+.side-account { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.side-account strong { overflow: hidden; color: var(--side-strong); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.side-account > span { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--side-muted); font-size: 12px; white-space: nowrap; }
+.side-account #access-label { overflow: hidden; text-overflow: ellipsis; }
+.sidebar > .brand .sidebar-version { color: var(--side-muted); font-weight: 400; }
+.sidebar-bottom .icon-button { flex: none; color: var(--side-muted); }
+.sidebar-bottom .icon-button:hover { background: var(--side-hover); color: var(--side-strong); }
 /* ---- Wide screens: the content column is centred, so the margins match ---- */
 main { margin-inline: auto; }
 @container (min-width: 900px) {
@@ -692,4 +703,11 @@ main { max-width: clamp(1680px, 82vw, 2400px); }
   .login-brand h1 { margin-top: 16px; font-size: 22px; }
   .login-brand > p, .login-points { display: none; }
   .login-form { padding: 24px; }
+}
+/* Short laptop screens (1366×768 with browser chrome): tighter rows so the whole menu fits above the account. */
+@media (max-height: 700px) {
+  .nav-link { height: 32px; margin-bottom: 1px; }
+  .nav-section + .nav-section { margin-top: 8px; }
+  .nav-heading { padding-bottom: 4px; }
+  #nav { padding-top: 10px; }
 }
