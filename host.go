@@ -207,7 +207,9 @@ func (a *agent) startMetrics(stop <-chan struct{}) {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
-			a.metrics.read()
+			if info, e := a.metrics.read(); e == nil {
+				a.history.observe(a.now(), info)
+			}
 			select {
 			case <-stop:
 				return

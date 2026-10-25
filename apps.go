@@ -112,16 +112,17 @@ func findTemplate(key string) (appTemplate, bool) {
 }
 
 type appRecord struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Template   string    `json:"template"`
-	Port       int       `json:"port"`
-	Password   string    `json:"password"`
-	DBPassword string    `json:"db_password,omitempty"`
-	Created    time.Time `json:"created"`
-	Removed    bool      `json:"removed"`
-	Busy       bool      `json:"busy"`
-	LastError  string    `json:"last_error,omitempty"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Template   string            `json:"template"`
+	Port       int               `json:"port"`
+	Password   string            `json:"password"`
+	DBPassword string            `json:"db_password,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Created    time.Time         `json:"created"`
+	Removed    bool              `json:"removed"`
+	Busy       bool              `json:"busy"`
+	LastError  string            `json:"last_error,omitempty"`
 }
 
 func (a *agent) readApps() ([]appRecord, error) {
@@ -258,6 +259,19 @@ func composeForRoot(r appRecord, root string) ([]byte, error) {
 		if len(mounts) > 0 {
 			service["volumes"] = mounts
 		}
+	}
+	// Settings the administrator added in the panel; generated secrets cannot be overridden.
+	if len(r.Env) > 0 {
+		env, _ := service["environment"].(map[string]string)
+		if env == nil {
+			env = map[string]string{}
+		}
+		for k, v := range r.Env {
+			if !protectedEnv[k] && envName.MatchString(k) {
+				env[k] = v
+			}
+		}
+		service["environment"] = env
 	}
 	return json.MarshalIndent(map[string]any{"name": name, "services": services, "volumes": volumes}, "", "  ")
 }

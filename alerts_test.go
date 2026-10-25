@@ -1026,3 +1026,94 @@ func TestAlertCheckEndpointAndHistoryLimit(t *testing.T) {
 		t.Fatalf("history length %d", len(st.History))
 	}
 }
+
+func TestSiteDownAlertLifecycle(t *testing.T) {
+	g := newRig(t)
+	var mu sync.Mutex
+	status := 200
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Host == "ok.example.com" {
+			w.WriteHeader(status)
+			return
+		}
+		if r.Host == "other.example.com" { // served by another Caddy instance, always failing here
+			w.WriteHeader(502)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer secure.Close()
+	set := func(code int) { mu.Lock(); status = code; mu.Unlock() }
+	g.a.healthHTTPS, g.a.healthHTTP = strings.TrimPrefix(secure.URL, "https://"), closedAddr(t)
+	os.WriteFile(g.a.cfg.Caddy, []byte("import "+filepath.ToSlash(g.a.cfg.Fragments)+"/*.caddy\n"), 0644)
+	g.a.processConfigs = func() ([]caddyConfig, error) {
+		return []caddyConfig{{Config: "/etc/other/other.caddy", Adapter: "caddyfile", PIDs: []int{4242}}}, nil
+	}
+	g.a.capture = func(_ time.Duration, _ string, args ...string) (string, error) {
+		host := "ok.example.com"
+		if strings.Contains(strings.Join(args, " "), "other.caddy") {
+			host = "other.example.com"
+		}
+		return `{"apps":{"http":{"servers":{"s":{"routes":[{"match":[{"host":["` + host + `"]}]}]}}}}}`, nil
+	}
+	key := "site:ok.example.com"
+	for i := 0; i < 3; i++ {
+		g.advance(30 * time.Second)
+		if g.tick(); g.state().Active[key] != nil || g.hook.count() != 0 {
+			t.Fatal("alert for a healthy site")
+		}
+	}
+	// A site that is down raises an alert only after several checks in a row.
+	set(502)
+	for i := 1; i <= siteFailPolls-1; i++ {
+		g.advance(30 * time.Second)
+		if g.tick(); g.state().Active[key] != nil {
+			t.Fatalf("alert after %d failed checks", i)
+		}
+	}
+	g.advance(30 * time.Second)
+	st := g.tick()
+	if st.Active[key] == nil || st.Active[key].Severity != "critical" || g.hook.count() != 1 || !strings.Contains(g.hook.last(), "网站后端异常：ok.example.com") || !strings.Contains(g.hook.last(), "502") {
+		t.Fatalf("site alert: %+v posts=%d %s", st.Active[key], g.hook.count(), g.hook.last())
+	}
+	// A short blip is not reported: it recovers, then fails once.
+	set(200)
+	g.advance(30 * time.Second)
+	g.tick()
+	g.advance(30 * time.Second)
+	if g.tick(); g.state().Active[key] != nil || g.hook.count() != 2 || !strings.Contains(g.hook.last(), "已恢复") {
+		t.Fatalf("no recovery: %d %s", g.hook.count(), g.hook.last())
+	}
+	set(502)
+	g.advance(30 * time.Second)
+	if g.tick(); g.state().Active[key] != nil {
+		t.Fatal("a single failed check raised an alert")
+	}
+	set(200)
+	// Turned off in the settings: nothing is raised, whatever the site does.
+	g.config(func(c *alertConfig) { c.SiteOn = false })
+	set(502)
+	for i := 0; i < siteFailPolls+1; i++ {
+		g.advance(30 * time.Second)
+		g.tick()
+	}
+	if g.state().Active[key] != nil {
+		t.Fatal("alert although site alerts are off")
+	}
+	// A site that only another Caddy instance serves is never alerted on.
+	g.config(func(c *alertConfig) { c.SiteOn = true })
+	set(200)
+	for i := 0; i < siteFailPolls+2; i++ {
+		g.advance(30 * time.Second)
+		g.tick()
+	}
+	if g.state().Active["site:other.example.com"] != nil {
+		t.Fatal("a site of another Caddy instance was monitored")
+	}
+	// The setting is stored and reported.
+	if v := (alertConfig{SiteOn: true}).view(); !v.SiteOn {
+		t.Fatal("setting missing from the view")
+	}
+}

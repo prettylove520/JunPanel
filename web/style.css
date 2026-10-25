@@ -438,3 +438,8 @@ dl.details dd { margin: 0; }
 .guide ol { margin: 0 0 14px; padding-left: 22px; }
 .guide li { margin: 0 0 10px; line-height: 1.7; word-break: break-word; }
 .guide li::marker { color: var(--primary); font-weight: 600; }
+.dns-lines { display: block; margin-top: 2px; }
+.dns-line { display: block; line-height: 1.5; color: var(--muted); }
+.dns-line.ok { color: var(--success); }
+.dns-line.bad { color: var(--danger); }
+.dns-line.info { color: var(--text-2); }

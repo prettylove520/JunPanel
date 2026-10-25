@@ -68,6 +68,15 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			"monitor.example.com": {State: "error", Code: 502, Scheme: "https"}, "www.example.com": {State: "up", Code: 200, Scheme: "https"},
 			"blog.example.com": {State: "up", Code: 200, Scheme: "https"}, "git.example.com": {State: "down"}, "notes.example.com": {State: "tls"},
 		}, "checked": time.Now()}
+	case "/logs":
+		unit := r.URL.Query().Get("unit")
+		value = map[string]any{"unit": unit, "label": unit, "lines": 4, "trimmed": false, "time": time.Now(), "text": "2026-10-22T10:00:01+0800 demo " + unit + "[812]: 服务已启动（演示数据）\n2026-10-22T10:02:11+0800 demo " + unit + "[812]: 已重载配置\n2026-10-22T10:05:40+0800 demo " + unit + "[812]: 演示日志，不是真实服务器的输出\n2026-10-22T10:07:03+0800 demo " + unit + "[812]: 一切正常"}
+	case "/sites/dns":
+		value = map[string]any{"hosts": map[string]dnsInfo{
+			"legacy.example.com": {State: "other", IPs: []string{"198.51.100.7"}}, "company.example.com": {State: "local", IPs: []string{"203.0.113.10"}},
+			"monitor.example.com": {State: "none"}, "www.example.com": {State: "other", IPs: []string{"198.51.100.7"}},
+			"blog.example.com": {State: "other", IPs: []string{"198.51.100.7"}}, "git.example.com": {State: "local", IPs: []string{"203.0.113.10"}},
+		}}
 	case "/access":
 		value = map[string]any{"entries": []map[string]string{{"kind": "domain", "address": "panel.example.com"}, {"kind": "ip", "address": "203.0.113.10"}}, "managed": true, "running": false, "supported": true}
 	case "/stacks":
@@ -80,6 +89,22 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		value = catalogView()
 	case "/apps":
 		value = demoApps()
+	case "/history":
+		span := historySpans[r.URL.Query().Get("range")]
+		if span == 0 {
+			span = time.Hour
+		}
+		now, points := time.Now(), []histPoint{}
+		step := span / 120
+		for i := 0; i < 120; i++ {
+			x := float64(i)
+			points = append(points, histPoint{At: now.Add(-span + time.Duration(i)*step), CPU: 14 + 6*math.Sin(x/9) + 2*math.Cos(x/3), Memory: 38 + 4*math.Sin(x/31), Disk: 30 + x/120, RX: 21000 + 9000*math.Sin(x/12), TX: 7000 + 2000*math.Cos(x/9)})
+		}
+		value = map[string]any{"points": points, "step": int(step.Seconds()), "range": r.URL.Query().Get("range")}
+	case "/offsite":
+		value = map[string]any{"config": offsiteConfig{}, "has_secret": false}
+	case "/apps/notes/settings", "/apps/studio/settings":
+		value = map[string]any{"id": "notes", "name": "代码仓库", "template": "gitea", "port": 3000, "env": map[string]string{"GITEA__service__REQUIRE_SIGNIN_VIEW": "true"}, "presets": appPresets["gitea"], "builtin_env": []string{}, "removed": false, "busy": false}
 	case "/jobs":
 		value = demoJobs()
 	case "/databases":
@@ -111,7 +136,7 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			"notes_url": "https://github.com/prettylove520/JunPanel/releases", "release_url": "https://github.com/prettylove520/JunPanel/releases"}
 	case "/alerts":
 		value = map[string]any{
-			"config":  alertView{Format: "wecom", URLSet: true, URLHost: "qyapi.weixin.qq.com", Notify: true, DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, RepeatHours: 12},
+			"config":  alertView{Format: "wecom", URLSet: true, URLHost: "qyapi.weixin.qq.com", Notify: true, DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, SiteOn: true, RepeatHours: 12},
 			"formats": alertFormats,
 			"active": []activeAlert{
 				{Key: "disk:/", Title: "磁盘空间不足：/", Detail: "已用 92%，剩余 6.4 GB（阈值 90%）", Severity: "warning", Since: time.Now().Add(-3 * time.Hour)},

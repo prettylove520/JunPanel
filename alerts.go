@@ -27,6 +27,7 @@ const (
 	diskHysteresis   = 3
 	dockerFailPolls  = 3
 	serviceFailPolls = 2
+	siteFailPolls    = 4 // 30 s apart: a site must be down for about two minutes
 )
 
 type alertConfig struct {
@@ -39,11 +40,12 @@ type alertConfig struct {
 	CertDays    int    `json:"cert_days"`
 	ContainerOn bool   `json:"container_on"`
 	ServiceOn   bool   `json:"service_on"`
+	SiteOn      bool   `json:"site_on"`
 	RepeatHours int    `json:"repeat_hours"`
 }
 
 func defaultAlertConfig() alertConfig {
-	return alertConfig{Format: "generic", DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, RepeatHours: 12}
+	return alertConfig{Format: "generic", DiskOn: true, DiskPercent: 90, CertOn: true, CertDays: 14, ContainerOn: true, ServiceOn: true, SiteOn: true, RepeatHours: 12}
 }
 
 type activeAlert struct {
@@ -207,18 +209,19 @@ func (a *agent) certificates(now time.Time, force bool) ([]certInfo, error) {
 		return a.certList, a.certErr
 	}
 	certs, e := readCerts(a.cfg.CaddyData)
-	if e == nil {
+	// The host list is read once per period and shared: the site checks use it too.
+	hosts, sources, he := a.caddyInventory()
+	a.invHosts, a.invSources, a.invErr = hosts, sources, he
+	if e == nil && he == nil {
 		// Certificates of sites that were removed stay on disk, so only those for hosts
 		// Caddy still serves count. If the host list cannot be read, keep them all.
-		if hosts, _, he := a.caddyInventory(); he == nil {
-			kept := certs[:0:0]
-			for _, c := range certs {
-				if certServes(c, hosts) {
-					kept = append(kept, c)
-				}
+		kept := certs[:0:0]
+		for _, c := range certs {
+			if certServes(c, hosts) {
+				kept = append(kept, c)
 			}
-			certs = kept
 		}
+		certs = kept
 	}
 	a.certAt, a.certList, a.certErr = now, certs, e
 	return certs, e
@@ -355,6 +358,7 @@ var ruleOf = map[string]func(alertConfig) bool{
 	"cert:":      func(c alertConfig) bool { return c.CertOn },
 	"container:": func(c alertConfig) bool { return c.ContainerOn },
 	"service:":   func(c alertConfig) bool { return c.ServiceOn },
+	"site:":      func(c alertConfig) bool { return c.SiteOn },
 }
 
 // alertTick runs one check, updates the active alerts and sends notifications.
@@ -396,6 +400,9 @@ func (a *agent) alertTick(now time.Time) (*alertState, error) {
 	}
 	if cfg.ServiceOn {
 		findings = append(findings, a.serviceFindings()...)
+	}
+	if cfg.SiteOn {
+		findings = append(findings, a.siteFindings(st)...)
 	}
 	notices := a.reconcile(cfg, st, findings, dropped, now)
 	a.alertMu.Lock()
@@ -566,12 +573,13 @@ type alertView struct {
 	CertDays    int    `json:"cert_days"`
 	ContainerOn bool   `json:"container_on"`
 	ServiceOn   bool   `json:"service_on"`
+	SiteOn      bool   `json:"site_on"`
 	RepeatHours int    `json:"repeat_hours"`
 }
 
 // view never includes the webhook address: it often embeds a secret key.
 func (c alertConfig) view() alertView {
-	v := alertView{Format: c.Format, URLSet: c.URL != "", Notify: c.Notify, DiskOn: c.DiskOn, DiskPercent: c.DiskPercent, CertOn: c.CertOn, CertDays: c.CertDays, ContainerOn: c.ContainerOn, ServiceOn: c.ServiceOn, RepeatHours: c.RepeatHours}
+	v := alertView{Format: c.Format, URLSet: c.URL != "", Notify: c.Notify, DiskOn: c.DiskOn, DiskPercent: c.DiskPercent, CertOn: c.CertOn, CertDays: c.CertDays, ContainerOn: c.ContainerOn, ServiceOn: c.ServiceOn, SiteOn: c.SiteOn, RepeatHours: c.RepeatHours}
 	if u, e := url.Parse(c.URL); e == nil {
 		v.URLHost = u.Host
 	}
@@ -647,7 +655,7 @@ func (a *agent) alertSave(w http.ResponseWriter, r *http.Request) error {
 	}
 	cfg.Format, cfg.Notify = req.Format, req.Notify
 	cfg.DiskOn, cfg.DiskPercent, cfg.CertOn, cfg.CertDays = req.DiskOn, req.DiskPercent, req.CertOn, req.CertDays
-	cfg.ContainerOn, cfg.ServiceOn, cfg.RepeatHours = req.ContainerOn, req.ServiceOn, req.RepeatHours
+	cfg.ContainerOn, cfg.ServiceOn, cfg.SiteOn, cfg.RepeatHours = req.ContainerOn, req.ServiceOn, req.SiteOn, req.RepeatHours
 	if e = atomicJSON(a.alertConfigPath(), cfg, 0600); e != nil {
 		return e
 	}

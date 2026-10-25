@@ -19,6 +19,7 @@ type agent struct {
 	jobs           *jobQueue
 	mu             sync.Mutex
 	metrics        *hostSampler
+	history        *historyStore
 	runner         func(time.Duration, string, ...string) (string, error)
 	stream         func(ctx context.Context, dir string, out io.Writer, secrets []string, name string, args ...string) error
 	capture        func(time.Duration, string, ...string) (string, error)
@@ -57,6 +58,11 @@ type agent struct {
 	stackErr       map[string]string
 	access         accessState
 	accessRun      func(ctx context.Context, systemdRun string, script []byte, env []string, out io.Writer, args ...string) (int, error)
+	invHosts       []string
+	invSources     []caddyConfig
+	invErr         error
+	lookup         func(ctx context.Context, host string) ([]string, error)
+	dns            dnsCache
 	healthHTTPS    string
 	healthHTTP     string
 	health         healthCache
@@ -77,6 +83,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	if e != nil {
 		return nil, e
 	}
+	a.history = newHistoryStore(historyPath(cfg.State))
 	if e = os.MkdirAll(filepath.Join(cfg.State, "backups"), 0700); e != nil {
 		return nil, e
 	}
@@ -128,6 +135,8 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /projects/{name}/action", endpoint(a.projectAction))
 	m.HandleFunc("GET /sites", endpoint(a.siteList))
 	m.HandleFunc("GET /sites/health", endpoint(a.siteHealthStatus))
+	m.HandleFunc("GET /sites/dns", endpoint(a.siteDNSStatus))
+	m.HandleFunc("GET /logs", endpoint(a.serviceLogs))
 	m.HandleFunc("POST /sites", endpoint(a.siteSave))
 	m.HandleFunc("POST /sites/{id}/toggle", endpoint(a.siteToggle))
 	m.HandleFunc("DELETE /sites/{id}", endpoint(a.siteDelete))
@@ -147,6 +156,8 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /apps", endpoint(a.appList))
 	m.HandleFunc("POST /apps", endpoint(a.appInstall))
 	m.HandleFunc("POST /apps/{id}/action", endpoint(a.appAction))
+	m.HandleFunc("GET /apps/{id}/settings", endpoint(a.appSettings))
+	m.HandleFunc("POST /apps/{id}/settings", endpoint(a.appSettingsSave))
 	m.HandleFunc("GET /apps/{id}/credentials", endpoint(a.appCredentials))
 	m.HandleFunc("GET /databases", endpoint(a.databaseList))
 	m.HandleFunc("POST /databases/{id}/query", endpoint(a.databaseQuery))
@@ -156,6 +167,11 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /backups/{id}/download", endpoint(a.backupDownload))
 	m.HandleFunc("DELETE /backups/{id}", endpoint(a.backupDelete))
 	m.HandleFunc("POST /backups/{id}/restore", endpoint(a.backupRestore))
+	m.HandleFunc("POST /backups/{id}/upload", endpoint(a.backupUpload))
+	m.HandleFunc("GET /history", endpoint(a.historyGet))
+	m.HandleFunc("GET /offsite", endpoint(a.offsiteGet))
+	m.HandleFunc("POST /offsite", endpoint(a.offsiteSave))
+	m.HandleFunc("POST /offsite/test", endpoint(a.offsiteTest))
 	m.HandleFunc("GET /schedules", endpoint(a.scheduleList))
 	m.HandleFunc("POST /schedules", endpoint(a.scheduleSave))
 	m.HandleFunc("POST /schedules/{id}/toggle", endpoint(a.scheduleToggle))

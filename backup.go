@@ -37,6 +37,9 @@ type backupMeta struct {
 	Size     int64     `json:"size"`
 	SHA256   string    `json:"sha256"`
 	Created  time.Time `json:"created"`
+	// Remote is when the off-site copy finished; RemoteError is why the last upload failed.
+	Remote      *time.Time `json:"remote,omitempty"`
+	RemoteError string     `json:"remote_error,omitempty"`
 }
 
 // dataPart is a container directory holding an app's persistent state.
@@ -809,9 +812,10 @@ func (a *agent) backupCreate(w http.ResponseWriter, r *http.Request) error {
 // startBackup validates the request and runs the backup as a job. done, if
 // given, receives the finished backup (or the error) from inside the job.
 func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job, error) {
-	finish := func(out *limitedBuffer, meta backupMeta, e error) error {
+	finish := func(ctx context.Context, out *limitedBuffer, meta backupMeta, e error) error {
 		if e == nil {
 			fmt.Fprintf(out, "备份完成：%s\n", meta.ID)
+			a.afterBackup(ctx, out, meta)
 		}
 		if done != nil {
 			done(meta, e)
@@ -831,7 +835,7 @@ func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job,
 		}
 		return a.jobs.startWithin(backupTimeout, "备份 · 网站 · "+s.Name, func(ctx context.Context, out *limitedBuffer) error {
 			meta, e := a.backupSite(ctx, out, s, spec.Tag)
-			return finish(out, meta, e)
+			return finish(ctx, out, meta, e)
 		})
 	case "app":
 		if e := requireName(spec.Target); e != nil {
@@ -848,7 +852,7 @@ func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job,
 			} else {
 				a.releaseApp(rec.ID, "")
 			}
-			return finish(out, meta, e)
+			return finish(ctx, out, meta, e)
 		})
 		if e != nil {
 			a.releaseApp(rec.ID, "")
@@ -871,7 +875,7 @@ func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job,
 		}
 		return a.jobs.startWithin(backupTimeout, "备份 · 数据库 · "+record.Name+" / "+spec.Database, func(ctx context.Context, out *limitedBuffer) error {
 			meta, e := a.backupDatabase(ctx, out, spec.Target, spec.Database, spec.Tag)
-			return finish(out, meta, e)
+			return finish(ctx, out, meta, e)
 		})
 	}
 	return job{}, bad(400, "备份类型无效")

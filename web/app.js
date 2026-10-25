@@ -64,6 +64,7 @@ const routes = {
   jobs: ['任务', '每一次部署、备份和容器操作的执行记录。', 'activity', 'logs'],
   audit: ['操作日志', '谁在什么时间、从哪里做了什么修改，以及结果。', 'file', 'logs'],
   logins: ['登录日志', '登录、退出和再次验证密码失败的记录。', 'lock', 'logs'],
+  syslog: ['服务日志', 'Caddy、面板、Docker 等服务最近的运行日志，遇到问题先看这里。', 'terminal', 'logs'],
   security: ['安全', '管理员密码、两步验证与面板的权限边界。', 'shield', 'settings'],
   access: ['公网入口', '用域名或服务器 IP 通过 HTTPS 访问面板。', 'globe', 'settings'],
   upgrade: ['版本升级', '检查新版本，校验后在面板内一键升级。', 'refresh', 'settings'],
@@ -190,7 +191,7 @@ function drawChrome() {
   $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
   $('#page-description').textContent = r[1]; $('#page-bar').hidden = state.route === 'overview';
 }
-const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, security: securityPage, access: accessPage, upgrade: upgradePage });
+const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, syslog: syslogPage, security: securityPage, access: accessPage, upgrade: upgradePage });
 async function render() {
   clearPage(); const epoch = state.epoch; drawChrome(); $('#connection-error').hidden = true;
   $('#page-actions').replaceChildren(); view.replaceChildren(el('div','skeleton','正在加载…'));
@@ -210,7 +211,7 @@ function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || 
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).
-function chart(history, series, max = 100) {
+function chart(history, series, max = 100, withDate = false) {
   const canvas = el('canvas','chart'); canvas.setAttribute('aria-label',series.map(s=>s[1]).join(' / ')); canvas.setAttribute('role','img');
   canvas._draw = () => {
     const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1, w = rect.width, h = 220, left = 58, right = 10, top = 28, bottom = 26;
@@ -221,7 +222,7 @@ function chart(history, series, max = 100) {
     for (let i = 0; i <= 4; i++) { const y = top + (h - top - bottom) * i / 4; ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.fillText(max ? `${Math.round(peak * (1 - i / 4))}%` : `${bytes(peak * (1 - i / 4))}/s`, left - 8, y); }
     let lx = left; series.forEach(([, label, color]) => { ctx.fillStyle = cssVar(color); ctx.fillRect(lx, 8, 12, 3); ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(label, lx + 18, 10); lx += ctx.measureText(label).width + 40; });
     if (history.length < 2) { ctx.textAlign = 'center'; ctx.fillText('等待更多采样…', (left + w) / 2, h / 2); return; }
-    const time = s => new Date(s).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const time = s => withDate ? new Date(s).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : new Date(s).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
     ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(time(history[0].at), left, h - 10); ctx.textAlign = 'right'; ctx.fillText(time(history[history.length - 1].at), w - right, h - 10);
     series.forEach(([key, , colorVar]) => {
       const color = cssVar(colorVar), points = history.map((p, i) => [left + (w - left - right) * i / (history.length - 1), h - bottom - Math.min(peak, Number(p[key] || 0)) / peak * (h - top - bottom)]);
@@ -243,13 +244,30 @@ function healthTag(h) { if (!h) return tag('检查中…', 'blue'); const [text,
 function healthNote(h) { return ({ up: h.scheme ? `${h.scheme.toUpperCase()} · 返回 ${h.code}` : '正常', error: `网站后端没有正常响应（${h.code || '无'}）`, down: '本机的 Caddy 没有应答', tls: '证书还没签发好', unknown: '通配符等地址不检查' })[h.state] || ''; }
 // With several domains the first one that is not running decides what is shown.
 function worstHealth(map, domains) { const list = (domains || []).map(d => map[String(d).toLowerCase()]).filter(Boolean); return list.find(h => h.state !== 'up') || list[0]; }
+// Where each domain points, as a small line under the site: this machine, another one (normal behind a relay or CDN), or nowhere.
+function dnsLines(domains) { const box = el('div', 'dns-lines'); box.dataset.domains = JSON.stringify(domains); box.append(el('small', 'muted', '正在查询解析…')); return box; }
+function fillDNS(boxes, map) {
+  boxes.forEach(box => {
+    const domains = JSON.parse(box.dataset.domains); box.replaceChildren();
+    if (!map) { box.append(el('small', 'muted', '解析查询失败')); return; }
+    domains.forEach(d => {
+      const v = map[String(d).toLowerCase()]; if (!v) return;
+      const text = { local: `${(v.ips || [])[0] || ''} · 指向本机`, other: `${(v.ips || []).join('、')} · 指向其它服务器（经线路机或 CDN 时正常）`, none: '没有解析记录，请检查域名的 A 记录', error: '解析查询失败，稍后再试' }[v.state] || '';
+      const line = el('small', `dns-line ${v.state === 'local' ? 'ok' : v.state === 'other' ? 'info' : 'bad'}`, domains.length > 1 ? `${d} → ${text}` : `→ ${text}`); box.append(line);
+    });
+  });
+}
+async function loadSiteDNS(boxes) { if (!boxes.length) return; try { const d = await api('/sites/dns'); fillDNS(boxes, d.hosts || {}); } catch (e) { if (!(e instanceof Superseded)) fillDNS(boxes, null); } }
 async function loadSiteHealth(apply) { try { const d = await api('/sites/health'); apply(d.hosts || {}); } catch (e) { if (!(e instanceof Superseded)) apply(null); } }
 function inventorySites(data) {
   return [...(data.sites || []), ...(data.external_hosts || []).map(host=>({name:host,domains:[host],kind:'existing',readonly:true,sources:(data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config)}))];
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
 async function overviewPage() {
-  const data = await api('/overview'), n = el('div'); let choice = 0;
+  const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0;
+  const ranges = [['live', '实时'], ['1h', '1 小时'], ['6h', '6 小时'], ['24h', '24 小时'], ['7d', '7 天']];
+  async function loadPast() { if (range === 'live') return; const want = range; try { const r = await api(`/history?range=${want}`); if (range === want) { past = r; pastAt = Date.now(); drawMonitor && drawMonitor(); } } catch (e) { toast(e.message, true); } }
+  let drawMonitor = null;
   function paint(d) {
     const visibleSites = inventorySites(d), h = d.host || {}, disk = h.disk || {}, containers = d.containers || [], running = containers.filter(c => c.state === 'running').length;
     state.sites = visibleSites; state.apps = d.apps || []; setSiteBadge(d.sites_error || d.caddy_error ? null : visibleSites.length); setAlertBadge(d.alerts_active); setUpgradeBadge(d.update_available);
@@ -270,11 +288,15 @@ async function overviewPage() {
     status.append(gg);
 
     const choices = [['CPU', [['cpu','CPU','--primary']], 100], ['内存', [['memory','内存','--success']], 100], ['流量', [['rx','下行','--primary'], ['tx','上行','--warning']], 0]];
+    if (range !== 'live') choices.push(['磁盘', [['disk','磁盘 /','--warning']], 100]);
+    if (choice >= choices.length) choice = 0;
     const tabs = el('div','segmented'), now = el('div','monitor-now'), head = el('div','monitor-head'), box = el('div');
     now.append(...[['↓ 下行', `${bytes(h.rx)}/s`], ['↑ 上行', `${bytes(h.tx)}/s`], ['累计', `${bytes(h.rx_total)} / ${bytes(h.tx_total)}`]].map(([a, b]) => { const s = el('span','',a + ' '); s.append(el('b','',b)); return s; }));
-    const choose = i => { choice = i; tabs.replaceChildren(...choices.map((c, j) => { const b = button(c[0], () => choose(j), 'quiet small'); b.classList.toggle('active', j === i); return b; })); box.replaceChildren(chart(h.history || [], choices[i][1], choices[i][2])); };
+    const choose = i => { choice = i; tabs.replaceChildren(...choices.map((c, j) => { const b = button(c[0], () => choose(j), 'quiet small'); b.classList.toggle('active', j === i); return b; })); drawMonitor = () => { const live = range === 'live'; if (!live && (!past || past.range !== range)) { box.replaceChildren(el('p', 'muted', '加载中…')); return; } box.replaceChildren(live || past.points.length ? chart(live ? h.history || [] : past.points, choices[i][1], choices[i][2], !live && range !== '1h' && range !== '6h') : empty('还没有历史数据', '面板每分钟记录一次，稍后再来看。')); }; drawMonitor(); };
+    const rangeTabs = el('div', 'segmented'); rangeTabs.append(...ranges.map(([v, t]) => { const b = button(t, () => { range = v; past = null; paint(d); }, 'quiet small'); b.classList.toggle('active', v === range); return b; }));
     choose(choice); head.append(tabs, now);
-    const monitor = panel('监控', tag('最近 10 分钟')); monitor.append(head, box, el('p','chart-caption','每 5 秒采样一次，保存在内存中，面板重启后重新采样。流量已排除容器虚拟网卡。'));
+    if (range !== 'live' && (!past || Date.now() - pastAt > 60000)) loadPast();
+    const monitor = panel('监控', rangeTabs); monitor.append(head, box, el('p','chart-caption', range === 'live' ? '实时：每 5 秒采样，保存最近 10 分钟，面板重启后重新开始。流量已排除容器虚拟网卡。' : '历史：每分钟记录一次平均值，保存 7 天，重启不丢失；时间较长时会合并成更粗的点。'));
 
     const dockerPanel = panel('容器', button('全部容器', () => navigate('containers'), 'quiet small'));
     if (d.docker_error) dockerPanel.append(note(d.docker_error, true));
@@ -301,12 +323,12 @@ async function overviewPage() {
   const epoch = state.epoch; interval(async () => { const d = await api('/overview'); if (epoch === state.epoch) { paint(d); $('#connection-error').hidden = true; } }, 10000); return n;
 }
 async function sitesPage() {
-  const data=await api('/sites'), rows=data.sites; state.sites=inventorySites(data); setSiteBadge(data.error?null:inventorySites(data).length); action(button('创建网站',()=>siteForm(),'primary','plus')); const n=el('div'),slots=[],watchHealth=()=>{if(slots.length)loadSiteHealth(map=>slots.forEach(({domains,slot})=>slot.replaceChildren(map?healthTag(worstHealth(map,domains)||{state:'unknown'}):tag('未知'))));};n.append(note('网站使用系统 Caddy 自动签发 HTTPS。域名需先解析到服务器，80/443 需已可达。面板只管理自己创建的配置。'));
+  const data=await api('/sites'), rows=data.sites; state.sites=inventorySites(data); setSiteBadge(data.error?null:inventorySites(data).length); action(button('创建网站',()=>siteForm(),'primary','plus')); const n=el('div'),slots=[],dnsBoxes=[],watchHealth=()=>{loadSiteDNS(dnsBoxes);if(slots.length)loadSiteHealth(map=>slots.forEach(({domains,slot})=>slot.replaceChildren(map?healthTag(worstHealth(map,domains)||{state:'unknown'}):tag('未知'))));};n.append(note('网站使用系统 Caddy 自动签发 HTTPS。域名需先解析到服务器，80/443 需已可达。面板只管理自己创建的配置。'));
   if(data.error)n.append(note(data.error,true));
   if(data.caddy_sources?.length){const sources=panel('Caddy 配置来源',tag(`${data.caddy_sources.length} 份配置`,'blue'));sources.classList.add('existing-site-list');sources.append(el('p','muted','从系统主配置及运行中的 Caddy 进程发现。这里只读取配置文件；原有实例不由面板重载，磁盘配置可能与当前内存配置不同。'));for(const source of data.caddy_sources){const row=el('div','resource-row'),text=el('div');text.append(el('strong','resource-name',source.config),el('small','muted',`PID ${source.pids?.length?source.pids.join(', '):'未关联'} · ${source.error?'读取失败':`${source.hosts?.length || 0} 个主机匹配`} · ${source.primary?'面板连接的主配置':'原有实例，只读'}`));if(source.error)text.append(el('p','form-error',source.error));row.append(text,tag(source.error?'读取失败':'已读取',source.error?'bad':'ok'));sources.append(row);}n.append(sources);}
-  if(data.external_hosts?.length){const existing=panel('原有 Caddy 网站',tag(`${data.external_hosts.length} 个域名`,'blue'));existing.classList.add('existing-site-list');existing.append(el('p','muted','已汇总系统主配置和其他运行中 Caddy 实例的配置。按域名去重；配置存在不代表网站已通过健康检查。'));for(const host of data.external_hosts){const r=el('div','resource-row'),t=el('div');t.append(el('strong','resource-name',host),el('small','muted','来源：'+((data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config).join(' · ') || '系统 Caddy')));const slot=el('span');slot.append(healthTag(null));slots.push({domains:[host],slot});r.append(t,slot);existing.append(r);}n.append(existing);}
+  if(data.external_hosts?.length){const existing=panel('原有 Caddy 网站',tag(`${data.external_hosts.length} 个域名`,'blue'));existing.classList.add('existing-site-list');existing.append(el('p','muted','已汇总系统主配置和其他运行中 Caddy 实例的配置。按域名去重；配置存在不代表网站已通过健康检查。'));for(const host of data.external_hosts){const r=el('div','resource-row'),t=el('div');t.append(el('strong','resource-name',host),el('small','muted','来源：'+((data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config).join(' · ') || '系统 Caddy')));const slot=el('span'),dns=dnsLines([host]);dnsBoxes.push(dns);t.append(dns);slot.append(healthTag(null));slots.push({domains:[host],slot});r.append(t,slot);existing.append(r);}n.append(existing);}
   if(!rows.length){n.append(note(data.external_hosts?.length?'上方是已识别的原有网站。你还没有通过 JunPanel 新建网站；原有网站配置继续保留。':'尚未通过 JunPanel 创建网站，可创建静态网站或反向代理。'));watchHealth();return n;}
-  const t=table(['网站 / 域名','类型','目录 / 上游','状态','管理']); rows.forEach(s=>{const name=el('div','site-title');name.append(el('strong','',s.name),siteDomains(s));const controls=[button('编辑',()=>siteForm(s),'quiet small'),button(s.enabled?'停用':'启用',()=>confirm(`${s.enabled?'停用':'启用'} ${s.name}`, '配置通过校验后，将重载现有 Caddy。',()=>mutation(`/sites/${s.id}/toggle`,{})),'quiet small')];if(s.kind==='static')controls.unshift(button('文件',()=>{state.filePath=`/sites/${s.id}`;return navigate('files');},'quiet small'));controls.push(button('移除',()=>confirm(`移除 ${s.name}`,'仅移除站点配置并重载 Caddy；静态文件会保留。',()=>mutation(`/sites/${s.id}`,undefined,'DELETE'),true),'quiet small'));const status=el('div','table-ops');if(s.enabled&&!s.readonly){const slot=el('span');slot.append(healthTag(null));slots.push({domains:s.domains,slot});status.append(slot);}else status.append(tag(s.readonly?'原有配置':'已停用',s.readonly?'blue':''));if(s.auth)status.append(tag('需要密码','blue'));if(s.allow_ips?.length)status.append(tag(`限 ${s.allow_ips.length} 个地址`,'blue'));cells(t.body,name,{static:'静态网站',proxy:'反向代理',redirect:'跳转网站'}[s.kind] || s.kind,el('code','',s.kind==='static'?s.root:s.kind==='redirect'?`→ ${s.target}${s.keep_path?'（保留路径）':''} · ${s.permanent?301:302}`:s.upstream),status,ops(...controls));});n.append(t.n);watchHealth();return n;
+  const t=table(['网站 / 域名','类型','目录 / 上游','状态','管理']); rows.forEach(s=>{const name=el('div','site-title'),dnsBox=dnsLines(s.domains);if(s.enabled&&!s.readonly)dnsBoxes.push(dnsBox);name.append(el('strong','',s.name),siteDomains(s));if(s.enabled&&!s.readonly)name.append(dnsBox);const controls=[button('编辑',()=>siteForm(s),'quiet small'),button(s.enabled?'停用':'启用',()=>confirm(`${s.enabled?'停用':'启用'} ${s.name}`, '配置通过校验后，将重载现有 Caddy。',()=>mutation(`/sites/${s.id}/toggle`,{})),'quiet small')];if(s.kind==='static')controls.unshift(button('文件',()=>{state.filePath=`/sites/${s.id}`;return navigate('files');},'quiet small'));controls.push(button('移除',()=>confirm(`移除 ${s.name}`,'仅移除站点配置并重载 Caddy；静态文件会保留。',()=>mutation(`/sites/${s.id}`,undefined,'DELETE'),true),'quiet small'));const status=el('div','table-ops');if(s.enabled&&!s.readonly){const slot=el('span');slot.append(healthTag(null));slots.push({domains:s.domains,slot});status.append(slot);}else status.append(tag(s.readonly?'原有配置':'已停用',s.readonly?'blue':''));if(s.auth)status.append(tag('需要密码','blue'));if(s.allow_ips?.length)status.append(tag(`限 ${s.allow_ips.length} 个地址`,'blue'));cells(t.body,name,{static:'静态网站',proxy:'反向代理',redirect:'跳转网站'}[s.kind] || s.kind,el('code','',s.kind==='static'?s.root:s.kind==='redirect'?`→ ${s.target}${s.keep_path?'（保留路径）':''} · ${s.permanent?301:302}`:s.upstream),status,ops(...controls));});n.append(t.n);watchHealth();return n;
 }
 function siteForm(site, app) {
   const name=field('网站名称',site?.name || app?.name || '',{max:60}), domains=field('域名',site?.domains.join('\n') || '',{area:true,rows:2,placeholder:'example.com\nwww.example.com',help:'每行一个域名，中文域名请先转换为 Punycode。'}), kind=field('网站类型',site?.kind || 'proxy',{select:[['static','静态网站'],['proxy','反向代理'],['redirect','跳转网站']]}), upstream=field('上游地址',site?.upstream || (app?`http://127.0.0.1:${app.port}`:'http://127.0.0.1:8080'),{help:'完整的 http(s)://主机:端口；不包含路径。'});
@@ -327,10 +349,26 @@ async function appsPage() {
     const chips=el('div','chips'),grid=el('div','catalog-grid');let category='全部';const draw=()=>{chips.replaceChildren(...categories.map(c=>{const b=button(c,()=>{category=c;draw();},'quiet small');b.classList.add('chip');b.classList.toggle('active',category===c);return b;}));grid.replaceChildren();catalog.filter(t=>category==='全部'||t.category===category).forEach(t=>{const card=el('section','app-card'),head=el('div','app-card-head'),title=el('div');title.append(el('h3','',t.name),el('small','muted',t.category));head.append(appLogo(t),title);if(t.backup)head.append(tag('可备份','ok'));const bottom=el('div','app-card-bottom'),have=t.multi?null:apps.find(x=>x.template===t.key&&!x.removed),install=have?button('已安装',()=>{},'secondary small'):button('安装',()=>installApp(t),'primary small');if(have){install.disabled=true;install.title=`已安装为“${have.name}”，可在“已安装”页管理；卸载后才能再次安装`;card.classList.add('installed');}bottom.append(el('code','',t.image),button('教程',()=>appGuide(t),'quiet small','info'),install);card.append(head,el('p','muted',t.summary),bottom);grid.append(card);});};draw();n.append(chips,grid);
   } else {
     if(!apps.length){const e=empty('还没有安装应用','到“全部应用”中选择一个开始部署。');e.append(button('去安装',()=>navigate('apps'),'primary'));n.append(e);}
-    const grid=el('div','installed-grid');apps.forEach(a=>{const t=catalog.find(t=>t.key===a.template),card=el('section','installed-card'),head=el('div','installed-header'),name=el('div');name.append(el('h3','',a.name),el('small','muted',t?.name || a.template));head.append(appLogo(t || {key:a.template}),name,tag(a.busy?'任务中':a.removed?'已卸载':a.docker_available===false?'状态未知':`${a.running || 0}/${a.containers || 0} 运行`,a.busy?'blue':a.removed?'':a.running?'ok':'warn'));card.append(head,el('div','installed-meta',`项目 ${a.project} · 本机端口 ${a.port}`));if(a.last_error)card.append(el('p','error-text',a.last_error));const controls=el('div','installed-actions');controls.append(button('连接信息',()=>credentialForm(a),'quiet small'),button('使用教程',()=>t?appGuide(t):toast('此应用没有教程',true),'quiet small'));if(a.removed)controls.append(button('恢复部署',()=>appAction(a,'restore'),'quiet small'));else{if(!a.database)controls.append(button('绑定域名',()=>siteForm(null,a),'quiet small'));else controls.append(button('管理数据库',()=>navigate('databases'),'quiet small'));[['升级','upgrade'],['启动','start'],['停止','stop'],['重启','restart'],['重新部署','deploy'],['卸载','remove']].forEach(([text,v])=>controls.append(button(text,()=>appAction(a,v,t),'quiet small')));}$$('button',controls).forEach(b=>b.disabled=!!a.busy);card.append(controls);grid.append(card);});if(apps.length)n.append(grid,note('“重新部署”使用本地已有镜像；“升级”会拉取镜像的最新版本并重建容器。'));
+    const grid=el('div','installed-grid');apps.forEach(a=>{const t=catalog.find(t=>t.key===a.template),card=el('section','installed-card'),head=el('div','installed-header'),name=el('div');name.append(el('h3','',a.name),el('small','muted',t?.name || a.template));head.append(appLogo(t || {key:a.template}),name,tag(a.busy?'任务中':a.removed?'已卸载':a.docker_available===false?'状态未知':`${a.running || 0}/${a.containers || 0} 运行`,a.busy?'blue':a.removed?'':a.running?'ok':'warn'));card.append(head,el('div','installed-meta',`项目 ${a.project} · 本机端口 ${a.port}`));if(a.last_error)card.append(el('p','error-text',a.last_error));const controls=el('div','installed-actions');controls.append(button('连接信息',()=>credentialForm(a),'quiet small'),button('设置',()=>appSettings(a),'quiet small'),button('使用教程',()=>t?appGuide(t):toast('此应用没有教程',true),'quiet small'));if(a.removed)controls.append(button('恢复部署',()=>appAction(a,'restore'),'quiet small'));else{if(!a.database)controls.append(button('绑定域名',()=>siteForm(null,a),'quiet small'));else controls.append(button('管理数据库',()=>navigate('databases'),'quiet small'));[['升级','upgrade'],['启动','start'],['停止','stop'],['重启','restart'],['重新部署','deploy'],['卸载','remove']].forEach(([text,v])=>controls.append(button(text,()=>appAction(a,v,t),'quiet small')));}$$('button',controls).forEach(b=>b.disabled=!!a.busy);card.append(controls);grid.append(card);});if(apps.length)n.append(grid,note('“重新部署”使用本地已有镜像；“升级”会拉取镜像的最新版本并重建容器。'));
   }return n;
 }
 // A step-by-step guide: the common steps first, then the app's own.
+// Port, a few common switches and extra environment variables of an installed app; saving redeploys it.
+async function appSettings(app) {
+  const data = await api(`/apps/${app.id}/settings`), presetKeys = new Set(data.presets.map(p => p.env));
+  const port = field('本机端口', String(data.port), { type: 'number', help: '应用监听在 127.0.0.1 的此端口。已绑定域名的网站需要同步修改上游地址。' });
+  port.input.min = 1024; port.input.max = 65535;
+  const presets = data.presets.map(p => { const f = field(p.label, data.env[p.env] || '', { select: p.options.map(o => [o.value, o.label]), required: false, help: p.help }); return { p, f }; });
+  const extra = Object.keys(data.env).filter(k => !presetKeys.has(k)).sort().map(k => `${k}=${data.env[k]}`).join('\n');
+  const env = field('额外环境变量', extra, { area: true, rows: 6, required: false, placeholder: 'NAME=value，每行一个', help: '密码类变量显示为 ••••••••，保持不变即不修改。面板自动生成的数据库账号和密码不能在这里改。' });
+  env.input.spellcheck = false;
+  formModal(`${app.name} · 设置`, [port, ...presets.map(x => x.f), env], '保存并重新部署', async () => {
+    const vars = {};
+    presets.forEach(({ p, f }) => { if (f.input.value) vars[p.env] = f.input.value; });
+    env.input.value.split('\n').map(l => l.trim()).filter(Boolean).forEach(l => { const i = l.indexOf('='); if (i < 1) throw new Error(`格式应为 NAME=value：${l.slice(0, 40)}`); vars[l.slice(0, i).trim()] = l.slice(i + 1); });
+    await mutation(`/apps/${app.id}/settings`, { port: Number(port.input.value), env: vars });
+  }, { note: '保存后会用新设置重新部署此应用，期间会短暂停止；数据卷不受影响。' });
+}
 function appGuide(t) {
   const web = !t.database, steps = ['在应用商店点“安装”，名称、标识、端口保持默认即可（端口被占用时换一个）。', '等待任务完成：弹窗顶部变成绿色的“已完成”。大镜像（如 Nextcloud、Open WebUI）要几分钟。'];
   if (web) steps.push('从外面访问：先把域名解析到你的服务器（你用线路机中转时，解析到线路机），再到“应用商店 → 已安装”点这个应用的“绑定域名”，上游地址保持默认，保存后会自动申请 HTTPS 证书。“访问用户名 / 密码”两栏请留空。');
@@ -482,6 +520,29 @@ async function auditRows(kind, headers, row) {
 const auditResultTag = e => tag(e.result === 'ok' ? '成功' : '失败', e.result === 'ok' ? 'ok' : 'bad');
 function auditPage() { return auditRows('operation', ['时间', '操作', '对象', '来源 IP', '结果'], e => [date(e.time), titleCell(e.action, `${e.method} ${e.path}`, 'activity'), e.detail || '—', el('code', '', e.ip), auditResultTag(e)]); }
 function loginsPage() { return auditRows('login', ['时间', '事件', '来源 IP', '结果'], e => [date(e.time), e.action, el('code', '', e.ip), auditResultTag(e)]); }
+async function syslogPage() {
+  const n = el('div'), units = [['caddy', 'Caddy（网站）'], ['agent', '面板管理代理'], ['web', '面板网页服务'], ['docker', 'Docker'], ['upgrade', '面板升级']];
+  const unit = field('服务', state.syslog?.unit || 'caddy', { select: units }), lines = field('行数', state.syslog?.lines || '200', { select: [['100', '最近 100 行'], ['200', '最近 200 行'], ['500', '最近 500 行'], ['1000', '最近 1000 行']] });
+  const level = field('级别', state.syslog?.level ?? '', { select: [['', '全部'], ['warning', '警告及以上'], ['err', '仅错误']], required: false }), search = field('搜索', state.syslog?.search || '', { required: false, max: 100, placeholder: '输入关键字，例如域名或 error' });
+  const bar = el('div', 'database-controls'), out = el('pre', 'log-view', '正在读取…'), info = el('p', 'muted', ''), auto = field('自动刷新', state.syslog?.auto ? '1' : '0', { select: [['0', '关闭'], ['1', '每 5 秒']] });
+  out.style.maxHeight = '60vh'; out.style.minHeight = '240px'; out.style.overflow = 'auto';
+  const load = async () => {
+    state.syslog = { unit: unit.val(), lines: lines.val(), level: level.input.value, search: search.val(), auto: auto.input.value === '1' };
+    const q = new URLSearchParams({ unit: unit.val(), lines: lines.val() }); if (level.input.value) q.set('level', level.input.value); if (search.val()) q.set('search', search.val());
+    try {
+      const d = await api(`/logs?${q}`), atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+      out.textContent = d.text || '没有符合条件的日志。'; info.textContent = `${d.label} · ${d.lines} 行${d.trimmed ? '（内容过长，只显示最后一部分）' : ''} · 更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+      if (atBottom || !out.dataset.shown) out.scrollTop = out.scrollHeight; out.dataset.shown = '1';
+    } catch (e) { if (!(e instanceof Superseded)) { out.textContent = e.message; info.textContent = ''; } }
+  };
+  [unit, lines, level].forEach(f => f.input.onchange = () => { out.dataset.shown = ''; load(); }); search.input.onkeydown = e => { if (e.key === 'Enter') { out.dataset.shown = ''; load(); } };
+  auto.input.onchange = load;
+  const go = button('刷新', () => { out.dataset.shown = ''; return load(); }, 'primary', 'refresh');
+  const grid = el('div', 'form-grid'); [unit, lines, level, search, auto].forEach(f => grid.append(f.n)); search.n.classList.add('span-2');
+  bar.append(go); n.append(note('日志里可能含有域名、IP 等信息，请勿公开贴出。读取的是系统日志的最近部分，搜索不区分大小写。'), grid, bar, info, out);
+  interval(async () => { if (auto.input.value === '1') await load(); }, 5000);
+  await load(); return n;
+}
 async function accessPage() {
   const data = await api('/access'), n = el('div', 'security-grid'), here = location.hostname;
   action(button('刷新', render, 'secondary', 'refresh'));
@@ -612,8 +673,9 @@ function uploadFile(target, file) {
 const backupTypes = { site: '网站文件', app: '应用数据', database: '数据库' };
 async function backupsPage() {
   const data = await api('/backups'), rows = data.backups, n = el('div');
-  action(button('刷新', render, 'secondary', 'refresh'), button('新建备份', newBackup, 'primary', 'plus'));
-  n.append(note(`备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份，请及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
+  const offsite = await api('/offsite');
+  action(button('刷新', render, 'secondary', 'refresh'), button('异地备份', () => offsiteForm(offsite), 'secondary', 'disk'), button('新建备份', newBackup, 'primary', 'plus'));
+  n.append(note(offsite.config.type ? `异地备份已开启（${offsite.config.type === 's3' ? 'S3' : 'WebDAV'}${offsite.config.auto ? '，新备份自动上传' : '，手动上传'}）。本地备份保存在 ${data.directory}。` : `备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份：点“异地备份”设置 WebDAV 或 S3 存储，或及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
   if (!rows.length) { n.append(empty('还没有备份', '点击“新建备份”，为网站文件、应用数据或数据库留一份副本。')); return n; }
   const t = table(['时间', '类型', '对象', '大小', '说明', '操作']);
   rows.forEach(b => {
@@ -621,11 +683,31 @@ async function backupsPage() {
     what.append(el('strong', '', b.name), el('small', 'muted', b.type === 'database' ? `${b.target} / ${b.database}` : b.target));
     download.removeAttribute('target');
     buttons.push(button('恢复', () => b.type === 'database' ? restoreDatabaseBackup(b) : restoreBackup(b), 'quiet small'));
+    if (offsite.config.type) buttons.push(button(b.remote ? '重新上传' : '上传', () => confirm('上传到异地备份', '将把这份备份上传到已设置的异地存储，同名文件会被覆盖。', () => mutation(`/backups/${b.id}/upload`, {})), 'quiet small'));
     buttons.push(button('删除', () => confirm('删除备份', '将永久删除这份备份文件，无法恢复。', () => mutation(`/backups/${b.id}`, undefined, 'DELETE'), true), 'quiet small'));
-    cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), b.note || '手动备份', ops(...buttons));
+    cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), (b.note || '手动备份') + (b.remote ? ' · 已异地备份' : ''), ops(...buttons));
+    if (b.remote_error) t.body.lastElementChild.children[4].append(el('small', 'error-text', ` 异地上传失败：${b.remote_error}`));
   });
   n.append(t.n);
   return n;
+}
+function offsiteForm(current) {
+  const c = current.config, kind = field('异地存储', c.type, { select: [['', '不使用'], ['webdav', 'WebDAV（坚果云、Nextcloud 等）'], ['s3', 'S3 兼容（AWS、Cloudflare R2、阿里云 OSS、MinIO 等）']], required: false });
+  const url = field('地址', c.url, { type: 'url', required: false, placeholder: 'https://dav.example.com/remote.php/dav/files/me', help: 'WebDAV 填目录地址；S3 填服务端点，如 https://s3.us-east-1.amazonaws.com。' });
+  const user = field('账号 / Access Key', c.user, { required: false, max: 200 });
+  const secret = field('密码 / Secret Key', '', { type: 'password', required: false, max: 500, help: current.has_secret ? '已保存。留空表示不修改。' : '' });
+  secret.input.autocomplete = 'new-password'; user.input.autocomplete = 'off';
+  const bucket = field('存储桶', c.bucket || '', { required: false, max: 63 });
+  const region = field('区域', c.region || 'us-east-1', { required: false, max: 30, help: '多数 S3 兼容服务保留 us-east-1 即可；Cloudflare R2 填 auto；AWS 等按存储桶所在区域填写。' });
+  const prefix = field('目录', c.prefix || 'junpanel', { required: false, max: 200, help: '备份放在此目录下，可用 / 分层。' });
+  const auto = field('新备份自动上传', c.auto ? '1' : '0', { select: [['1', '是（含计划任务产生的备份）'], ['0', '否，只在点“上传”时上传']], required: false });
+  const s3only = [bucket.n, region.n];
+  const sync = () => { const k = kind.input.value; [url.n, user.n, secret.n, prefix.n, auto.n].forEach(x => x.hidden = !k); s3only.forEach(x => x.hidden = k !== 's3'); };
+  kind.input.onchange = sync; sync();
+  const payload = () => ({ type: kind.input.value, url: url.val(), user: user.val(), secret: secret.input.value, bucket: bucket.val(), region: region.val(), prefix: prefix.val(), auto: auto.input.value === '1' });
+  const form = formModal('异地备份', [kind, url, user, secret, bucket, region, prefix, auto], '保存', async () => { await api('/offsite', payload()); closeModal(); toast('异地备份设置已保存'); await render(); }, { note: '备份仍先保存在本机，再上传一份到这里。恢复时使用本机副本；本机副本丢失时，可从异地存储下载文件后在“文件”页处理。密钥只保存在服务器的私有目录，不会再显示。' });
+  const test = button('测试连接', async () => { test.disabled = true; try { await api('/offsite/test', payload()); toast('连接成功，可以上传'); } catch (e) { toast(e.message, true); } finally { test.disabled = false; } }, 'secondary');
+  $('#modal-footer').prepend(test);
 }
 async function newBackup() {
   const [sites, apps, databases, catalog] = await Promise.all([api('/sites'), api('/apps'), api('/databases'), api('/catalog')]);
@@ -763,15 +845,16 @@ async function alertsPage() {
   const cert = field('证书到期', cfg.cert_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] }), certDays = field('证书提前提醒（天）', String(cfg.cert_days), { type: 'number', help: '有效期不足 30 天的短期证书（如 IP 证书）只在最后 1/5 有效期内提醒。' });
   const container = field('容器停止', cfg.container_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] });
   const service = field('Docker 与 Caddy 服务', cfg.service_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']] });
+  const siteWatch = field('网站无法访问', cfg.site_on ? '1' : '0', { select: [['1', '监控'], ['0', '不监控']], help: '面板创建的网站和主 Caddy 配置里的网站，连续约 2 分钟打不开才会告警。' });
   const repeat = field('未解决时的重复提醒间隔（小时）', String(cfg.repeat_hours), { type: 'number' });
   const error = el('div', 'form-error'), save = button('保存设置', () => form.requestSubmit(), 'primary');
   const test = button('发送测试通知', async () => { await api('/alerts/test', {}); toast('测试通知已发送，请到接收端确认'); }, 'secondary');
   form.className = 'form-grid'; url.n.classList.add('span-2'); error.classList.add('span-2');
-  form.append(format.n, notify.n, url.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, repeat.n, error);
+  form.append(format.n, notify.n, url.n, disk.n, diskPercent.n, cert.n, certDays.n, container.n, service.n, siteWatch.n, repeat.n, error);
   form.onsubmit = async e => {
     e.preventDefault(); error.textContent = ''; save.disabled = true;
     try {
-      await api('/alerts/config', { format: format.input.value, url: url.val(), clear_url: false, notify: notify.input.value === '1', disk_on: disk.input.value === '1', disk_percent: Number(diskPercent.val()), cert_on: cert.input.value === '1', cert_days: Number(certDays.val()), container_on: container.input.value === '1', service_on: service.input.value === '1', repeat_hours: Number(repeat.val()) });
+      await api('/alerts/config', { format: format.input.value, url: url.val(), clear_url: false, notify: notify.input.value === '1', disk_on: disk.input.value === '1', disk_percent: Number(diskPercent.val()), cert_on: cert.input.value === '1', cert_days: Number(certDays.val()), container_on: container.input.value === '1', service_on: service.input.value === '1', site_on: siteWatch.input.value === '1', repeat_hours: Number(repeat.val()) });
       toast('设置已保存'); await render();
     } catch (err) { error.textContent = err.message; } finally { save.disabled = false; }
   };
