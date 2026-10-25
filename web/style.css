@@ -696,3 +696,13 @@ main { margin-inline: auto; }
 .side-meter-bar span.warn { background: var(--dot-warn); } .side-meter-bar span.bad { background: var(--dot-bad); }
 .side-meter-row b { font-family: var(--font-mono); font-weight: 500; text-align: right; color: var(--side-strong); }
 @media (max-height: 760px) { .side-meter { display: none !important; } }
+/* Content width grows with very wide screens, so 2K-at-100% and ultrawide monitors are not two thirds empty. */
+main { max-width: clamp(1680px, 82vw, 2400px); }
+/* Phones: the sign-in form fits on the first screen. */
+@media (max-width: 640px) {
+  .login-layout { justify-content: flex-start; padding: 16px 12px; gap: 16px; }
+  .login-brand { padding: 20px 24px; }
+  .login-brand h1 { margin-top: 16px; font-size: 22px; }
+  .login-brand > p, .login-points { display: none; }
+  .login-form { padding: 24px; }
+}
