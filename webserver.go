@@ -129,8 +129,8 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		if file == "" {
 			file = "index.html"
 		}
-		font := fontFile.MatchString(file)
-		if !font && file != "index.html" && file != "app.js" && file != "style.css" && file != "logo.svg" && file != "favicon.svg" && file != "logo-preview.svg" {
+		font, icon := fontFile.MatchString(file), iconFile.MatchString(file)
+		if !font && !icon && file != "index.html" && file != "app.js" && file != "style.css" && file != "logo.svg" && file != "favicon.svg" && file != "logo-preview.svg" {
 			http.NotFound(out, r)
 			return
 		}
@@ -143,7 +143,7 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 			data = versionedIndex(data)
 		}
 		out.Header().Set("Content-Type", mime.TypeByExtension(file[strings.LastIndex(file, "."):]))
-		if font { // the font files never change under the same name; everything else stays no-store
+		if font || icon { // fonts and app icons never change under the same name; everything else stays no-store
 			out.Header().Set("Cache-Control", "public, max-age=86400")
 		}
 		out.Write(data)
@@ -423,6 +423,9 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 
 // fontFile matches the bundled web fonts: web/fonts/<name>.woff2 and nothing else.
 var fontFile = regexp.MustCompile(`^fonts/[a-z0-9-]+\.woff2$`)
+
+// iconFile matches the bundled app logos: web/icons/<template>.svg.
+var iconFile = regexp.MustCompile(`^icons/[a-z0-9-]+\.svg$`)
 
 func init() { mime.AddExtensionType(".woff2", "font/woff2") }
 

@@ -208,7 +208,15 @@ function ops(...buttons) { const n = el('div','table-ops'); n.append(...buttons)
 function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'), texts = el('div'); texts.append(el('strong','',title), el('small','muted',sub)); n.append(icon(symbol),texts); return n; }
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
-function appLogo(t) { return el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); }
+// Bundled logos (web/icons/<template>.svg); any other template shows its initial.
+const appIcons = new Set(["codeserver", "drawio", "excalidraw", "freshrss", "gitea", "gotify", "ittools", "jellyfin", "kuma", "linkding", "memos", "mysql", "n8n", "navidrome", "nextcloud", "ntfy", "openwebui", "postgres", "redis", "stirlingpdf", "trilium", "vaultwarden", "wordpress"]);
+function appLogo(t) {
+  const letter = (t.name || t.key || 'A').slice(0, 1).toUpperCase(), n = el('div', `app-logo ${t.key || ''}`, letter);
+  if (!appIcons.has(t.key)) return n;
+  const img = el('img'); img.src = `/icons/${t.key}.svg`; img.alt = ''; img.width = 26; img.height = 26; img.loading = 'lazy'; img.decoding = 'async';
+  img.onerror = () => { n.classList.remove('has-icon'); n.replaceChildren(letter); };
+  n.classList.add('has-icon'); n.replaceChildren(img); return n;
+}
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).

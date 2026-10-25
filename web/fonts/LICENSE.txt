@@ -90,3 +90,7 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+-----------------------------------------------------------
+Noto Sans SC (files noto-sans-sc-*.woff2, from the Fontsource package @fontsource-variable/noto-sans-sc) — Copyright Google Inc.
+Licensed under the SIL Open Font License, Version 1.1 (text above).
