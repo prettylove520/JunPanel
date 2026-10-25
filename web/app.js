@@ -143,11 +143,11 @@ modal.addEventListener('cancel', () => { clearInterval(modalTimer); modalTimer =
 function formModal(title, fields, submitText, submit, options = {}) {
   const form = el('form'); if (options.note) form.append(note(options.note, options.warning)); fields.forEach(f => form.append(f.n)); const error = el('div','form-error'); form.append(error);
   const save = button(submitText, () => form.requestSubmit(), options.danger ? 'danger' : 'primary');
-  form.onsubmit = async e => { e.preventDefault(); save.disabled = true; error.textContent = ''; try { await submit(); } catch(e) { error.textContent = e.message; } finally { save.disabled = false; } };
+  form.onsubmit = async e => { e.preventDefault(); save.disabled = true; save.setAttribute('aria-busy', 'true'); error.textContent = ''; try { await submit(); } catch(e) { error.textContent = e.message; } finally { save.disabled = false; save.removeAttribute('aria-busy'); } };
   openModal(title, form, [button('取消', closeModal), save], options.large);
   return form;
 }
-function confirm(title, message, fn, danger = false) { const n = el('div'); n.append(el('p','',message)); const b = button('确认操作', async () => { b.disabled = true; try { await fn(); } finally { b.disabled = false; } }, danger ? 'danger' : 'primary'); openModal(title, n, [button('取消', closeModal), b]); }
+function confirm(title, message, fn, danger = false) { const n = el('div'); n.append(el('p','',message)); const b = button('确认操作', async () => { b.disabled = true; b.setAttribute('aria-busy', 'true'); try { await fn(); } finally { b.disabled = false; b.removeAttribute('aria-busy'); } }, danger ? 'danger' : 'primary'); openModal(title, n, [button('取消', closeModal), b]); }
 async function mutation(path, data, method) { const result = await api(path, data, method); closeModal(); if (result && result.id && result.state) { toast('任务已开始'); showJob(result.id); } else { toast('操作已完成'); await render(); } return result; }
 function clearPage() { state.epoch++; state.timers.forEach(clearInterval); state.timers = []; if (state.socket) { state.socket.close(); state.socket = null; } }
 function interval(fn, ms) { state.timers.push(setInterval(() => { if (!document.hidden) fn().catch(e => { $('#connection-error').hidden = false; $('#connection-error').textContent = e.message; }); }, ms)); }
@@ -171,7 +171,10 @@ function applyTheme(mode = themeMode) {
   $$('.chart').forEach(c => c._draw && c._draw());
 }
 applyTheme();
+requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1'; }));
 systemDark.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
+// A soft light follows the pointer across cards (position only; the look is in the stylesheet).
+document.addEventListener('pointermove', e => { const t = e.target.closest?.('.panel, .app-card, .installed-card, .hero'); if (!t) return; const r = t.getBoundingClientRect(); t.style.setProperty('--mx', `${Math.round(e.clientX - r.left)}px`); t.style.setProperty('--my', `${Math.round(e.clientY - r.top)}px`); }, { passive: true });
 $('#theme-toggle').onclick = () => { const next = themeModes[(themeModes.indexOf(themeMode) + 1) % themeModes.length]; applyTheme(next); try { localStorage.setItem('junpanel-theme', next); } catch {} toast(`主题：${themeNames[next]}`); };
 $$('#nav [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
 window.addEventListener('hashchange', () => { const r = location.hash.slice(1).split('?')[0]; if (state.csrf && r !== state.route) navigate(r); });
@@ -188,7 +191,7 @@ function drawChrome() {
   $$('#nav .nav-link').forEach(n => { const active = n.dataset.group === group; n.classList.toggle('active', active); if (active) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
   const sub = $('#subnav'); sub.hidden = siblings.length < 2;
   sub.replaceChildren(...siblings.map(s => { const b = el('button', `subnav-item${s === state.route ? ' active' : ''}`, routes[s][0]); b.type = 'button'; b.onclick = () => navigate(s); return b; }));
-  $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
+  $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1; $('#page-eyebrow').textContent = siblings.length > 1 ? '' : state.route;
   $('#page-description').textContent = r[1]; $('#page-bar').hidden = state.route === 'overview';
 }
 const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, syslog: syslogPage, security: securityPage, access: accessPage, upgrade: upgradePage });
@@ -207,34 +210,56 @@ function ops(...buttons) { const n = el('div','table-ops'); n.append(...buttons)
 function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'), texts = el('div'); texts.append(el('strong','',title), el('small','muted',sub)); n.append(icon(symbol),texts); return n; }
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
-function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); if (t.color) n.style.background = t.color; return n; }
+// The letter on an app tile is dark or white, whichever reads better on that tile's colour.
+const tileInk = hex => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return ''; const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4), lum = .2126 * r + .7152 * g + .0722 * b; return (1.05) / (lum + .05) >= (lum + .05) / .0628 ? '#fff' : '#10201b'; };
+function appLogo(t) { const n = el('div', `app-logo ${t.key || ''}`, (t.name || t.key || 'A').slice(0, 1).toUpperCase()); if (t.color) { n.style.background = t.color; n.style.color = tileInk(t.color); } return n; }
 function meter(value) { const p = el('progress','progress'); p.max = 100; p.value = Math.max(0,Math.min(100,value || 0)); return p; }
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // series: [[key, label, color variable]]; max = 100 for percentages, 0 to scale to the data (bytes/s).
 function chart(history, series, max = 100, withDate = false) {
-  const canvas = el('canvas','chart'); canvas.setAttribute('aria-label',series.map(s=>s[1]).join(' / ')); canvas.setAttribute('role','img');
+  const canvas = el('canvas', 'chart'); canvas.setAttribute('aria-label', series.map(s => s[1]).join(' / ') + '，可用左右方向键查看每个时间点'); canvas.setAttribute('role', 'img'); canvas.tabIndex = 0;
+  const left = 58, right = 14, top = 30, bottom = 28, H = 240; let hover = null, geo = null;
+  const when = (s, full) => new Date(s).toLocaleString('zh-CN', { hour12: false, ...(withDate || full ? { month: '2-digit', day: '2-digit' } : {}), hour: '2-digit', minute: '2-digit', ...(full && !withDate ? { second: '2-digit' } : {}) });
+  const value = v => max ? `${Number(v).toFixed(1)}%` : `${bytes(v)}/s`;
   canvas._draw = () => {
-    const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1, w = rect.width, h = 220, left = 58, right = 10, top = 28, bottom = 26;
-    canvas.width = w * dpr; canvas.height = h * dpr; const ctx = canvas.getContext('2d'); ctx.scale(dpr,dpr);
-    const muted = cssVar('--muted'), grid = cssVar('--line-soft'), font = getComputedStyle(document.body).fontFamily;
-    const all = series.flatMap(([k]) => history.map(p => Number(p[k] || 0))), peak = max || Math.max(1024, ...all) * 1.2;
+    const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1, w = rect.width, h = H;
+    canvas.width = w * dpr; canvas.height = h * dpr; const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+    const muted = cssVar('--muted'), grid = cssVar('--line-soft'), font = getComputedStyle(document.body).fontFamily, mono = cssVar('--font-mono') || 'monospace';
+    const all = series.flatMap(([k]) => history.map(p => Number(p[k] || 0))), peak = max || Math.max(1024, ...all) * 1.2, n = history.length;
     ctx.font = `12px ${font}`; ctx.textBaseline = 'middle';
-    for (let i = 0; i <= 4; i++) { const y = top + (h - top - bottom) * i / 4; ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.fillText(max ? `${Math.round(peak * (1 - i / 4))}%` : `${bytes(peak * (1 - i / 4))}/s`, left - 8, y); }
-    let lx = left; series.forEach(([, label, color]) => { ctx.fillStyle = cssVar(color); ctx.fillRect(lx, 8, 12, 3); ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(label, lx + 18, 10); lx += ctx.measureText(label).width + 40; });
-    if (history.length < 2) { ctx.textAlign = 'center'; ctx.fillText('等待更多采样…', (left + w) / 2, h / 2); return; }
-    const time = s => withDate ? new Date(s).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : new Date(s).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-    ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(time(history[0].at), left, h - 10); ctx.textAlign = 'right'; ctx.fillText(time(history[history.length - 1].at), w - right, h - 10);
+    for (let i = 0; i <= 4; i++) { const y = top + (h - top - bottom) * i / 4; ctx.strokeStyle = grid; ctx.setLineDash(i && i < 4 ? [2, 4] : []); ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.fillText(max ? `${Math.round(peak * (1 - i / 4))}%` : `${bytes(peak * (1 - i / 4))}/s`, left - 8, y); }
+    let lx = left; series.forEach(([, label, color]) => { ctx.fillStyle = cssVar(color); ctx.beginPath(); ctx.arc(lx + 4, 10, 4, 0, 7); ctx.fill(); ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(label, lx + 14, 10); lx += ctx.measureText(label).width + 38; });
+    geo = null; if (n < 2) { ctx.textAlign = 'center'; ctx.fillStyle = muted; ctx.fillText('等待更多采样…', (left + w - right) / 2, h / 2); return; }
+    const x = i => left + (w - left - right) * i / (n - 1), y = v => h - bottom - Math.min(peak, Number(v || 0)) / peak * (h - top - bottom);
+    ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(when(history[0].at), left, h - 10); ctx.textAlign = 'right'; ctx.fillText(when(history[n - 1].at), w - right, h - 10);
     series.forEach(([key, , colorVar]) => {
-      const color = cssVar(colorVar), points = history.map((p, i) => [left + (w - left - right) * i / (history.length - 1), h - bottom - Math.min(peak, Number(p[key] || 0)) / peak * (h - top - bottom)]);
-      ctx.beginPath(); points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.stroke();
-      ctx.lineTo(w - right, h - bottom); ctx.lineTo(left, h - bottom); ctx.closePath(); const g = ctx.createLinearGradient(0, top, 0, h - bottom); g.addColorStop(0, color + '33'); g.addColorStop(1, color + '00'); ctx.fillStyle = g; ctx.fill();
+      const color = cssVar(colorVar), pts = history.map((p, i) => [x(i), y(p[key])]);
+      ctx.beginPath(); pts.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+      ctx.lineTo(w - right, h - bottom); ctx.lineTo(left, h - bottom); ctx.closePath(); const g = ctx.createLinearGradient(0, top, 0, h - bottom); g.addColorStop(0, color + '38'); g.addColorStop(1, color + '00'); ctx.fillStyle = g; ctx.fill();
     });
+    geo = { x, y, n };
+    if (hover == null || hover >= n) return;
+    const hx = x(hover), p = history[hover];
+    ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(hx, top - 4); ctx.lineTo(hx, h - bottom); ctx.stroke(); ctx.setLineDash([]);
+    series.forEach(([key, , colorVar]) => { ctx.beginPath(); ctx.arc(hx, y(p[key]), 4.5, 0, 7); ctx.fillStyle = cssVar('--card'); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = cssVar(colorVar); ctx.stroke(); });
+    const rows = series.map(([key, label, colorVar]) => [label, value(p[key]), cssVar(colorVar)]), head = when(p.at, true);
+    ctx.font = `12px ${mono}`; const bw = Math.max(ctx.measureText(head).width, ...rows.map(r => ctx.measureText(`${r[0]}  ${r[1]}`).width + 16)) + 24, bh = 16 + 20 + rows.length * 20;
+    const bx = hx + 14 + bw > w - 4 ? hx - 14 - bw : hx + 14, by = top + 4;
+    ctx.fillStyle = cssVar('--card'); ctx.strokeStyle = cssVar('--line'); ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
+    ctx.textAlign = 'left'; ctx.fillStyle = muted; ctx.fillText(head, bx + 12, by + 18);
+    rows.forEach(([label, text, color], i) => { const ry = by + 18 + 20 * (i + 1); ctx.fillStyle = color; ctx.fillRect(bx + 12, ry - 4, 8, 8); ctx.fillStyle = cssVar('--text'); ctx.fillText(label, bx + 26, ry); ctx.textAlign = 'right'; ctx.fillText(text, bx + bw - 12, ry); ctx.textAlign = 'left'; });
   };
+  const at = e => { if (!geo) return; const r = canvas.getBoundingClientRect(), i = Math.round((e.clientX - r.left - left) / ((r.width - left - right) / (geo.n - 1))); hover = Math.max(0, Math.min(geo.n - 1, i)); canvas._draw(); };
+  canvas.addEventListener('pointermove', at); canvas.addEventListener('pointerdown', at);
+  canvas.addEventListener('pointerleave', () => { hover = null; canvas._draw(); });
+  canvas.addEventListener('blur', () => { hover = null; canvas._draw(); });
+  canvas.addEventListener('keydown', e => { if (!geo || !['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(e.key)) return; e.preventDefault(); hover = e.key === 'Escape' ? null : e.key === 'Home' ? 0 : e.key === 'End' ? geo.n - 1 : Math.max(0, Math.min(geo.n - 1, (hover ?? geo.n - 1) + (e.key === 'ArrowLeft' ? -1 : 1))); canvas._draw(); });
   const observer = new ResizeObserver(() => { if (!canvas.isConnected) { observer.disconnect(); return; } canvas._draw(); }); observer.observe(canvas); return canvas;
 }
-function gauge(title, value, text, sub) {
+function gauge(title, value, text, sub, sweep = false) {
   const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div','gauge'), ring = el('div', `gauge-ring${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), r = 46, c = 2 * Math.PI * r;
-  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
+  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(sweep ? c : c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
+  if (sweep) requestAnimationFrame(() => requestAnimationFrame(() => ring.querySelector(".value").style.strokeDashoffset = (c * (1 - pct / 100)).toFixed(1)));
   const t = el('div','gauge-text'); t.append(el('strong','',text)); ring.append(t); n.append(ring, el('span','',title), el('small','',sub)); return n;
 }
 function loadText(p) { return p < 50 ? '运行流畅' : p < 75 ? '运行正常' : p < 90 ? '运行缓慢' : '运行堵塞'; }
@@ -263,8 +288,17 @@ function inventorySites(data) {
   return [...(data.sites || []), ...(data.external_hosts || []).map(host=>({name:host,domains:[host],kind:'existing',readonly:true,sources:(data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config)}))];
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
+// Numbers on the overview count up once when the page opens; never for people who ask for less motion.
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function countUp(node, text) {
+  if (reduceMotion.matches || !/\d/.test(text)) return;
+  const parts = text.split(/(\d+)/), nums = parts.map(p => /^\d+$/.test(p) ? Number(p) : null), t0 = performance.now(), dur = 700;
+  const show = k => { node.textContent = parts.map((p, i) => nums[i] == null ? p : Math.round(nums[i] * k)).join(''); };
+  const frame = now => { const k = Math.min(1, (now - t0) / dur); show(1 - Math.pow(1 - k, 3)); if (k < 1) requestAnimationFrame(frame); };
+  show(0); requestAnimationFrame(frame);
+}
 async function overviewPage() {
-  const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0;
+  const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0, firstPaint = true;
   const ranges = [['live', '实时'], ['1h', '1 小时'], ['6h', '6 小时'], ['24h', '24 小时'], ['7d', '7 天']];
   async function loadPast() { if (range === 'live') return; const want = range; try { const r = await api(`/history?range=${want}`); if (range === want) { past = r; pastAt = Date.now(); drawMonitor && drawMonitor(); } } catch (e) { toast(e.message, true); } }
   let drawMonitor = null;
@@ -277,14 +311,17 @@ async function overviewPage() {
     if (d.update_available) { const b = note(`JunPanel v${d.update_available} 已发布，当前版本 v${d.version}。`); b.append(button('查看并升级', () => navigate('upgrade'), 'quiet small')); n.append(b); }
     const grid = el('div','home-grid'), main = el('div','home-col'), side = el('div','home-col');
 
-    const counts = panel('概览'), cg = el('div','count-grid');
+    const calm = !(d.alerts_active > 0), counts = el('div', 'hero-wrap'), hero = el('section', 'hero'), heroHead = el('div', 'hero-head'), heroText = el('div'), cg = el('div', 'count-grid');
+    heroText.append(el('strong', '', calm ? '一切运行正常' : `${d.alerts_active} 条告警待处理`), el('small', '', `${h.hostname || '本机'} · 已运行 ${uptime(h.uptime)}`));
+    heroHead.append(el('span', `lamp ${calm ? 'ok' : 'warn'}`), heroText);
     [['网站', d.sites_error || d.caddy_error ? '—' : visibleSites.length, 'sites'], ['已安装应用', d.apps_error ? '—' : (d.apps || []).filter(a => !a.removed).length, 'installed'], ['容器', d.docker_error ? '—' : `${running} / ${containers.length}`, 'containers'], ['告警', d.alerts_active || 0, 'alerts']].forEach(([label, value, route]) => {
-      const b = el('button', `count-item${route === 'alerts' && d.alerts_active ? ' alarm' : ''}`); b.type = 'button'; b.append(el('span','',label), el('strong','',String(value))); b.onclick = () => navigate(route); cg.append(b);
+      const b = el('button', `count-item${route === 'alerts' && d.alerts_active ? ' alarm' : ''}`), num = el('strong', '', String(value)); b.type = 'button'; b.append(el('span', '', label), num); b.onclick = () => navigate(route); cg.append(b);
+      if (firstPaint) countUp(num, String(value));
     });
-    counts.append(cg);
+    hero.append(heroHead, cg); counts.append(hero);
 
     const status = panel('状态'), gg = el('div','gauge-grid'), cores = h.cores || 1, load = (h.load || [])[0] || 0, loadPct = load / cores * 100, mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, used = disk.total ? disk.used / disk.total * 100 : 0;
-    gg.append(gauge('负载', loadPct, `${Math.round(Math.min(loadPct, 100))}%`, loadText(loadPct)), gauge('CPU', h.cpu, h.cpu == null ? '—' : `${Number(h.cpu).toFixed(1)}%`, `${cores} 核`), gauge('内存', mem, `${mem.toFixed(1)}%`, `${bytes(h.mem_used)} / ${bytes(h.mem_total)}`), gauge('磁盘 /', used, `${used.toFixed(1)}%`, `${bytes(disk.used)} / ${bytes(disk.total)}`));
+    gg.append(gauge('负载', loadPct, `${Math.round(Math.min(loadPct, 100))}%`, loadText(loadPct), firstPaint), gauge('CPU', h.cpu, h.cpu == null ? '—' : `${Number(h.cpu).toFixed(1)}%`, `${cores} 核`, firstPaint), gauge('内存', mem, `${mem.toFixed(1)}%`, `${bytes(h.mem_used)} / ${bytes(h.mem_total)}`, firstPaint), gauge('磁盘 /', used, `${used.toFixed(1)}%`, `${bytes(disk.used)} / ${bytes(disk.total)}`, firstPaint));
     status.append(gg);
 
     const choices = [['CPU', [['cpu','CPU','--primary']], 100], ['内存', [['memory','内存','--success']], 100], ['流量', [['rx','下行','--primary'], ['tx','上行','--warning']], 0]];
@@ -319,7 +356,7 @@ async function overviewPage() {
     side.append(info, services, sites, activity);
     grid.append(main, side); n.append(grid);
   }
-  paint(data);
+  paint(data); firstPaint = false;
   const epoch = state.epoch; interval(async () => { const d = await api('/overview'); if (epoch === state.epoch) { paint(d); $('#connection-error').hidden = true; } }, 10000); return n;
 }
 async function sitesPage() {

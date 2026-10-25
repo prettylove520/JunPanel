@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,7 +129,8 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		if file == "" {
 			file = "index.html"
 		}
-		if file != "index.html" && file != "app.js" && file != "style.css" && file != "logo.svg" && file != "favicon.svg" && file != "logo-preview.svg" {
+		font := fontFile.MatchString(file)
+		if !font && file != "index.html" && file != "app.js" && file != "style.css" && file != "logo.svg" && file != "favicon.svg" && file != "logo-preview.svg" {
 			http.NotFound(out, r)
 			return
 		}
@@ -141,6 +143,9 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 			data = versionedIndex(data)
 		}
 		out.Header().Set("Content-Type", mime.TypeByExtension(file[strings.LastIndex(file, "."):]))
+		if font { // the font files never change under the same name; everything else stays no-store
+			out.Header().Set("Cache-Control", "public, max-age=86400")
+		}
 		out.Write(data)
 		return
 	}
@@ -415,6 +420,11 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
 	w.proxy.ServeHTTP(out, r)
 }
+
+// fontFile matches the bundled web fonts: web/fonts/<name>.woff2 and nothing else.
+var fontFile = regexp.MustCompile(`^fonts/[a-z0-9-]+\.woff2$`)
+
+func init() { mime.AddExtensionType(".woff2", "font/woff2") }
 
 // versionedIndex records the version in the page and adds it to asset URLs, so a page always
 // knows which release it came from and no cache in between can pair it with older files.
