@@ -286,7 +286,7 @@ func TestHTTPBoundary(t *testing.T) {
 	if w = request(h, "GET", "/api/meta", "", nil, nil); w.Header().Get("X-JunPanel-Version") != version {
 		t.Fatal("API response without version header")
 	}
-	if w = request(h, "GET", "/fonts/dm-sans-latin-400-normal.woff2", "", nil, nil); w.Code != 200 || w.Header().Get("Content-Type") != "font/woff2" || w.Body.Len() < 1000 {
+	if w = request(h, "GET", "/fonts/geist-variable.woff2", "", nil, nil); w.Code != 200 || w.Header().Get("Content-Type") != "font/woff2" || w.Body.Len() < 1000 {
 		t.Fatalf("bundled font not served: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
 	for _, path := range []string{"/fonts/LICENSE.txt", "/fonts/../app.js", "/fonts/%2e%2e/account.json", "/fonts/nope.woff2", "/fonts/a/b.woff2", "/fonts/"} {

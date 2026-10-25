@@ -303,7 +303,16 @@ async function overviewPage() {
     [['网站', d.sites_error || d.caddy_error ? '—' : visibleSites.length, 'sites'], ['已安装应用', d.apps_error ? '—' : (d.apps || []).filter(a => !a.removed).length, 'installed'], ['容器', d.docker_error ? '—' : `${running} / ${containers.length}`, 'containers'], ['告警', d.alerts_active || 0, 'alerts']].forEach(([label, value, route]) => {
       const b = el('button', `count-item${route === 'alerts' && d.alerts_active ? ' alarm' : ''}`), num = el('strong', '', String(value)); b.type = 'button'; b.append(el('span', '', label), num); b.onclick = () => navigate(route); cg.append(b);
     });
-    hero.append(heroHead, cg); counts.append(hero);
+    hero.append(heroHead, cg);
+    // A quiet trend line of the last ten minutes of CPU under the readings.
+    const pts = (h.history || []).map(p => Number(p.cpu) || 0);
+    if (pts.length > 1) {
+      const peak = Math.max(10, ...pts) * 1.15, xy = pts.map((v, i) => `${(i / (pts.length - 1) * 100).toFixed(2)},${(32 - v / peak * 30).toFixed(2)}`).join(' ');
+      const trend = el('div', 'hero-trend'); trend.setAttribute('aria-label', `最近 10 分钟 CPU 走势，当前 ${Number(h.cpu || 0).toFixed(1)}%`); trend.setAttribute('role', 'img');
+      trend.innerHTML = `<svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,32 ${xy} 100,32"/><polyline points="${xy}"/></svg><span>CPU · 最近 10 分钟</span>`;
+      hero.append(trend);
+    }
+    counts.append(hero);
 
     const status = panel('状态'), gg = el('div','gauge-grid'), cores = h.cores || 1, load = (h.load || [])[0] || 0, loadPct = load / cores * 100, mem = h.mem_total ? h.mem_used / h.mem_total * 100 : 0, used = disk.total ? disk.used / disk.total * 100 : 0;
     gg.append(gauge('负载', loadPct, `${Math.round(Math.min(loadPct, 100))}%`, loadText(loadPct)), gauge('CPU', h.cpu, h.cpu == null ? '—' : `${Number(h.cpu).toFixed(1)}%`, `${cores} 核`), gauge('内存', mem, `${mem.toFixed(1)}%`, `${bytes(h.mem_used)} / ${bytes(h.mem_total)}`), gauge('磁盘 /', used, `${used.toFixed(1)}%`, `${bytes(disk.used)} / ${bytes(disk.total)}`));
