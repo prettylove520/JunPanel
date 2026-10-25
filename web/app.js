@@ -85,16 +85,38 @@ const menu = [
 ];
 const groupRoutes = g => Object.keys(routes).filter(r => routes[r][3] === g);
 const groupLabel = g => (menu.find(m => m[0] === g) || [])[1] || '';
+// The menu reads in sections; panel settings sit at the foot of the sidebar with the connection status.
+const menuSections = [['', ['overview']], ['应用与站点', ['apps', 'sites', 'databases', 'containers', 'files']], ['运维', ['schedules', 'backups', 'alerts', 'logs']]];
 (function buildNav() {
-  const nav = $('#nav');
-  menu.forEach(([g, label, symbol, badge]) => {
-    if (g === 'logs') nav.append(el('div', 'nav-divider'));
+  const nav = $('#nav'), foot = $('#nav-foot');
+  const link = g => {
+    const [, label, symbol, badge] = menu.find(m => m[0] === g);
     const b = el('button', 'nav-link'); b.type = 'button'; b.dataset.group = g; b.dataset.route = groupRoutes(g)[0];
     b.append(icon(symbol), el('span', '', label));
     if (badge) { const n = el('span', `nav-badge${badge === 'site-badge' ? ' count' : ''}`); n.id = badge; n.hidden = true; b.append(n); }
-    nav.append(b);
-  });
+    return b;
+  };
+  menuSections.forEach(([title, groups]) => { const sec = el('div', 'nav-section'); if (title) sec.append(el('div', 'nav-heading', title)); groups.forEach(g => sec.append(link(g))); nav.append(sec); });
+  const meter = el('div', 'side-meter'); meter.id = 'side-meter'; meter.hidden = true;
+  foot.append(meter, link('settings'));
 })();
+// The sidebar card shows the latest one-minute averages from the monitoring history; quiet while the tab is hidden or signed out.
+let meterTimer = null;
+async function loadMeter() {
+  if (document.hidden || !state.csrf) return;
+  try {
+    const d = await api('/history?range=1h'), p = (d.points || []).at(-1), box = $('#side-meter');
+    if (!p) { box.hidden = true; return; }
+    const head = el('div', 'side-meter-title'); head.append(el('span', '', '服务器'), el('span', '', '近 1 分钟'));
+    box.replaceChildren(head, ...[['CPU', p.cpu], ['内存', p.memory], ['磁盘', p.disk]].map(([k, v]) => {
+      const row = el('div', 'side-meter-row'), bar = el('div', 'side-meter-bar'), fill = el('span', v >= 90 ? 'bad' : v >= 75 ? 'warn' : ''), pct = Math.max(0, Math.min(100, Number(v) || 0));
+      fill.style.width = `${pct.toFixed(0)}%`; bar.append(fill); bar.setAttribute('role', 'meter'); bar.setAttribute('aria-label', k); bar.setAttribute('aria-valuenow', pct.toFixed(0)); bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100');
+      row.append(el('span', '', k), bar, el('b', '', `${pct.toFixed(0)}%`)); return row;
+    }));
+    box.hidden = false;
+  } catch {}
+}
+function startMeter() { clearInterval(meterTimer); loadMeter(); meterTimer = setInterval(loadMeter, 60000); }
 const view = $('#view');
 const bytes = n => { if (n == null || !Number.isFinite(Number(n))) return '—'; let i = 0; n = Number(n); while (n >= 1024 && i < 4) { n /= 1024; i++; } return `${n.toFixed(i ? (n < 10 ? 1 : 0) : 0)} ${['B','KB','MB','GB','TB'][i]}`; };
 const percent = n => n == null ? '采样中' : `${Number(n).toFixed(1)}%`;
@@ -153,7 +175,7 @@ function clearPage() { state.epoch++; state.timers.forEach(clearInterval); state
 function interval(fn, ms) { state.timers.push(setInterval(() => { if (!document.hidden) fn().catch(e => { $('#connection-error').hidden = false; $('#connection-error').textContent = e.message; }); }, ms)); }
 function showLogin() { clearPage(); closeModal(); state.csrf = ''; $('#application').hidden = true; $('#login').hidden = false; }
 function setSiteBadge(count) { const b = $('#site-badge'); b.hidden = count == null; b.textContent = count ?? ''; }
-async function enter(session) { Object.assign(state, session); $('#login').hidden = true; $('#application').hidden = false; $('#demo-banner').hidden = !state.demo; $('#current-user').textContent = state.user; $('#user-avatar').textContent = (state.user || 'J').slice(0, 1).toUpperCase(); $('#login-password').value = ''; await navigate(location.hash.slice(1).split('?')[0] || 'overview'); const currentCSRF=state.csrf; Promise.allSettled([api('/sites'),api('/apps'),api('/alerts'),api('/upgrade')]).then(([sites,apps,alerts,upgrade])=>{if(state.csrf!==currentCSRF)return;if(sites.status==='fulfilled'){state.sites=inventorySites(sites.value);setSiteBadge(sites.value.error?null:inventorySites(sites.value).length);}if(apps.status==='fulfilled')state.apps=apps.value;if(alerts.status==='fulfilled')setAlertBadge(alerts.value.active.length);if(upgrade.status==='fulfilled')setUpgradeBadge(upgrade.value.available?upgrade.value.latest.version:'');}); }
+async function enter(session) { Object.assign(state, session); $('#login').hidden = true; $('#application').hidden = false; $('#demo-banner').hidden = !state.demo; $('#current-user').textContent = state.user; $('#user-avatar').textContent = (state.user || 'J').slice(0, 1).toUpperCase(); $('#login-password').value = ''; await navigate(location.hash.slice(1).split('?')[0] || 'overview'); startMeter(); const currentCSRF=state.csrf; Promise.allSettled([api('/sites'),api('/apps'),api('/alerts'),api('/upgrade')]).then(([sites,apps,alerts,upgrade])=>{if(state.csrf!==currentCSRF)return;if(sites.status==='fulfilled'){state.sites=inventorySites(sites.value);setSiteBadge(sites.value.error?null:inventorySites(sites.value).length);}if(apps.status==='fulfilled')state.apps=apps.value;if(alerts.status==='fulfilled')setAlertBadge(alerts.value.active.length);if(upgrade.status==='fulfilled')setUpgradeBadge(upgrade.value.available?upgrade.value.latest.version:'');}); }
 $('#login-form').onsubmit = async e => { e.preventDefault(); const b = $('#login-submit'); b.disabled = true; $('#login-error').textContent = ''; try { const r = await api('/login', { user: $('#login-user').value, password: $('#login-password').value, otp: $('#login-otp').value }); await enter(r); } catch(e) { $('#login-error').textContent = e.message; } finally { b.disabled = false; } };
 $('#show-password').onclick = () => { const i = $('#login-password'); i.type = i.type === 'password' ? 'text' : 'password'; };
 $('#logout').onclick = async () => { try { await api('/logout', {}); } finally { showLogin(); } };
@@ -174,7 +196,7 @@ applyTheme();
 requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1'; }));
 systemDark.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
 $('#theme-toggle').onclick = () => { const next = themeModes[(themeModes.indexOf(themeMode) + 1) % themeModes.length]; applyTheme(next); try { localStorage.setItem('junpanel-theme', next); } catch {} toast(`主题：${themeNames[next]}`); };
-$$('#nav [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
+$$('#nav [data-route], #nav-foot [data-route]').forEach(b => b.onclick = () => navigate(b.dataset.route));
 window.addEventListener('hashchange', () => { const r = location.hash.slice(1).split('?')[0]; if (state.csrf && r !== state.route) navigate(r); });
 let lastActivity = 0;
 ['pointerdown','keydown'].forEach(type => document.addEventListener(type, () => { if (!state.csrf || Date.now() - lastActivity < 60000) return; lastActivity = Date.now(); api('/heartbeat', {}).catch(() => {}); }, { passive: true }));
@@ -186,7 +208,7 @@ function drawChrome() {
   crumb.append(el('strong', '', siblings.length > 1 ? r[0] : label));
   document.title = `${siblings.length > 1 ? r[0] + ' · ' + label : label} · JunPanel`;
   document.body.dataset.route = state.route;
-  $$('#nav .nav-link').forEach(n => { const active = n.dataset.group === group; n.classList.toggle('active', active); if (active) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
+  $$('#nav .nav-link, #nav-foot .nav-link').forEach(n => { const active = n.dataset.group === group; n.classList.toggle('active', active); if (active) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
   const sub = $('#subnav'); sub.hidden = siblings.length < 2;
   sub.replaceChildren(...siblings.map(s => { const b = el('button', `subnav-item${s === state.route ? ' active' : ''}`, routes[s][0]); b.type = 'button'; b.onclick = () => navigate(s); return b; }));
   $('#page-title').textContent = siblings.length > 1 ? '' : label; $('#page-title').hidden = siblings.length > 1;
