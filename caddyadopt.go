@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -17,6 +18,7 @@ import (
 // from the Caddyfile in the same step. Anything else is explained and left to the Caddyfile editor.
 type caddyBlock struct {
 	ID        string   `json:"id"`
+	File      string   `json:"file"`
 	Hosts     []string `json:"hosts"`
 	Kind      string   `json:"kind,omitempty"`
 	Summary   string   `json:"summary,omitempty"`
@@ -253,8 +255,25 @@ func stripCaddyComment(line string) string {
 	return line
 }
 
+// caddyBlocks reads every editable Caddy file and lists its site blocks, each tagged with its file.
+func (a *agent) caddyBlocks() ([]caddyBlock, map[string][]byte, string, error) {
+	files := a.caddyFiles()
+	contents, digest, e := a.caddyFilesDigest(files)
+	if e != nil {
+		return nil, nil, "", e
+	}
+	var out []caddyBlock
+	for _, f := range files {
+		for _, b := range a.parseCaddyBlocks(string(contents[f])) {
+			b.File = f
+			out = append(out, b)
+		}
+	}
+	return out, contents, digest, nil
+}
+
 func (a *agent) caddyAdoptable(w http.ResponseWriter, r *http.Request) error {
-	raw, e := a.readCaddyfile()
+	all, _, digest, e := a.caddyBlocks()
 	if e != nil {
 		return e
 	}
@@ -266,14 +285,23 @@ func (a *agent) caddyAdoptable(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	blocks := []caddyBlock{}
-	for _, b := range a.parseCaddyBlocks(string(raw)) {
+	editable := true
+	for _, b := range all {
 		if len(b.Hosts) > 0 && panelHosts[b.Hosts[0]] {
 			continue
 		}
+		if b.Adoptable && !caddyEditable(b.File) {
+			editable = false
+		}
 		blocks = append(blocks, b)
 	}
-	send(w, 200, map[string]any{"sha": fileDigest(raw), "blocks": blocks, "editable": a.caddyEditable()})
+	send(w, 200, map[string]any{"sha": digest, "blocks": blocks, "editable": editable && caddyEditable(a.cfg.Caddy)})
 	return nil
+}
+
+type fileChange struct {
+	path     string
+	old, new []byte
 }
 
 func (a *agent) caddyAdopt(w http.ResponseWriter, r *http.Request) error {
@@ -289,25 +317,26 @@ func (a *agent) caddyAdopt(w http.ResponseWriter, r *http.Request) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	old, e := a.readCaddyfile()
+	all, contents, digest, e := a.caddyBlocks()
 	if e != nil {
 		return e
 	}
-	if req.SHA != fileDigest(old) {
+	if req.SHA != digest {
 		return bad(409, "Caddy 配置在你打开之后被改动过，请刷新页面再试")
 	}
 	chosen := map[string]bool{}
 	for _, id := range req.IDs {
 		chosen[id] = true
 	}
-	lines := strings.Split(string(old), "\n")
+	byFile := map[string][]caddyBlock{}
 	var picked []caddyBlock
-	for _, b := range a.parseCaddyBlocks(string(old)) {
+	for _, b := range all {
 		if chosen[b.ID] {
 			if !b.Adoptable {
 				return bad(409, strings.Join(b.Hosts, "、")+" 暂不能接管："+b.Reason)
 			}
 			picked = append(picked, b)
+			byFile[b.File] = append(byFile[b.File], b)
 			delete(chosen, b.ID)
 		}
 	}
@@ -337,48 +366,66 @@ func (a *agent) caddyAdopt(w http.ResponseWriter, r *http.Request) error {
 		s.ID, s.Created = "s_"+randomID(20), now
 		next = append(next, s)
 	}
-	// Replace the blocks, last one first so earlier line numbers stay valid.
-	for i := len(picked) - 1; i >= 0; i-- {
-		b := picked[i]
-		note := "# 已转入 JunPanel 管理：" + strings.Join(b.Hosts, ", ") + "（原配置在“Caddy 配置历史版本”里）"
-		lines = append(lines[:b.start], append([]string{note}, lines[b.end+1:]...)...)
+	var changes []fileChange
+	for _, f := range a.caddyFiles() {
+		blocks := byFile[f]
+		if len(blocks) == 0 {
+			continue
+		}
+		lines := strings.Split(string(contents[f]), "\n")
+		// Replace the blocks, last one first so earlier line numbers stay valid.
+		for i := len(blocks) - 1; i >= 0; i-- {
+			b := blocks[i]
+			note := "# 已转入 JunPanel 管理：" + strings.Join(b.Hosts, ", ") + "（原配置在“Caddy 配置历史版本”里）"
+			lines = append(lines[:b.start], append([]string{note}, lines[b.end+1:]...)...)
+		}
+		updated := strings.Join(lines, "\n")
+		if f == a.cfg.Caddy && !a.caddyLinked(updated) {
+			return bad(409, "接管后会丢失面板的接入行，已取消")
+		}
+		changes = append(changes, fileChange{path: f, old: contents[f], new: []byte(updated)})
 	}
-	updated := strings.Join(lines, "\n")
-	if !a.caddyLinked(updated) {
-		return bad(409, "接管后会丢失面板的接入行，已取消")
-	}
-	if e = a.adoptTransaction(old, updated, next); e != nil {
+	if e = a.adoptTransaction(changes, next); e != nil {
 		return e
 	}
 	send(w, 200, map[string]any{"ok": true, "adopted": len(picked)})
 	return nil
 }
 
-// adoptTransaction changes the main Caddyfile and the panel's own fragment together, so no host is ever
-// defined twice or not at all; a failure anywhere puts both files (and the running Caddy) back.
-func (a *agent) adoptTransaction(oldMain []byte, newMain string, sites []site) error {
+// adoptTransaction changes the Caddy files and the panel's own fragment together, so no host is ever
+// defined twice or not at all; a failure anywhere puts every file (and the running Caddy) back.
+func (a *agent) adoptTransaction(changes []fileChange, sites []site) error {
 	managed := filepath.Join(a.cfg.Fragments, "managed.caddy")
 	oldManaged, e := os.ReadFile(managed)
 	existed := e == nil
 	if e != nil && !os.IsNotExist(e) {
 		return e
 	}
-	if e = a.saveCaddyBackup(oldMain); e != nil {
-		return bad(500, "无法保存旧配置的备份，已取消修改")
+	for _, c := range changes {
+		if !caddyEditable(c.path) {
+			return readOnlyFault(syscall.EROFS)
+		}
+		if e = a.saveCaddyBackup(c.path, c.old); e != nil {
+			return bad(500, "无法保存旧配置的备份，已取消修改")
+		}
 	}
 	restore := func() error {
+		var failed error
 		if existed {
-			if e := atomicBytes(managed, oldManaged, 0644); e != nil {
-				return e
-			}
+			failed = atomicBytes(managed, oldManaged, 0644)
 		} else {
 			os.Remove(managed)
 		}
-		return a.writeCaddyfile(oldMain)
+		for _, c := range changes {
+			if e := writeConfigFile(c.path, c.old); e != nil {
+				failed = e
+			}
+		}
+		return failed
 	}
 	reloadBack := func(message string) error {
 		if restore() != nil {
-			return bad(500, message+"，且无法还原；请立即通过 SSH 检查 /etc/caddy/Caddyfile 和 /etc/caddy/junpanel.d/managed.caddy")
+			return bad(500, message+"，且无法还原；请立即通过 SSH 检查 /etc/caddy 下的配置")
 		}
 		if _, e := a.reloadCaddy(); e != nil {
 			return bad(500, message+"，还原后的重载也失败；请立即通过 SSH 检查")
@@ -389,13 +436,15 @@ func (a *agent) adoptTransaction(oldMain []byte, newMain string, sites []site) e
 		restore()
 		return e
 	}
-	if e = a.writeCaddyfile([]byte(newMain)); e != nil {
-		restore()
-		return e
+	for _, c := range changes {
+		if e = writeConfigFile(c.path, c.new); e != nil {
+			restore()
+			return e
+		}
 	}
 	if out, e := a.caddyValidate(); e != nil {
 		if r := restore(); r != nil {
-			return bad(500, "校验失败，且无法还原；请立即通过 SSH 检查 /etc/caddy/Caddyfile")
+			return bad(500, "校验失败，且无法还原；请立即通过 SSH 检查 /etc/caddy 下的配置")
 		}
 		return bad(409, withReason("Caddy 校验未通过，已还原，网站没有变化", out))
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -117,11 +118,11 @@ func TestCaddyConfigEditKeepsBackupAndRollsBack(t *testing.T) {
 	if now, _ := os.ReadFile(a.cfg.Caddy); string(now) != changed {
 		t.Fatalf("file is %q", now)
 	}
-	list := a.caddyBackups()
+	list := a.caddyBackups(a.cfg.Caddy)
 	if len(list) == 0 {
 		t.Fatal("no backup kept")
 	}
-	kept, e := a.caddyBackupRead(list[0].ID)
+	_, kept, e := a.caddyBackupRead(list[0].ID)
 	if e != nil || string(kept) != original {
 		t.Fatalf("backup is %q", kept)
 	}
@@ -144,11 +145,52 @@ func TestCaddyBackupsAreLimited(t *testing.T) {
 	a, original := caddyTestAgent(t)
 	for i := 0; i < keepCaddyBackups+5; i++ {
 		a.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, i, 0, time.UTC) }
-		if e := a.saveCaddyBackup([]byte(original)); e != nil {
+		if e := a.saveCaddyBackup(a.cfg.Caddy, []byte(original)); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if n := len(a.caddyBackups()); n != keepCaddyBackups {
+	if n := len(a.caddyBackups(a.cfg.Caddy)); n != keepCaddyBackups {
 		t.Fatalf("%d backups kept", n)
+	}
+}
+
+func TestImportedCaddyFilesCanBeEditedButNothingElse(t *testing.T) {
+	a, _ := caddyTestAgent(t)
+	dir := filepath.Dir(a.cfg.Caddy)
+	site := filepath.Join(dir, "shop.caddy")
+	os.WriteFile(site, []byte("shop.example.com {\n\treverse_proxy 127.0.0.1:9000\n}\n"), 0644)
+	outside := filepath.Join(t.TempDir(), "elsewhere.caddy")
+	os.WriteFile(outside, []byte("x.example.com {\n}\n"), 0644)
+	main, _ := os.ReadFile(a.cfg.Caddy)
+	os.WriteFile(a.cfg.Caddy, []byte("import shop.caddy\nimport "+outside+"\nimport security\n"+string(main)), 0644)
+	files := a.caddyFiles()
+	if len(files) != 2 || files[1] != site {
+		t.Fatalf("files %v", files)
+	}
+	h := a.routes()
+	if r := request(h, "GET", "/caddy/config?file="+outside, "", nil, nil); r.Code != 404 {
+		t.Fatalf("file outside the Caddy folder offered: %d", r.Code)
+	}
+	r := request(h, "GET", "/caddy/config?file="+site, "", nil, nil)
+	var got struct {
+		Content string
+		SHA     string
+		Main    bool
+	}
+	json.Unmarshal(r.Body.Bytes(), &got)
+	if r.Code != 200 || got.Main || !strings.Contains(got.Content, "shop.example.com") {
+		t.Fatalf("imported file: %d %s", r.Code, r.Body.String())
+	}
+	// The imported file has no panel import line to keep, and its backup restores to it.
+	raw, _ := json.Marshal(map[string]string{"file": site, "content": "shop.example.com {\n\treverse_proxy 127.0.0.1:9001\n}\n", "sha": got.SHA})
+	if r := request(h, "POST", "/caddy/config", string(raw), nil, nil); r.Code != 200 {
+		t.Fatalf("save imported: %d %s", r.Code, r.Body.String())
+	}
+	backups := a.caddyBackups(site)
+	if len(backups) != 1 || backups[0].File != site {
+		t.Fatalf("backups %+v", backups)
+	}
+	if path, kept, e := a.caddyBackupRead(backups[0].ID); e != nil || path != site || !strings.Contains(string(kept), "9000") {
+		t.Fatalf("backup %s %q %v", path, kept, e)
 	}
 }

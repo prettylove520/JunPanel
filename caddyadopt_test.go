@@ -178,11 +178,47 @@ func TestCaddyAdoptMovesSitesAtomically(t *testing.T) {
 	if sites, _ := a.readSites(); len(sites) != 2 || sites[0].Kind != "proxy" || !sites[0].Enabled {
 		t.Fatalf("sites: %+v", sites)
 	}
-	if len(a.caddyBackups()) == 0 {
+	if len(a.caddyBackups(a.cfg.Caddy)) == 0 {
 		t.Fatal("the old Caddyfile was not kept")
 	}
 	// They are now ordinary panel sites, so they no longer appear as adoptable.
 	if r := request(h, "GET", "/caddy/adoptable", "", nil, nil); strings.Contains(r.Body.String(), `"monitor.example.com"`) {
 		t.Fatal("adopted site still offered")
+	}
+}
+
+func TestAdoptFromAnImportedFile(t *testing.T) {
+	a := testAgent(t)
+	dir := filepath.Dir(a.cfg.Caddy)
+	sites := filepath.Join(dir, "fuyuan.caddy")
+	os.WriteFile(sites, []byte("gzfuyuan.com, www.gzfuyuan.com {\n\treverse_proxy 127.0.0.1:3000\n\tencode gzip\n}\n"), 0644)
+	main := "{\n\tdefault_sni 1.2.3.4\n}\n\nimport " + sites + "\n\n# JunPanel managed sites\n" + a.caddyLinkLine() + "\n"
+	os.WriteFile(a.cfg.Caddy, []byte(main), 0644)
+	h := a.routes()
+	var list struct {
+		SHA    string
+		Blocks []caddyBlock
+	}
+	json.Unmarshal(request(h, "GET", "/caddy/adoptable", "", nil, nil).Body.Bytes(), &list)
+	if len(list.Blocks) != 1 || !list.Blocks[0].Adoptable || list.Blocks[0].File != sites || len(list.Blocks[0].Hosts) != 2 {
+		t.Fatalf("blocks %+v", list.Blocks)
+	}
+	raw, _ := json.Marshal(map[string]any{"sha": list.SHA, "ids": []string{list.Blocks[0].ID}})
+	if r := request(h, "POST", "/caddy/adopt", string(raw), nil, nil); r.Code != 200 {
+		t.Fatalf("adopt: %d %s", r.Code, r.Body.String())
+	}
+	now, _ := os.ReadFile(sites)
+	if strings.Contains(string(now), "reverse_proxy") || !strings.Contains(string(now), "已转入 JunPanel 管理") {
+		t.Fatalf("imported file not updated:\n%s", now)
+	}
+	if m, _ := os.ReadFile(a.cfg.Caddy); string(m) != main {
+		t.Fatal("main Caddyfile changed although the site was elsewhere")
+	}
+	frag, _ := os.ReadFile(filepath.Join(a.cfg.Fragments, "managed.caddy"))
+	if !strings.Contains(string(frag), "gzfuyuan.com, www.gzfuyuan.com {") {
+		t.Fatalf("fragment:\n%s", frag)
+	}
+	if b := a.caddyBackups(sites); len(b) != 1 {
+		t.Fatalf("imported file not backed up: %+v", b)
 	}
 }
