@@ -154,6 +154,25 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			{"name": "blog.example.com", "issuer": "R12", "not_after": time.Now().Add(61 * 24 * time.Hour), "days_left": 61, "warn": false},
 			{"name": "git.example.com", "issuer": "R12", "not_after": time.Now().Add(11 * 24 * time.Hour), "days_left": 11, "warn": true},
 		}}
+	case "/caddy/config":
+		content := `# 示例主配置（模拟数据）
+www.example.com {
+	root * /srv/www
+	file_server
+}
+
+blog.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
+
+legacy.example.com {
+	redir https://www.example.com{uri} permanent
+}
+
+# JunPanel managed sites
+import /etc/caddy/junpanel.d/*.caddy
+`
+		value = map[string]any{"path": "/etc/caddy/Caddyfile", "content": content, "sha": fileDigest([]byte(content)), "editable": true, "link": "import /etc/caddy/junpanel.d/*.caddy", "backups": []caddyBackup{{ID: "Caddyfile.20261024-031500.bak", Time: time.Now().Add(-30 * time.Hour), Size: 412}, {ID: "Caddyfile.20261022-101200.bak", Time: time.Now().Add(-80 * time.Hour), Size: 388}}}
 	case "/schedules":
 		value = map[string]any{"zone": "CST +0800", "now": time.Now(), "schedules": []schedule{
 			{ID: "sc_" + strings.Repeat("1", 16), Name: "每晚备份博客", Action: "backup", Type: "app", Target: "studio", Keep: 7, Every: "daily", At: "03:00", Enabled: true, Created: time.Now().Add(-9 * 24 * time.Hour), Next: time.Now().Add(9 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-15 * time.Hour), Status: "success", Message: "已备份，保留最近 7 份（已清理 1 份旧备份）"}},
@@ -168,7 +187,9 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			{ID: "b_" + strings.Repeat("d", 20), Type: "site", Target: "s_" + strings.Repeat("a", 20), Name: "个人主页", File: "d.tar.gz", Size: 3 << 20, SHA256: strings.Repeat("d", 64), Created: now.Add(-50 * time.Hour), Note: "恢复前自动备份"},
 		}}
 	default:
-		if strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/logs") {
+		if strings.HasPrefix(path, "/caddy/config/backups/") {
+			value = map[string]string{"id": strings.TrimPrefix(path, "/caddy/config/backups/"), "content": "# 历史版本（模拟数据）\nwww.example.com {\n\tfile_server\n}\nimport /etc/caddy/junpanel.d/*.caddy\n"}
+		} else if strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/logs") {
 			value = map[string]string{"text": fmt.Sprintf("[演示日志 · 模拟数据]\n%s GET / 200 2ms\n%s 健康检查正常\n", time.Now().Add(-10*time.Second).Format(time.RFC3339), time.Now().Format(time.RFC3339))}
 		} else {
 			fail(w, bad(404, "演示接口不存在"))

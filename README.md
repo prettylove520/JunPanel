@@ -2,7 +2,7 @@
 
 ![JunPanel](logo-preview.png)
 
-[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.5.0](https://github.com/prettylove520/JunPanel/releases/tag/v1.5.0) · [MIT 许可证](LICENSE)
+[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.5.1](https://github.com/prettylove520/JunPanel/releases/tag/v1.5.1) · [MIT 许可证](LICENSE)
 
 中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用石墨色与薄荷绿设计，支持深浅主题和手机布局。
 
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 自动完成下载、校验、解压、环境检查、面板安装、**公网 IPv4 识别和 HTTPS 管理入口配置**。结束时集中显示账号、随机密码和登录链接：证书及面板响应检查通过后可直接打开 `https://服务器IP`，无需再填 IP 或执行另一条配置命令。公网登录页会公开，仍需管理员认证；建议开启两步验证。HTTPS 入口要求现有 Caddy 至少 2.10.1、公网 80/443 可达。
 
-在线安装器固定下载 v1.5.0 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
+在线安装器固定下载 v1.5.1 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
 
 IP 识别不访问第三方 IP 查询服务：优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。NAT、仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接。证书尚未就绪会标注“准备中”，不会提示已经可登录。
 
@@ -44,17 +44,17 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 1. 在服务器的 SSH 窗口下载安装包并核对校验和：
 
    ```bash
-   curl -fL -o JunPanel-1.5.0-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.5.0/JunPanel-1.5.0-linux.tar.gz
-   curl -fL -o JunPanel-1.5.0-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.5.0/JunPanel-1.5.0-SHA256SUMS.txt
-   sha256sum --ignore-missing -c JunPanel-1.5.0-SHA256SUMS.txt
+   curl -fL -o JunPanel-1.5.1-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.5.1/JunPanel-1.5.1-linux.tar.gz
+   curl -fL -o JunPanel-1.5.1-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.5.1/JunPanel-1.5.1-SHA256SUMS.txt
+   sha256sum --ignore-missing -c JunPanel-1.5.1-SHA256SUMS.txt
    ```
 
-   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.5.0)下载到电脑，再通过 `scp` 上传。
+   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.5.1)下载到电脑，再通过 `scp` 上传。
 
 2. 在服务器的 SSH 窗口执行：
 
    ```bash
-   tar -xzf JunPanel-1.5.0-linux.tar.gz && sudo bash junpanel/install.sh
+   tar -xzf JunPanel-1.5.1-linux.tar.gz && sudo bash junpanel/install.sh
    ```
 
    安装器自动选择架构、验证程序校验和、检查现有服务、创建随机面板密码并启动两个 systemd 服务。记下终端显示的 `admin` 账号与随机密码。**新安装没有默认密码**。
@@ -97,7 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 | 模块 | 本版实际支持 |
 | --- | --- |
 | 概览 | 网站、应用、容器与告警计数；负载、CPU、内存、根分区的状态仪表；CPU、内存、上下行流量趋势（5 秒采样、内存保留 120 点，约 10 分钟）；系统信息、Caddy/Docker 状态、网站与最近任务 ；**监控历史**：除实时图外可切换 1 小时 / 6 小时 / 24 小时 / 7 天，每分钟记录一次平均值（CPU、内存、磁盘、流量），保存在代理私有目录，重启不丢，超过 7 天自动清理 |
-| 网站 | 创建、编辑、启停、移除静态网站、反向代理及跳转（301/302，可保留路径）；多域名；域名冲突检查；高级设置：密码访问（bcrypt）、IP 白名单、关闭压缩；Caddy 校验与重载；失败回退；现有域名只读概览，并显示每个网站是否在运行（由面板向本机 Caddy 询问，不访问外网）和每个域名当前解析到哪个 IP（指向本机、其它服务器或没有解析）；“证书”页列出 Caddy 证书与到期时间 |
+| 网站 | 创建、编辑、启停、移除静态网站、反向代理及跳转（301/302，可保留路径）；多域名；域名冲突检查；高级设置：密码访问（bcrypt）、IP 白名单、关闭压缩；Caddy 校验与重载；失败回退；**Caddy 主配置编辑**：面板之前就有的网站（只读列表里的“原有 Caddy 网站”）点“修改配置”，直接在编辑器里改 /etc/caddy/Caddyfile（自动定位到该域名）；保存时先备份旧文件（保留最近 30 份，可查看和恢复），再让 Caddy 校验，通过才重载，校验或重载失败自动还原；文件里面板的 `import /etc/caddy/junpanel.d/*.caddy` 接入行不能删；写入只改这一个文件（服务单元只额外放开 /etc/caddy/Caddyfile 的写权限），由它引用的其他文件仍是只读；现有域名只读概览，并显示每个网站是否在运行（由面板向本机 Caddy 询问，不访问外网）和每个域名当前解析到哪个 IP（指向本机、其它服务器或没有解析）；“证书”页列出 Caddy 证书与到期时间 |
 | 应用商店 | 独立编写的 32 种模板：网站与协作（WordPress、Nextcloud、PairDrop）、效率工具（Vaultwarden、Memos、Trilium Notes、linkding、FreshRSS、Excalidraw）、生活与财务（Mealie、Actual Budget、Wallos、Homebox）、影音（Jellyfin、Navidrome、Audiobookshelf、Kavita）、开发工具（Gitea、code-server、Stirling-PDF、draw.io、IT Tools、CyberChef）、运维（Uptime Kuma、Gotify、ntfy、changedetection.io）、数据库（PostgreSQL、MySQL、Redis）、AI（n8n、Open WebUI）；安装、启停、重启、重新部署、**升级**（先自动备份，再拉取新镜像并重建）、卸载保留数据、恢复部署、绑定域名、**应用设置**（改本机端口、关闭 Vaultwarden/Open WebUI/Gitea 的新用户注册、添加环境变量，保存后自动重新部署；面板生成的数据库密码不可改，密码类变量不回显） |
 | 容器 | 现有容器列表与状态、启停重启、最近日志；“编排”页新建和编辑 Compose 编排（保存前逐项安全检查），部署、拉取更新、启停、停用、删除，并分组展示其它 Compose 项目；“镜像”页列表、拉取及非强制删除；“网络”“卷”页列表、创建和非强制删除 |
 | 文件 | 限定 `/srv/junpanel`；浏览、新建文件夹/文本、上传、下载、UTF-8 编辑、版本冲突检查、重命名/移动、回收站（恢复、永久删除、清空，30 天自动清理）；上传与下载均为流式，单文件上传上限 512 MiB |
@@ -111,7 +111,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/public-
 | 公网入口（面板设置 → 公网入口） | 在面板内设置、更换或移除面板的域名和 IP 入口，可同时保留两者；需再次输入密码；应用前检查域名解析，失败自动恢复 |
 | 账号安全（面板设置 → 安全） | 单管理员、密码哈希、按来源 IP 登录限速、服务器端会话、闲置/绝对过期、CSRF、同源校验、TOTP 两步验证（动态码一次性使用） |
 
-本版不提供全盘文件管理、宿主机 Web Shell、特权或宿主机网络的 Compose 编排、自定义 Caddy 配置片段、现有外部数据库纳管、上传任意 SQL 文件导入、Redis 任意键编辑或整套生产级数据库迁移工具。GitHub 自动部署、多用户授权和更多应用模板可在此结构上扩展，当前界面没有占位操作入口。
+本版不提供全盘文件管理、宿主机 Web Shell、特权或宿主机网络的 Compose 编排、面板内的 Caddy 配置片段表单（需要时可直接编辑主 Caddyfile）、现有外部数据库纳管、上传任意 SQL 文件导入、Redis 任意键编辑或整套生产级数据库迁移工具。GitHub 自动部署、多用户授权和更多应用模板可在此结构上扩展，当前界面没有占位操作入口。
 
 ## 备份与恢复
 
