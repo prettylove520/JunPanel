@@ -154,6 +154,11 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			{"name": "blog.example.com", "issuer": "R12", "not_after": time.Now().Add(61 * 24 * time.Hour), "days_left": 61, "warn": false},
 			{"name": "git.example.com", "issuer": "R12", "not_after": time.Now().Add(11 * 24 * time.Hour), "days_left": 11, "warn": true},
 		}}
+	case "/caddy/adoptable":
+		value = map[string]any{"sha": strings.Repeat("a", 64), "editable": true, "blocks": []caddyBlock{
+			{ID: "1111111111111111", Hosts: []string{"legacy.example.com"}, Kind: "redirect", Summary: "跳转 → https://www.example.com（保留路径）", Adoptable: true},
+			{ID: "2222222222222222", Hosts: []string{"monitor.example.com"}, Reason: "含有面板没有对应设置的指令：basic_auth"},
+		}}
 	case "/caddy/config":
 		content := `# 示例主配置（模拟数据）
 www.example.com {
