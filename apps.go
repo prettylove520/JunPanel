@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,11 +61,12 @@ var appCatalog = []appTemplate{
 	{"homebox", "Homebox", "生活与财务", "家庭物品与资产清单：位置、标签、保修与购买记录", "ghcr.io/sysadminsmedia/homebox:latest", 7745, 7745, "", "#5b7f67", "第一个注册的账号成为管理员；其他人也能注册，请自己注册好后在“已安装”页的设置里添加环境变量 HBOX_OPTIONS_ALLOW_REGISTRATION=false 关闭注册。", false},
 	{"changedetection", "changedetection.io", "运维工具", "监控网页内容变化（价格、库存、公告），变化时发送通知", "ghcr.io/dgtlmoon/changedetection.io:latest", 5003, 5000, "", "#2563eb", "默认没有密码，打开后请先到“设置 → 密码”设置访问密码，再绑定域名。仅抓取普通网页，不含浏览器渲染。", false},
 	{"pairdrop", "PairDrop", "网盘与协作", "在同一网络下的设备之间互传文件和文字，浏览器里直接用", "ghcr.io/schlagmichdoch/pairdrop:latest", 3010, 3000, "", "#4a63e7", "需要通过 HTTPS 域名访问。无需账号，也不保存文件，传输在设备之间直接进行。", false},
-	{"cyberchef", "CyberChef", "开发工具", "数据编解码与分析工具箱：Base64、哈希、加解密、正则等", "ghcr.io/gchq/cyberchef:latest", 8101, 80, "", "#8a6a3b", "无需账号，也不保存数据，所有处理都在浏览器里完成。", false},
+	{"cyberchef", "CyberChef", "开发工具", "数据编解码与分析工具箱：Base64、哈希、加解密、正则等", "ghcr.io/gchq/cyberchef:latest", 8101, 8080, "", "#8a6a3b", "无需账号，也不保存数据，所有处理都在浏览器里完成。", false},
 }
 
 // appSpec describes the plain single-container templates: a few settings and the
-// data volumes. "{password}" in a value is replaced by the app's generated password.
+// data volumes. "{password}" in a value is replaced by the app's generated password; "{secret}" by a
+// long value derived from it for apps that insist on a separate server secret.
 // Volumes starting with "/" are folders of the panel's file area, created by Docker.
 type appSpec struct {
 	Env     map[string]string
@@ -89,10 +92,17 @@ var appSpecs = map[string]appSpec{
 	"mealie":          {Env: map[string]string{"ALLOW_SIGNUP": "false", "MAX_WORKERS": "1", "WEB_CONCURRENCY": "1"}, Volumes: []string{"data:/app/data"}},
 	"actual":          {Volumes: []string{"data:/data"}},
 	"wallos":          {Env: map[string]string{"TZ": "Asia/Shanghai"}, Volumes: []string{"db:/var/www/html/db", "logos:/var/www/html/images/uploads/logos"}},
-	"homebox":         {Volumes: []string{"data:/data"}},
+	"homebox":         {Env: map[string]string{"HBOX_AUTH_API_KEY_PEPPER": "{secret}"}, Volumes: []string{"data:/data"}},
 	"changedetection": {Volumes: []string{"datastore:/datastore"}},
 	"pairdrop":        {},
 	"cyberchef":       {},
+}
+
+// appSecret is a stable 64-character secret for an app, derived from its generated password so a
+// redeploy keeps it and nothing else has to be stored.
+func appSecret(r appRecord) string {
+	sum := sha256.Sum256([]byte("junpanel-app-secret:" + r.Template + ":" + r.ID + ":" + r.Password))
+	return hex.EncodeToString(sum[:])
 }
 
 func init() {
@@ -259,7 +269,7 @@ func composeForRoot(r appRecord, root string) ([]byte, error) {
 		if len(spec.Env) > 0 {
 			env := map[string]string{}
 			for k, v := range spec.Env {
-				env[k] = strings.ReplaceAll(v, "{password}", r.Password)
+				env[k] = strings.ReplaceAll(strings.ReplaceAll(v, "{password}", r.Password), "{secret}", appSecret(r))
 			}
 			service["environment"] = env
 		}

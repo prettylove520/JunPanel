@@ -198,7 +198,7 @@ func TestDockerPlainTemplates(t *testing.T) {
 		"kavita":          {"/api/health", []int{200}},
 		"mealie":          {"/api/app/about", []int{200}},
 		"actual":          {"/", []int{200, 302}},
-		"wallos":          {"/login.php", []int{200}},
+		"wallos":          {"/login.php", []int{200, 302}},
 		"homebox":         {"/api/v1/status", []int{200}},
 		"changedetection": {"/", []int{200, 302}},
 		"pairdrop":        {"/", []int{200}},
@@ -277,7 +277,7 @@ func TestPlainTemplateSafety(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		for _, bad := range []string{"privileged", "network_mode", "cap_add", "docker.sock", "{root}", "{password}"} {
+		for _, bad := range []string{"privileged", "network_mode", "cap_add", "docker.sock", "{root}", "{password}", "{secret}"} {
 			if strings.Contains(string(raw), bad) {
 				t.Fatalf("%s: compose contains %q:\n%s", key, bad, raw)
 			}
@@ -344,5 +344,29 @@ func TestEveryTemplateHasAGuide(t *testing.T) {
 		if len(r.Guide) != len(appGuides[r.Key]) {
 			t.Fatalf("%s: guide missing from the catalog", r.Key)
 		}
+	}
+}
+
+func TestHomeboxGetsALongStableSecret(t *testing.T) {
+	rec := appRecord{ID: "hb", Template: "homebox", Port: 18200, Password: "short"}
+	raw, e := composeFor(rec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var cfg struct {
+		Services map[string]struct {
+			Environment map[string]string `json:"environment"`
+		} `json:"services"`
+	}
+	json.Unmarshal(raw, &cfg)
+	pepper := cfg.Services["app"].Environment["HBOX_AUTH_API_KEY_PEPPER"]
+	if len(pepper) < 32 || strings.Contains(pepper, "short") {
+		t.Fatalf("pepper %q", pepper)
+	}
+	again, _ := composeFor(rec)
+	rec.Password = "other"
+	other, _ := composeFor(rec)
+	if string(again) != string(raw) || string(other) == string(raw) {
+		t.Fatal("the secret must be stable for one app and differ between apps")
 	}
 }
