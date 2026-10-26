@@ -49,6 +49,14 @@ plain.example.com {
 	reverse_proxy https://backend.internal:8443
 }
 
+https://explicit.example.com {
+	reverse_proxy 127.0.0.1:7000
+}
+
+http://tls.example.com {
+	reverse_proxy 127.0.0.1:7001
+}
+
 # JunPanel managed sites
 import %s/*.caddy
 `
@@ -69,7 +77,7 @@ func TestCaddyBlocksAreJudged(t *testing.T) {
 	for _, b := range a.parseCaddyBlocks(content) {
 		got[b.Hosts[0]] = b
 	}
-	if len(got) != 6 {
+	if len(got) != 8 {
 		t.Fatalf("%d blocks found: %v", len(got), got)
 	}
 	m := got["monitor.example.com"]
@@ -83,7 +91,10 @@ func TestCaddyBlocksAreJudged(t *testing.T) {
 	if s := got["plain.example.com"]; !s.Adoptable || s.site.Upstream != "https://backend.internal:8443" {
 		t.Fatalf("https upstream: %+v", s)
 	}
-	for host, want := range map[string]string{"store.example.com": "嵌套", "api.example.com": "嵌套", "odd.example.com:8443": "端口"} {
+	if e := got["explicit.example.com"]; !e.Adoptable || e.site.Upstream != "http://127.0.0.1:7000" {
+		t.Fatalf("explicit https:// address: %+v", e)
+	}
+	for host, want := range map[string]string{"store.example.com": "嵌套", "api.example.com": "嵌套", "odd.example.com": "端口", "tls.example.com": "http://"} {
 		b, ok := got[host]
 		if !ok || b.Adoptable || !strings.Contains(b.Reason, want) {
 			t.Fatalf("%s: %+v", host, b)
