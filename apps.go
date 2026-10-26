@@ -51,6 +51,15 @@ var appCatalog = []appTemplate{
 	{"stirlingpdf", "Stirling-PDF", "开发工具", "PDF 工具箱：合并、拆分、转换、压缩、加水印与 OCR", "stirlingtools/stirling-pdf:latest", 8093, 8080, "", "#e53935", "无需保存数据，镜像较大，运行时占用内存可能超过 1 GB。", false},
 	{"drawio", "draw.io", "开发工具", "流程图、架构图与思维导图在线绘制工具，文件保存在浏览器或本地", "jgraph/drawio:latest", 8098, 8080, "", "#f08705", "文件只保存在访问者的浏览器或本机，服务器不保存数据。", false},
 	{"codeserver", "code-server", "开发工具", "在浏览器里运行的 VS Code，随时随地写代码", "codercom/code-server:latest", 8088, 8080, "", "#2e7ff6", "登录密码在“连接信息”中查看。它带有容器内的终端，等同于一个可写代码的 Linux 环境，务必只通过 HTTPS 域名使用，并保管好密码。", false},
+	{"audiobookshelf", "Audiobookshelf", "影音娱乐", "自托管的有声书与播客服务器，支持进度同步和手机客户端", "ghcr.io/advplyr/audiobookshelf:latest", 13378, 80, "", "#82612c", "有声书放在“文件”页的 audiobooks 目录（/srv/junpanel/audiobooks），播客放在 podcasts 目录。第一个创建的账号成为管理员。备份只包含设置和库信息，不包含音频文件。", false},
+	{"kavita", "Kavita", "影音娱乐", "漫画、电子书与轻小说阅读服务器，支持网页阅读和阅读进度", "ghcr.io/kareadita/kavita:latest", 5004, 5000, "", "#4ac694", "书籍放在“文件”页的 books 目录（/srv/junpanel/books），创建管理员后在“库”里添加 /books 下的文件夹。备份只包含设置和库信息，不包含书籍文件。", false},
+	{"mealie", "Mealie", "生活与财务", "自托管的食谱管理与每周菜单，支持从网页一键导入食谱", "ghcr.io/mealie-recipes/mealie:latest", 9925, 9000, "", "#e58325", "初始账号 changeme@example.com，密码 MyPassword，登录后请立刻在个人资料里修改。已关闭开放注册，需要时在管理页创建用户。内存占用约 500 MB。", false},
+	{"actual", "Actual Budget", "生活与财务", "本地优先的个人记账与预算工具，数据可在多设备同步", "actualbudget/actual-server:latest", 5006, 5006, "", "#6b46c1", "必须通过绑定好的 HTTPS 域名访问，首次打开时设置服务器密码。", false},
+	{"wallos", "Wallos", "生活与财务", "订阅与周期性支出管理，到期提醒，按月、年统计花费", "bellamy/wallos:latest", 8282, 80, "", "#3b82f6", "首次打开会让你注册管理员账号，之后可以在设置里关闭注册。", false},
+	{"homebox", "Homebox", "生活与财务", "家庭物品与资产清单：位置、标签、保修与购买记录", "ghcr.io/sysadminsmedia/homebox:latest", 7745, 7745, "", "#5b7f67", "第一个注册的账号成为管理员；其他人也能注册，请自己注册好后在“已安装”页的设置里添加环境变量 HBOX_OPTIONS_ALLOW_REGISTRATION=false 关闭注册。", false},
+	{"changedetection", "changedetection.io", "运维工具", "监控网页内容变化（价格、库存、公告），变化时发送通知", "ghcr.io/dgtlmoon/changedetection.io:latest", 5003, 5000, "", "#2563eb", "默认没有密码，打开后请先到“设置 → 密码”设置访问密码，再绑定域名。仅抓取普通网页，不含浏览器渲染。", false},
+	{"pairdrop", "PairDrop", "网盘与协作", "在同一网络下的设备之间互传文件和文字，浏览器里直接用", "ghcr.io/schlagmichdoch/pairdrop:latest", 3010, 3000, "", "#4a63e7", "需要通过 HTTPS 域名访问。无需账号，也不保存文件，传输在设备之间直接进行。", false},
+	{"cyberchef", "CyberChef", "开发工具", "数据编解码与分析工具箱：Base64、哈希、加解密、正则等", "ghcr.io/gchq/cyberchef:latest", 8101, 80, "", "#8a6a3b", "无需账号，也不保存数据，所有处理都在浏览器里完成。", false},
 }
 
 // appSpec describes the plain single-container templates: a few settings and the
@@ -64,17 +73,26 @@ type appSpec struct {
 }
 
 var appSpecs = map[string]appSpec{
-	"nextcloud":   {Env: map[string]string{"OVERWRITEPROTOCOL": "https"}, Volumes: []string{"data:/var/www/html"}},
-	"jellyfin":    {Volumes: []string{"config:/config", "cache:/cache", "{root}/media:/media"}},
-	"navidrome":   {Volumes: []string{"data:/data", "{root}/music:/music:ro"}},
-	"trilium":     {Volumes: []string{"data:/home/node/trilium-data"}},
-	"linkding":    {Env: map[string]string{"LD_SERVER_HOST": "0.0.0.0", "LD_SUPERUSER_NAME": "admin", "LD_SUPERUSER_PASSWORD": "{password}"}, Volumes: []string{"data:/etc/linkding/data"}, Login: "admin"},
-	"freshrss":    {Env: map[string]string{"CRON_MIN": "13,43"}, Volumes: []string{"data:/var/www/FreshRSS/data", "extensions:/var/www/FreshRSS/extensions"}},
-	"gotify":      {Env: map[string]string{"GOTIFY_DEFAULTUSER_NAME": "admin", "GOTIFY_DEFAULTUSER_PASS": "{password}"}, Volumes: []string{"data:/app/data"}, Login: "admin"},
-	"ntfy":        {Command: []string{"serve"}},
-	"stirlingpdf": {},
-	"drawio":      {},
-	"codeserver":  {Env: map[string]string{"PASSWORD": "{password}"}, Volumes: []string{"data:/home/coder"}, Login: "coder"},
+	"nextcloud":       {Env: map[string]string{"OVERWRITEPROTOCOL": "https"}, Volumes: []string{"data:/var/www/html"}},
+	"jellyfin":        {Volumes: []string{"config:/config", "cache:/cache", "{root}/media:/media"}},
+	"navidrome":       {Volumes: []string{"data:/data", "{root}/music:/music:ro"}},
+	"trilium":         {Volumes: []string{"data:/home/node/trilium-data"}},
+	"linkding":        {Env: map[string]string{"LD_SERVER_HOST": "0.0.0.0", "LD_SUPERUSER_NAME": "admin", "LD_SUPERUSER_PASSWORD": "{password}"}, Volumes: []string{"data:/etc/linkding/data"}, Login: "admin"},
+	"freshrss":        {Env: map[string]string{"CRON_MIN": "13,43"}, Volumes: []string{"data:/var/www/FreshRSS/data", "extensions:/var/www/FreshRSS/extensions"}},
+	"gotify":          {Env: map[string]string{"GOTIFY_DEFAULTUSER_NAME": "admin", "GOTIFY_DEFAULTUSER_PASS": "{password}"}, Volumes: []string{"data:/app/data"}, Login: "admin"},
+	"ntfy":            {Command: []string{"serve"}},
+	"stirlingpdf":     {},
+	"drawio":          {},
+	"codeserver":      {Env: map[string]string{"PASSWORD": "{password}"}, Volumes: []string{"data:/home/coder"}, Login: "coder"},
+	"audiobookshelf":  {Volumes: []string{"config:/config", "metadata:/metadata", "{root}/audiobooks:/audiobooks", "{root}/podcasts:/podcasts"}},
+	"kavita":          {Volumes: []string{"config:/kavita/config", "{root}/books:/books"}},
+	"mealie":          {Env: map[string]string{"ALLOW_SIGNUP": "false", "MAX_WORKERS": "1", "WEB_CONCURRENCY": "1"}, Volumes: []string{"data:/app/data"}},
+	"actual":          {Volumes: []string{"data:/data"}},
+	"wallos":          {Env: map[string]string{"TZ": "Asia/Shanghai"}, Volumes: []string{"db:/var/www/html/db", "logos:/var/www/html/images/uploads/logos"}},
+	"homebox":         {Volumes: []string{"data:/data"}},
+	"changedetection": {Volumes: []string{"datastore:/datastore"}},
+	"pairdrop":        {},
+	"cyberchef":       {},
 }
 
 func init() {

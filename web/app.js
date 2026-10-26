@@ -213,7 +213,7 @@ function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
 // Bundled logos (web/icons/<template>.svg); any other template shows its initial.
-const appIcons = new Set(["codeserver", "drawio", "excalidraw", "freshrss", "gitea", "gotify", "ittools", "jellyfin", "kuma", "linkding", "memos", "mysql", "n8n", "navidrome", "nextcloud", "ntfy", "openwebui", "postgres", "redis", "stirlingpdf", "trilium", "vaultwarden", "wordpress"]);
+const appIcons = new Set(["actual", "audiobookshelf", "codeserver", "cyberchef", "drawio", "excalidraw", "freshrss", "gitea", "gotify", "homebox", "ittools", "jellyfin", "kavita", "kuma", "linkding", "mealie", "memos", "mysql", "n8n", "navidrome", "nextcloud", "ntfy", "openwebui", "postgres", "redis", "stirlingpdf", "trilium", "vaultwarden", "wordpress"]);
 function appLogo(t) {
   const letter = (t.name || t.key || 'A').slice(0, 1).toUpperCase(), n = el('div', `app-logo ${t.key || ''}`, letter);
   if (!appIcons.has(t.key)) return n;
