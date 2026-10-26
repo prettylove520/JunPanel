@@ -177,7 +177,7 @@ legacy.example.com {
 # JunPanel managed sites
 import /etc/caddy/junpanel.d/*.caddy
 `
-		value = map[string]any{"path": "/etc/caddy/Caddyfile", "content": content, "sha": fileDigest([]byte(content)), "editable": true, "link": "import /etc/caddy/junpanel.d/*.caddy", "backups": []caddyBackup{{ID: "Caddyfile.20261024-031500.bak", Time: time.Now().Add(-30 * time.Hour), Size: 412}, {ID: "Caddyfile.20261022-101200.bak", Time: time.Now().Add(-80 * time.Hour), Size: 388}}}
+		value = map[string]any{"path": "/etc/caddy/Caddyfile", "content": content, "sha": fileDigest([]byte(content)), "editable": true, "main": true, "files": []string{"/etc/caddy/Caddyfile", "/etc/caddy/sites.caddy"}, "link": "import /etc/caddy/junpanel.d/*.caddy", "backups": []caddyBackup{{ID: "Caddyfile.20261024-031500.bak", Time: time.Now().Add(-30 * time.Hour), Size: 412}, {ID: "Caddyfile.20261022-101200.bak", Time: time.Now().Add(-80 * time.Hour), Size: 388}}}
 	case "/schedules":
 		value = map[string]any{"zone": "CST +0800", "now": time.Now(), "schedules": []schedule{
 			{ID: "sc_" + strings.Repeat("1", 16), Name: "每晚备份博客", Action: "backup", Type: "app", Target: "studio", Keep: 7, Every: "daily", At: "03:00", Enabled: true, Created: time.Now().Add(-9 * 24 * time.Hour), Next: time.Now().Add(9 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-15 * time.Hour), Status: "success", Message: "已备份，保留最近 7 份（已清理 1 份旧备份）"}},
