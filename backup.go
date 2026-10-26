@@ -887,6 +887,149 @@ func (a *agent) startBackup(spec backupSpec, done func(backupMeta, error)) (job,
 	}
 	return job{}, bad(400, "备份类型无效")
 }
+
+// backupItems lists everything a one-click backup covers: static sites, apps that keep data,
+// and the SQL databases of apps (Redis has no SQL dump and is left out).
+func (a *agent) backupItems(want map[string]bool) ([]backupSpec, map[string]string, error) {
+	var items []backupSpec
+	names := map[string]string{}
+	if want["site"] {
+		sites, e := a.readSites()
+		if e != nil {
+			return nil, nil, e
+		}
+		for _, s := range sites {
+			if s.Kind == "static" {
+				spec := backupSpec{Type: "site", Target: s.ID}
+				items = append(items, spec)
+				names[spec.Type+":"+spec.Target] = "网站 · " + s.Name
+			}
+		}
+	}
+	if want["app"] || want["database"] {
+		apps, e := a.readApps()
+		if e != nil {
+			return nil, nil, e
+		}
+		for _, rec := range apps {
+			if rec.Removed {
+				continue
+			}
+			if want["app"] && len(appData[rec.Template]) > 0 {
+				spec := backupSpec{Type: "app", Target: rec.ID}
+				items = append(items, spec)
+				names[spec.Type+":"+spec.Target] = "应用 · " + rec.Name
+			}
+			if want["database"] {
+				t, _ := findTemplate(rec.Template)
+				kind, db := t.Database, "junpanel"
+				if rec.Template == "wordpress" {
+					kind, db = "mariadb", "wordpress"
+				}
+				if kind == "" || kind == "redis" {
+					continue
+				}
+				if _, _, e := dumpArgs(rec, kind, db); e != nil {
+					continue
+				}
+				spec := backupSpec{Type: "database", Target: rec.ID, Database: db}
+				items = append(items, spec)
+				names[spec.Type+":"+spec.Target] = "数据库 · " + rec.Name + " / " + db
+			}
+		}
+	}
+	return items, names, nil
+}
+
+// backupOne runs one backup inside a job that is already running, then does the off-site upload.
+func (a *agent) backupOne(ctx context.Context, out *limitedBuffer, spec backupSpec) error {
+	var meta backupMeta
+	var e error
+	switch spec.Type {
+	case "site":
+		var s site
+		if s, e = a.staticSite(spec.Target); e == nil {
+			meta, e = a.backupSite(ctx, out, s, spec.Tag)
+		}
+	case "app":
+		var rec appRecord
+		if rec, e = a.markBusy(spec.Target); e == nil {
+			meta, e = a.backupApp(ctx, out, rec, spec.Tag)
+			if e != nil {
+				a.releaseApp(rec.ID, "上次备份未完成，请检查任务日志")
+			} else {
+				a.releaseApp(rec.ID, "")
+			}
+		}
+	case "database":
+		var record appRecord
+		var kind string
+		if record, kind, e = a.databaseRecord(spec.Target); e == nil {
+			if _, e = a.databaseContainer(record, kind); e == nil {
+				meta, e = a.backupDatabase(ctx, out, spec.Target, spec.Database, spec.Tag)
+			}
+		}
+	default:
+		e = bad(400, "备份类型无效")
+	}
+	if e == nil {
+		fmt.Fprintf(out, "备份完成：%s\n", meta.ID)
+		a.afterBackup(ctx, out, meta)
+	}
+	return e
+}
+
+// backupAll is the one-click backup: one job that goes through every site, app and database in
+// turn. A failure does not stop the rest; the job reports how many failed at the end.
+func (a *agent) backupAll(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Types []string `json:"types"`
+	}
+	if e := body(r, &req); e != nil {
+		return e
+	}
+	want := map[string]bool{}
+	for _, t := range req.Types {
+		if t != "site" && t != "app" && t != "database" {
+			return bad(400, "备份类型无效")
+		}
+		want[t] = true
+	}
+	if len(want) == 0 {
+		want = map[string]bool{"site": true, "app": true, "database": true}
+	}
+	items, names, e := a.backupItems(want)
+	if e != nil {
+		return e
+	}
+	if len(items) == 0 {
+		return bad(409, "没有可备份的对象")
+	}
+	j, e := a.jobs.startWithin(backupTimeout, fmt.Sprintf("一键备份 · %d 项", len(items)), func(ctx context.Context, out *limitedBuffer) error {
+		failed := 0
+		for i, spec := range items {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			spec.Tag = backupTag{Note: "一键备份"}
+			fmt.Fprintf(out, "[%d/%d] %s\n", i+1, len(items), names[spec.Type+":"+spec.Target])
+			if e := a.backupOne(ctx, out, spec); e != nil {
+				failed++
+				fmt.Fprintf(out, "失败：%v\n", e)
+			}
+		}
+		if failed > 0 {
+			return fmt.Errorf("%d 项备份失败，其余 %d 项已完成，详见上面的记录", failed, len(items)-failed)
+		}
+		fmt.Fprintf(out, "全部完成：%d 项\n", len(items))
+		return nil
+	})
+	if e != nil {
+		return e
+	}
+	send(w, 202, j)
+	return nil
+}
 func (a *agent) backupDownload(w http.ResponseWriter, r *http.Request) error {
 	meta, e := a.readBackup(r.PathValue("id"))
 	if e != nil {

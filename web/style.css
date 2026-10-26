@@ -716,3 +716,21 @@ main { max-width: clamp(1680px, 82vw, 2400px); }
 .form-result:not(:empty) { margin: 6px 0 2px; }
 .form-result.ok { color: var(--success); } .form-result.bad { color: var(--danger); }
 .toasts:not(:popover-open) { display: none; }
+
+/* ---- Backups: what can be backed up, when it was, and whether it runs on a timetable ---- */
+.backup-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.backup-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px 12px; background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius-card); }
+.backup-stat-label { color: var(--muted); font-size: 13px; }
+.backup-stat strong { overflow: hidden; font-size: 20px; font-weight: 600; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.backup-stat small { line-height: 1.5; }
+.backup-stat.warn .backup-stat-label::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--dot-warn); vertical-align: 1px; }
+.page-tabs { margin-bottom: 16px; }
+.page-tabs .tab-count { margin-left: 6px; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.page-tabs .subnav-item.active .tab-count { color: var(--text-2); }
+.backup-expand > td { padding: 0 24px 4px 24px; background: var(--fill); }
+.backup-expand .table-wrap { margin: 8px 0 12px; }
+.backup-none { margin: 0; padding: 14px 0; }
+.data-table td > div > small { display: block; }
+.field-off { display: none; }
+@media (max-width: 1100px) { .backup-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .backup-summary { gap: 8px; } .backup-stat { padding: 12px; } .backup-stat strong { font-size: 16px; } .backup-stat small { font-size: 12px; } }
