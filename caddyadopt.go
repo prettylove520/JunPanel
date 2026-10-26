@@ -93,16 +93,41 @@ func (a *agent) parseCaddyBlocks(content string) []caddyBlock {
 func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 	b := caddyBlock{}
 	no := func(reason string) caddyBlock { b.Reason = reason; return b }
-	for _, h := range strings.FieldsFunc(addr, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
-		b.Hosts = append(b.Hosts, strings.ToLower(h))
-	}
-	for _, h := range b.Hosts {
-		if !domainName.MatchString(h) || strings.ContainsAny(h, ":*{}/") {
-			return no("地址里有端口、协议、通配符或占位符（" + truncate(h, 40) + "）")
+	// Hosts are kept as bare names so they match what the panel lists; what makes an address something
+	// the panel cannot represent (plain http, a port, a wildcard) is remembered and reported below.
+	problem := ""
+	for _, tok := range strings.FieldsFunc(addr, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+		h := strings.ToLower(tok)
+		switch {
+		case strings.HasPrefix(h, "https://"):
+			h = strings.TrimPrefix(h, "https://")
+		case strings.HasPrefix(h, "http://"):
+			h = strings.TrimPrefix(h, "http://")
+			problem = "地址是 http://（不走 HTTPS）：" + truncate(tok, 40)
 		}
+		h = strings.TrimSuffix(h, "/")
+		if i := strings.LastIndex(h, ":"); i >= 0 && !strings.Contains(h, "]") {
+			h = h[:i]
+			problem = "地址带有端口：" + truncate(tok, 40)
+		}
+		if h == "" {
+			continue
+		}
+		if strings.HasPrefix(h, "*") || strings.ContainsAny(h, "*{}/") {
+			problem = "地址含有通配符或占位符：" + truncate(tok, 40)
+		}
+		b.Hosts = append(b.Hosts, h)
 	}
 	if len(b.Hosts) == 0 {
 		return no("没有域名")
+	}
+	if problem != "" {
+		return no(problem)
+	}
+	for _, h := range b.Hosts {
+		if !domainName.MatchString(h) {
+			return no("地址不是完整域名：" + truncate(h, 40))
+		}
 	}
 	var main, upstream, target, root string
 	compress, permanent, keepPath := false, false, false
