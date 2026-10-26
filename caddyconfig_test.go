@@ -1,0 +1,154 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+func caddyTestAgent(t *testing.T) (*agent, string) {
+	t.Helper()
+	a := testAgent(t)
+	link := a.caddyLinkLine()
+	original := "old.example.com {\n\treverse_proxy 127.0.0.1:9000\n}\n\n# JunPanel managed sites\n" + link + "\n"
+	if e := os.WriteFile(a.cfg.Caddy, []byte(original), 0644); e != nil {
+		t.Fatal(e)
+	}
+	return a, original
+}
+
+func caddyGet(t *testing.T, a *agent) (content, sha string, editable bool, backups int) {
+	t.Helper()
+	r := request(a.routes(), "GET", "/caddy/config", "", nil, nil)
+	if r.Code != 200 {
+		t.Fatalf("get: %d %s", r.Code, r.Body.String())
+	}
+	var out struct {
+		Content  string
+		SHA      string
+		Editable bool
+		Backups  []caddyBackup
+	}
+	json.Unmarshal(r.Body.Bytes(), &out)
+	return out.Content, out.SHA, out.Editable, len(out.Backups)
+}
+
+func TestCaddyConfigEditKeepsBackupAndRollsBack(t *testing.T) {
+	a, original := caddyTestAgent(t)
+	h := a.routes()
+	content, sha, editable, backups := caddyGet(t, a)
+	if content != original || !editable || backups != 0 {
+		t.Fatalf("get: editable=%v backups=%d", editable, backups)
+	}
+	post := func(body map[string]string) int {
+		raw, _ := json.Marshal(body)
+		return request(h, "POST", "/caddy/config", string(raw), nil, nil).Code
+	}
+	changed := strings.Replace(original, "old.example.com", "new.example.com", 1)
+
+	// A stale view, a missing import line and an unchanged file are refused before anything is written.
+	if post(map[string]string{"content": changed, "sha": "stale"}) != 409 {
+		t.Fatal("stale edit accepted")
+	}
+	if post(map[string]string{"content": "new.example.com {\n}\n", "sha": sha}) != 400 {
+		t.Fatal("removing the panel import line was accepted")
+	}
+	if post(map[string]string{"content": original, "sha": sha}) != 400 {
+		t.Fatal("unchanged file accepted")
+	}
+	if now, _ := os.ReadFile(a.cfg.Caddy); string(now) != original {
+		t.Fatal("a refused edit changed the file")
+	}
+
+	// Validation failure puts the old file back (and nothing is reloaded).
+	var reloads int
+	a.runner = func(_ time.Duration, name string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "reload" {
+			reloads++
+			return "", nil
+		}
+		for _, x := range args {
+			if x == "validate" {
+				return "Error: adapting config: syntax error", errors.New("exit 1")
+			}
+		}
+		return "", nil
+	}
+	if post(map[string]string{"content": changed, "sha": sha}) != 409 {
+		t.Fatal("invalid config accepted")
+	}
+	if now, _ := os.ReadFile(a.cfg.Caddy); string(now) != original || reloads != 0 {
+		t.Fatalf("invalid config left behind or reloaded (%d)", reloads)
+	}
+
+	// A reload failure also restores the old file, and reloads once more to return to it.
+	reloads = 0
+	a.runner = func(_ time.Duration, name string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "reload" {
+			reloads++
+			if reloads == 1 {
+				return "reload failed", errors.New("exit 1")
+			}
+		}
+		return "", nil
+	}
+	if post(map[string]string{"content": changed, "sha": sha}) != 409 || reloads != 2 {
+		t.Fatalf("failed reload not undone (%d reloads)", reloads)
+	}
+	if now, _ := os.ReadFile(a.cfg.Caddy); string(now) != original {
+		t.Fatal("failed reload left the new file")
+	}
+
+	// A good edit is written (with a trailing newline), reloaded, and the previous file is kept.
+	reloads = 0
+	a.runner = func(_ time.Duration, name string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "reload" {
+			reloads++
+		}
+		return "", nil
+	}
+	trimmed := strings.TrimSuffix(changed, "\n")
+	if post(map[string]string{"content": trimmed, "sha": sha}) != 200 || reloads != 1 {
+		t.Fatal("valid edit refused")
+	}
+	if now, _ := os.ReadFile(a.cfg.Caddy); string(now) != changed {
+		t.Fatalf("file is %q", now)
+	}
+	list := a.caddyBackups()
+	if len(list) == 0 {
+		t.Fatal("no backup kept")
+	}
+	kept, e := a.caddyBackupRead(list[0].ID)
+	if e != nil || string(kept) != original {
+		t.Fatalf("backup is %q", kept)
+	}
+
+	// The backup can be restored, which itself keeps the file it replaces.
+	_, sha2, _, _ := caddyGet(t, a)
+	raw, _ := json.Marshal(map[string]string{"id": list[0].ID, "sha": sha2})
+	if r := request(h, "POST", "/caddy/config/restore", string(raw), nil, nil); r.Code != 200 {
+		t.Fatalf("restore: %d %s", r.Code, r.Body.String())
+	}
+	if now, _ := os.ReadFile(a.cfg.Caddy); string(now) != original {
+		t.Fatal("restore did not bring the old file back")
+	}
+	if r := request(h, "GET", "/caddy/config/backups/..%2Fx", "", nil, nil); r.Code == 200 {
+		t.Fatal("odd backup name accepted")
+	}
+}
+
+func TestCaddyBackupsAreLimited(t *testing.T) {
+	a, original := caddyTestAgent(t)
+	for i := 0; i < keepCaddyBackups+5; i++ {
+		a.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, i, 0, time.UTC) }
+		if e := a.saveCaddyBackup([]byte(original)); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if n := len(a.caddyBackups()); n != keepCaddyBackups {
+		t.Fatalf("%d backups kept", n)
+	}
+}
