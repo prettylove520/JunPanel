@@ -164,6 +164,7 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /databases/{id}/create", endpoint(a.databaseCreate))
 	m.HandleFunc("GET /backups", endpoint(a.backupList))
 	m.HandleFunc("POST /backups", endpoint(a.backupCreate))
+	m.HandleFunc("POST /backups/all", endpoint(a.backupAll))
 	m.HandleFunc("GET /backups/{id}/download", endpoint(a.backupDownload))
 	m.HandleFunc("DELETE /backups/{id}", endpoint(a.backupDelete))
 	m.HandleFunc("POST /backups/{id}/restore", endpoint(a.backupRestore))

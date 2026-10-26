@@ -633,3 +633,57 @@ func TestRestoreRejectsMismatchedManifest(t *testing.T) {
 		t.Fatal("app left busy")
 	}
 }
+
+func TestBackupAllCoversEveryKind(t *testing.T) {
+	a := testAgent(t)
+	h := a.routes()
+	if r := request(h, "POST", "/backups/all", `{}`, nil, nil); r.Code != 409 {
+		t.Fatalf("nothing to back up: %d %s", r.Code, r.Body.String())
+	}
+	if r := request(h, "POST", "/backups/all", `{"types":["files"]}`, nil, nil); r.Code != 400 {
+		t.Fatalf("bad type accepted: %d", r.Code)
+	}
+	site1 := seedSite(t, a, "s_"+strings.Repeat("a", 20), map[string]string{"index.html": "hi"})
+	proxy := site{ID: "s_" + strings.Repeat("c", 20), Name: "p", Domains: []string{"p.example.com"}, Kind: "proxy", Upstream: "http://127.0.0.1:9", Enabled: true}
+	writeSites(t, a, site1, proxy)
+	if e := a.storeApps([]appRecord{
+		{ID: "wp", Name: "blog", Template: "wordpress", Port: 7000},
+		{ID: "pg", Name: "db", Template: "postgres", Port: 7001},
+		{ID: "rd", Name: "cache", Template: "redis", Port: 7002},
+		{ID: "gone", Name: "old", Template: "memos", Port: 7003, Removed: true},
+		{ID: "tool", Name: "tools", Template: "ittools", Port: 7004},
+	}); e != nil {
+		t.Fatal(e)
+	}
+	items, _, e := a.backupItems(map[string]bool{"site": true, "app": true, "database": true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	got := map[string]bool{}
+	for _, it := range items {
+		got[it.Type+":"+it.Target+":"+it.Database] = true
+	}
+	// Static site, WordPress and Postgres have data; Redis has no SQL dump; the removed app and the
+	// stateless tool are skipped; the proxy site has no files.
+	want := []string{"site:" + site1.ID + ":", "app:wp:", "app:pg:", "app:rd:", "database:wp:wordpress", "database:pg:junpanel"}
+	if len(got) != len(want) {
+		t.Fatalf("items %v", got)
+	}
+	for _, k := range want {
+		if !got[k] {
+			t.Fatalf("missing %s in %v", k, got)
+		}
+	}
+	// Only the sites: the job runs and leaves a labelled backup.
+	r := request(h, "POST", "/backups/all", `{"types":["site"]}`, nil, nil)
+	if r.Code != 202 {
+		t.Fatalf("start: %d %s", r.Code, r.Body.String())
+	}
+	if j := waitOutcome(t, a, r.Body.Bytes()); j.State != "success" || !strings.Contains(j.Output, "全部完成：1 项") {
+		t.Fatalf("job: %+v", j)
+	}
+	list := listBackups(t, h)
+	if len(list) != 1 || list[0].Note != "一键备份" || list[0].Target != site1.ID {
+		t.Fatalf("backups: %+v", list)
+	}
+}

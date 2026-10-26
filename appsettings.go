@@ -31,7 +31,7 @@ var protectedEnv = map[string]bool{
 	"WORDPRESS_DB_HOST": true, "WORDPRESS_DB_NAME": true, "WORDPRESS_DB_USER": true, "WORDPRESS_DB_PASSWORD": true,
 	"LD_SUPERUSER_NAME": true, "LD_SUPERUSER_PASSWORD": true, "LD_SERVER_HOST": true,
 	"GOTIFY_DEFAULTUSER_NAME": true, "GOTIFY_DEFAULTUSER_PASS": true,
-	"PASSWORD": true,
+	"PASSWORD": true, "HBOX_AUTH_API_KEY_PEPPER": true,
 }
 
 // appPreset is a common setting shown as a choice; an empty value means "not set".

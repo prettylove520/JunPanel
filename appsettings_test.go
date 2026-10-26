@@ -50,7 +50,7 @@ func TestAppSettings(t *testing.T) {
 func TestComposeUsesSettings(t *testing.T) {
 	for _, tpl := range appCatalog {
 		rec := appRecord{ID: "x", Template: tpl.Key, Port: 18100, Password: "pw", DBPassword: "dbpw",
-			Env: map[string]string{"MY_FLAG": "on", "POSTGRES_PASSWORD": "hijack", "PASSWORD": "hijack"}}
+			Env: map[string]string{"MY_FLAG": "on", "POSTGRES_PASSWORD": "hijack", "PASSWORD": "hijack", "HBOX_AUTH_API_KEY_PEPPER": "hijack"}}
 		raw, e := composeFor(rec)
 		if e != nil {
 			t.Fatalf("%s: %v", tpl.Key, e)

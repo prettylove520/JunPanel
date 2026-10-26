@@ -156,14 +156,16 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 		}}
 	case "/schedules":
 		value = map[string]any{"zone": "CST +0800", "now": time.Now(), "schedules": []schedule{
-			{ID: "sc_" + strings.Repeat("1", 16), Name: "每晚备份博客", Action: "backup", Type: "app", Target: "blog", Keep: 7, Every: "daily", At: "03:00", Enabled: true, Created: time.Now().Add(-9 * 24 * time.Hour), Next: time.Now().Add(9 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-15 * time.Hour), Status: "success", Message: "已备份，保留最近 7 份（已清理 1 份旧备份）"}},
+			{ID: "sc_" + strings.Repeat("1", 16), Name: "每晚备份博客", Action: "backup", Type: "app", Target: "studio", Keep: 7, Every: "daily", At: "03:00", Enabled: true, Created: time.Now().Add(-9 * 24 * time.Hour), Next: time.Now().Add(9 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-15 * time.Hour), Status: "success", Message: "已备份，保留最近 7 份（已清理 1 份旧备份）"}},
 			{ID: "sc_" + strings.Repeat("2", 16), Name: "每周重启监控", Action: "restart", Target: "kuma", Every: "weekly", Weekday: 1, At: "04:30", Enabled: true, Created: time.Now().Add(-20 * 24 * time.Hour), Next: time.Now().Add(80 * time.Hour), Last: &scheduleRun{At: time.Now().Add(-88 * time.Hour), Status: "failed", Message: "应用操作失败；容器状态可能已变化，请查看任务输出并核对"}},
 		}}
 	case "/backups":
+		now, remote := time.Now(), time.Now().Add(-14*time.Hour)
 		value = map[string]any{"directory": "/var/lib/junpanel-agent/backups", "free": 38 << 30, "backups": []backupMeta{
-			{ID: "b_" + strings.Repeat("a", 20), Type: "app", Target: "blog", Name: "我的博客", File: "x.tar.gz", Size: 214 << 20, SHA256: strings.Repeat("a", 64), Created: time.Now().Add(-26 * time.Hour)},
-			{ID: "b_" + strings.Repeat("b", 20), Type: "site", Target: "s_" + strings.Repeat("1", 20), Name: "个人主页", File: "y.tar.gz", Size: 3 << 20, SHA256: strings.Repeat("b", 64), Created: time.Now().Add(-50 * time.Hour), Note: "恢复前自动备份"},
-			{ID: "b_" + strings.Repeat("c", 20), Type: "database", Target: "blog", Name: "我的博客", Database: "wordpress", File: "z.sql.gz", Size: 18 << 20, SHA256: strings.Repeat("c", 64), Created: time.Now().Add(-72 * time.Hour)},
+			{ID: "b_" + strings.Repeat("a", 20), Type: "app", Target: "studio", Name: "工作室博客", File: "a.tar.gz", Size: 214 << 20, SHA256: strings.Repeat("a", 64), Created: now.Add(-15 * time.Hour), Note: "定时备份 · 每晚备份博客", Schedule: "sc_" + strings.Repeat("1", 16), Remote: &remote},
+			{ID: "b_" + strings.Repeat("b", 20), Type: "database", Target: "studio", Name: "工作室博客", Database: "wordpress", File: "b.sql.gz", Size: 18 << 20, SHA256: strings.Repeat("b", 64), Created: now.Add(-15 * time.Hour), Note: "一键备份", Remote: &remote},
+			{ID: "b_" + strings.Repeat("c", 20), Type: "app", Target: "studio", Name: "工作室博客", File: "c.tar.gz", Size: 209 << 20, SHA256: strings.Repeat("c", 64), Created: now.Add(-39 * time.Hour), Note: "定时备份 · 每晚备份博客", Schedule: "sc_" + strings.Repeat("1", 16), Remote: &remote},
+			{ID: "b_" + strings.Repeat("d", 20), Type: "site", Target: "s_" + strings.Repeat("a", 20), Name: "个人主页", File: "d.tar.gz", Size: 3 << 20, SHA256: strings.Repeat("d", 64), Created: now.Add(-50 * time.Hour), Note: "恢复前自动备份"},
 		}}
 	default:
 		if strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/logs") {

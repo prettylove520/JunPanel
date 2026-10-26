@@ -99,7 +99,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.light != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -111,7 +111,7 @@ jobs:
       - name: Stacks, volumes, networks and alerts against the real Docker engine
         run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerContainerAlerts|TestDockerStackLifecycle|TestDockerVolumesAndNetworks' ./...
       - name: Small app templates against the real Docker engine
-        run: JUNPANEL_DOCKER_TEST=1 JUNPANEL_APPS=navidrome,trilium,linkding,freshrss,gotify,ntfy,drawio go test -count=1 -timeout 25m -run TestDockerPlainTemplates ./...
+        run: JUNPANEL_DOCKER_TEST=1 JUNPANEL_APPS=navidrome,trilium,linkding,freshrss,gotify,ntfy,drawio,audiobookshelf,kavita,mealie,actual,wallos,homebox,changedetection,pairdrop,cyberchef go test -count=1 -timeout 40m -run TestDockerPlainTemplates ./...
       - name: Compose checks that switch to the nobody user
         run: |
           go test -c -o /tmp/junpanel.test .

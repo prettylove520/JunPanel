@@ -27,6 +27,7 @@ const paths = {
   memory: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4m4-4v4m4-4v4m4-4v4M6 18v3m6-3v3m6-3v3"/>',
   bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  upload: '<path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4"/>',
   disk: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="4"/><path d="m12 10 6 6M6 18h1"/>',
   network: '<path d="M7 3v18m-4-4 4 4 4-4M17 21V3m-4 4 4-4 4 4"/>',
   file: '<path d="M5 2h9l5 5v15H5Zm9 0v6h5M8 12h8m-8 4h8"/>',
@@ -213,7 +214,7 @@ function titleCell(title, sub, symbol = 'box') { const n = el('div','table-name'
 function link(url, text) { const n = el('a','domain-link',text); n.href = url; n.target = '_blank'; n.rel = 'noopener noreferrer'; return n; }
 function siteDomains(s) { const n = el('div','domain-links'); s.domains.forEach(d => n.append(link(`https://${d}`, `${d} ↗`))); return n; }
 // Bundled logos (web/icons/<template>.svg); any other template shows its initial.
-const appIcons = new Set(["codeserver", "drawio", "excalidraw", "freshrss", "gitea", "gotify", "ittools", "jellyfin", "kuma", "linkding", "memos", "mysql", "n8n", "navidrome", "nextcloud", "ntfy", "openwebui", "postgres", "redis", "stirlingpdf", "trilium", "vaultwarden", "wordpress"]);
+const appIcons = new Set(["actual", "audiobookshelf", "codeserver", "cyberchef", "drawio", "excalidraw", "freshrss", "gitea", "gotify", "homebox", "ittools", "jellyfin", "kavita", "kuma", "linkding", "mealie", "memos", "mysql", "n8n", "navidrome", "nextcloud", "ntfy", "openwebui", "postgres", "redis", "stirlingpdf", "trilium", "vaultwarden", "wordpress"]);
 function appLogo(t) {
   const letter = (t.name || t.key || 'A').slice(0, 1).toUpperCase(), n = el('div', `app-logo ${t.key || ''}`, letter);
   if (!appIcons.has(t.key)) return n;
@@ -714,25 +715,184 @@ function uploadFile(target, file) {
   });
 }
 const backupTypes = { site: '网站文件', app: '应用数据', database: '数据库' };
+const backupKinds = { site: '网站', app: '应用', database: '数据库' };
+const dbKinds = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+const ago = s => { if (!s) return '—'; const d = Date.now() - new Date(s).getTime(), h = 3600e3, day = 24 * h; if (d < 60e3) return '刚刚'; if (d < h) return `${Math.floor(d / 60e3)} 分钟前`; if (d < day) return `${Math.floor(d / h)} 小时前`; if (d < 30 * day) return `${Math.floor(d / day)} 天前`; return date(s); };
+// The backup page works from the things that can be backed up (sites, apps, databases), not from the files:
+// each object shows when it was last backed up, whether it runs on a timetable, and its own backup files.
 async function backupsPage() {
-  const data = await api('/backups'), rows = data.backups, n = el('div');
-  const offsite = await api('/offsite');
-  action(button('刷新', render, 'secondary', 'refresh'), button('异地备份', () => offsiteForm(offsite), 'secondary', 'disk'), button('新建备份', newBackup, 'primary', 'plus'));
-  n.append(note(offsite.config.type ? `异地备份已开启（${offsite.config.type === 's3' ? 'S3' : 'WebDAV'}${offsite.config.auto ? '，新备份自动上传' : '，手动上传'}）。本地备份保存在 ${data.directory}。` : `备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份：点“异地备份”设置 WebDAV 或 S3 存储，或及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
-  if (!rows.length) { n.append(empty('还没有备份', '点击“新建备份”，为网站文件、应用数据或数据库留一份副本。')); return n; }
-  const t = table(['时间', '类型', '对象', '大小', '说明', '操作']);
-  rows.forEach(b => {
-    const what = el('div'), download = link(`/api/backups/${b.id}/download`, '下载'), buttons = [download];
-    what.append(el('strong', '', b.name), el('small', 'muted', b.type === 'database' ? `${b.target} / ${b.database}` : b.target));
+  const [data, offsite, siteData, apps, databases, catalog, sched] = await Promise.all([api('/backups'), api('/offsite'), api('/sites'), api('/apps'), api('/databases'), api('/catalog'), api('/schedules')]);
+  state.catalog = catalog;
+  const supported = new Set(catalog.filter(t => t.backup).map(t => t.key)), appNames = Object.fromEntries(catalog.map(t => [t.key, t.name]));
+  const files = data.backups, remoteOn = !!offsite.config.type;
+  const objects = [
+    ...siteData.sites.filter(s => s.kind === 'static').map(s => ({ type: 'site', target: s.id, db: '', name: s.name, detail: (s.domains || [])[0] || '静态网站' })),
+    ...apps.filter(a => !a.removed && supported.has(a.template)).map(a => ({ type: 'app', target: a.id, db: '', name: a.name, detail: appNames[a.template] || a.template })),
+    ...databases.filter(d => d.kind !== 'redis').map(d => ({ type: 'database', target: d.id, db: d.database, name: d.name, detail: `${d.database} · ${dbKinds[d.kind] || d.kind}` })),
+  ];
+  const count = type => objects.filter(o => o.type === type).length;
+  const okey = o => `${o.type}:${o.target}:${o.db}`, fkey = b => `${b.type}:${b.target}:${b.type === 'database' ? b.database : ''}`;
+  const byObject = new Map(); files.forEach(b => { const k = fkey(b); if (!byObject.has(k)) byObject.set(k, []); byObject.get(k).push(b); });
+  const schedules = sched.schedules.filter(s => s.action === 'backup');
+  const scheduleOf = o => schedules.filter(s => s.type === o.type && s.target === o.target && (o.type !== 'database' || s.database === o.db));
+  const unsent = remoteOn ? files.filter(b => !b.remote) : [];
+  const protectedCount = objects.filter(o => scheduleOf(o).some(s => s.enabled)).length;
+  const nextRun = schedules.filter(s => s.enabled && s.next).map(s => s.next).sort()[0];
+  const total = files.reduce((n, b) => n + (b.size || 0), 0), newest = files[0];
+  if (!state.backupTab) state.backupTab = 'all';
+  if (!state.backupOpen) state.backupOpen = new Set();
+
+  action(button('刷新', render, 'secondary', 'refresh'), button('异地备份', () => offsiteForm(offsite), 'secondary', 'network'),
+    button('自动备份', () => bulkScheduleForm(objects, scheduleOf, sched.zone), 'secondary', 'clock'),
+    ...(unsent.length ? [button(`上传到异地（${unsent.length}）`, () => uploadPending(unsent), 'secondary', 'upload')] : []),
+    button('一键备份', () => backupAllForm(objects.length, count), 'primary', 'disk'));
+
+  const n = el('div');
+  const stat = (label, value, sub, warn) => { const c = el('div', `backup-stat${warn ? ' warn' : ''}`); c.append(el('span', 'backup-stat-label', label), el('strong', '', value), el('small', 'muted', sub)); return c; };
+  const summary = el('div', 'backup-summary');
+  summary.append(
+    stat('备份文件', `${files.length} 份`, `共 ${bytes(total)} · 磁盘可用 ${bytes(data.free)}`, data.free > 0 && data.free < 2 * 1024 ** 3),
+    stat('最近备份', newest ? ago(newest.created) : '还没有备份', newest ? newest.name : '点右上角“一键备份”', !newest),
+    stat('自动备份', objects.length ? `${protectedCount} / ${objects.length} 项已开启` : '没有可备份的对象', protectedCount && nextRun ? `下次运行 ${date(nextRun)}` : '在下面逐项开启，或点“自动备份”批量设置', objects.length && !protectedCount),
+    stat('异地备份', remoteOn ? `${files.length - unsent.length} / ${files.length} 份已上传` : '未开启', remoteOn ? `${offsite.config.type === 's3' ? 'S3' : 'WebDAV'} · ${offsite.config.auto ? '新备份自动上传' : '手动上传'}` : '备份只在本机，点“异地备份”设置', !remoteOn));
+  n.append(summary);
+
+  const tabs = [['all', '全部对象', objects.length], ['site', '网站', count('site')], ['app', '应用', count('app')], ['database', '数据库', count('database')], ['files', '备份文件', files.length]];
+  const tabBar = el('div', 'subnav page-tabs'), body = el('div');
+  tabBar.setAttribute('role', 'tablist');
+  const fileOps = b => {
+    const download = link(`/api/backups/${b.id}/download`, '下载'), buttons = [download];
     download.removeAttribute('target');
     buttons.push(button('恢复', () => b.type === 'database' ? restoreDatabaseBackup(b) : restoreBackup(b), 'quiet small'));
-    if (offsite.config.type) buttons.push(button(b.remote ? '重新上传' : '上传', () => confirm('上传到异地备份', '将把这份备份上传到已设置的异地存储，同名文件会被覆盖。', () => mutation(`/backups/${b.id}/upload`, {})), 'quiet small'));
+    if (remoteOn) buttons.push(button(b.remote ? '重新上传' : '上传', () => confirm('上传到异地备份', '将把这份备份上传到已设置的异地存储，同名文件会被覆盖。', () => mutation(`/backups/${b.id}/upload`, {})), 'quiet small'));
     buttons.push(button('删除', () => confirm('删除备份', '将永久删除这份备份文件，无法恢复。', () => mutation(`/backups/${b.id}`, undefined, 'DELETE'), true), 'quiet small'));
-    cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), (b.note || '手动备份') + (b.remote ? ' · 已异地备份' : ''), ops(...buttons));
-    if (b.remote_error) t.body.lastElementChild.children[4].append(el('small', 'error-text', ` 异地上传失败：${b.remote_error}`));
-  });
-  n.append(t.n);
+    return ops(...buttons);
+  };
+  const noteCell = b => { const c = el('div'); c.append(el('span', '', (b.note || '手动备份') + (b.remote ? ' · 已异地备份' : ''))); if (b.remote_error) c.append(el('small', 'error-text', `异地上传失败：${b.remote_error}`)); return c; };
+  const filesTable = (list, flat) => {
+    const t = table(flat ? ['时间', '对象', '类型', '大小', '说明', '操作'] : ['时间', '大小', '说明', '操作']);
+    list.forEach(b => {
+      if (!flat) { cells(t.body, date(b.created), bytes(b.size), noteCell(b), fileOps(b)); return; }
+      const what = el('div'); what.append(el('strong', '', b.name), el('small', 'muted', b.type === 'database' ? `${b.target} / ${b.database}` : b.target));
+      cells(t.body, date(b.created), tag(backupTypes[b.type] || b.type), what, bytes(b.size), noteCell(b), fileOps(b));
+    });
+    return t.n;
+  };
+  const backupNow = o => {
+    const run = () => mutation('/backups', { type: o.type, target: o.target, database: o.db });
+    if (o.type === 'app') confirm('立即备份应用', `“${o.name}”会短暂停止，备份完成后自动启动。`, run); else run();
+  };
+  const objectsTable = list => {
+    const t = table(['对象', '最近备份', '份数', '自动备份', '操作']);
+    list.forEach(o => {
+      const mine = byObject.get(okey(o)) || [], last = mine[0], sc = scheduleOf(o), s = sc[0], k = okey(o), open = state.backupOpen.has(k);
+      const what = el('div'); what.append(el('strong', '', o.name), el('small', 'muted', `${backupKinds[o.type]} · ${o.detail}`));
+      const lastCell = el('div');
+      if (last) { const when = el('span', '', ago(last.created)); when.title = date(last.created); lastCell.append(when, el('small', 'muted', `${bytes(last.size)}${last.remote ? ' · 已异地备份' : ''}`)); } else lastCell.append(tag('从未备份', 'warn'));
+      const auto = el('div');
+      if (s) {
+        auto.append(el('span', '', s.enabled ? frequencyText(s) : '已暂停'), el('small', 'muted', `保留 ${s.keep} 份${s.enabled ? ` · 下次 ${date(s.next)}` : ''}`));
+        if (s.last && s.last.status === 'failed') { const f = tag('上次失败', 'bad'); f.title = s.last.message || ''; auto.append(f); }
+      } else auto.append(el('span', 'muted', '未开启'));
+      const expand = button(open ? '收起' : `备份记录`, () => { if (open) state.backupOpen.delete(k); else state.backupOpen.add(k); draw(); }, 'quiet small');
+      expand.setAttribute('aria-expanded', String(open));
+      cells(t.body, what, lastCell, String(mine.length), auto, ops(button('立即备份', () => backupNow(o), 'quiet small'), button('自动备份', () => objectScheduleForm(o, sc, sched.zone), 'quiet small'), expand));
+      if (open) { const r = el('tr', 'backup-expand'), c = el('td'); c.colSpan = 5; c.append(mine.length ? filesTable(mine, false) : el('p', 'muted backup-none', '这个对象还没有备份。')); r.append(c); t.body.append(r); }
+    });
+    return t.n;
+  };
+  const draw = () => {
+    tabBar.replaceChildren(...tabs.map(([k, label, c]) => {
+      const b = el('button', `subnav-item${state.backupTab === k ? ' active' : ''}`); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(state.backupTab === k));
+      b.append(label, el('span', 'tab-count', String(c))); b.onclick = () => { state.backupTab = k; draw(); }; return b;
+    }));
+    const tab = state.backupTab;
+    if (tab === 'files') body.replaceChildren(files.length ? filesTable(files, true) : empty('还没有备份', '点右上角“一键备份”，把所有网站、应用和数据库各备份一份。'));
+    else { const list = objects.filter(o => tab === 'all' || o.type === tab); body.replaceChildren(list.length ? objectsTable(list) : empty('没有可备份的对象', tab === 'site' ? '只有静态网站有文件可备份。' : tab === 'database' ? '安装 PostgreSQL、MySQL 或 WordPress 后，这里会出现对应的数据库。' : '安装应用后，这里会出现可备份的对象。')); }
+  };
+  draw();
+  n.append(tabBar, body);
+  if (!remoteOn) n.append(note(`备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份：点右上角“异地备份”设置 WebDAV 或 S3 存储，或及时下载保存。`, data.free > 0 && data.free < 2 * 1024 ** 3));
   return n;
+}
+function backupAllForm(total, count) {
+  if (!total) { toast('还没有可备份的对象', true); return; }
+  const scope = field('备份范围', ['site', 'app', 'database'].includes(state.backupTab) ? state.backupTab : 'all', { select: [['all', `全部（${total} 项）`], ['site', `只备份网站（${count('site')} 项）`], ['app', `只备份应用（${count('app')} 项）`], ['database', `只备份数据库（${count('database')} 项）`]] });
+  formModal('一键备份', [scope], '开始备份', async () => { const v = scope.input.value; await mutation('/backups/all', { types: v === 'all' ? [] : [v] }); }, { note: '所选对象依次备份，应用会逐个短暂停止；某一项失败不影响其他项。进度可在任务日志里查看，已开启异地自动上传的会一并上传。' });
+}
+// The frequency, time and retention fields shared by the per-object and the bulk dialog.
+function timingFields(c, zone, intervals) {
+  const every = field('频率', c.every, { select: [['daily', '每天'], ['weekly', '每周'], ...(intervals ? [['interval', '每隔几小时']] : [])] });
+  const time = field('时间', c.at || '03:00', { type: 'time', help: `服务器本地时区：${zone}` });
+  const weekday = field('星期', String(c.weekday ?? 1), { select: weekdayNames.map((x, i) => [String(i), x]) });
+  const hours = field('间隔（小时）', String(c.hours || 24), { type: 'number', help: '1–168，从每次开始运行时计算。' });
+  const keep = field('保留份数', String(c.keep || 7), { type: 'number', help: '自动备份只保留最近这几份，更早的自动删除；手动备份不受影响。' });
+  const refresh = () => { const f = every.input.value; time.n.hidden = f === 'interval'; time.input.required = f !== 'interval'; weekday.n.hidden = f !== 'weekly'; hours.n.hidden = f !== 'interval'; hours.input.required = f === 'interval'; };
+  every.input.onchange = refresh; refresh();
+  return { list: [every, time, weekday, hours, keep], read: () => { const f = every.input.value; return { keep: Number(keep.val()), every: f, at: f === 'interval' ? '' : time.val(), weekday: f === 'weekly' ? Number(weekday.input.value) : 0, hours: f === 'interval' ? Number(hours.val()) : 0 }; } };
+}
+const scheduleLabel = o => `自动备份 · ${o.name.slice(0, 40)}${o.type === 'database' ? ' / ' + o.db : ''}`;
+function objectScheduleForm(o, existing, zone) {
+  const cur = existing[0], on = field('自动备份', cur && !cur.enabled ? 'off' : 'on', { select: [['on', '开启'], ['off', '关闭（删除这个对象的自动备份）']] });
+  const timing = timingFields(cur || { every: 'daily', at: '03:00', weekday: 1, hours: 24, keep: 7 }, zone, true);
+  on.input.onchange = () => timing.list.forEach(f => f.n.classList.toggle('field-off', on.input.value === 'off')); on.input.onchange();
+  formModal(`自动备份 · ${o.name}`, [on, ...timing.list], '保存', async () => {
+    if (on.input.value === 'off') { for (const s of existing) await api(`/schedules/${s.id}`, undefined, 'DELETE'); closeModal(); toast('已关闭自动备份'); await render(); return; }
+    await api('/schedules', { id: cur ? cur.id : '', name: scheduleLabel(o), action: 'backup', type: o.type, target: o.target, database: o.type === 'database' ? o.db : '', ...timing.read() });
+    if (cur && !cur.enabled) await api(`/schedules/${cur.id}/toggle`, {});
+    closeModal(); toast('自动备份已保存'); await render();
+  }, { note: `到点时自动备份「${o.name}」并清理旧备份；到点时面板在停机，开机后会补跑一次。${o.type === 'app' ? '应用备份时会短暂停止应用。' : ''}` });
+}
+// Turns automatic backup on (or off) for a whole group at once; start times are 5 minutes apart so the
+// two background job slots are not all asked for at the same moment.
+function bulkScheduleForm(objects, scheduleOf, zone) {
+  if (!objects.length) { toast('还没有可备份的对象', true); return; }
+  const n = t => objects.filter(o => o.type === t).length;
+  const scope = field('范围', ['site', 'app', 'database'].includes(state.backupTab) ? state.backupTab : 'all', { select: [['all', `全部对象（${objects.length} 项）`], ['site', `网站（${n('site')} 项）`], ['app', `应用（${n('app')} 项）`], ['database', `数据库（${n('database')} 项）`]] });
+  const on = field('操作', 'on', { select: [['on', '开启或更新自动备份'], ['off', '关闭自动备份']] });
+  const timing = timingFields({ every: 'daily', at: '03:00', weekday: 1, hours: 24, keep: 7 }, zone, false);
+  on.input.onchange = () => timing.list.forEach(f => f.n.classList.toggle('field-off', on.input.value === 'off'));
+  formModal('批量设置自动备份', [scope, on, ...timing.list], '应用', async () => {
+    const list = objects.filter(o => scope.input.value === 'all' || o.type === scope.input.value);
+    let done = 0;
+    try {
+      if (on.input.value === 'off') {
+        for (const o of list) for (const s of scheduleOf(o)) { await api(`/schedules/${s.id}`, undefined, 'DELETE'); done++; }
+        toast(done ? `已关闭 ${done} 项自动备份` : '范围内没有开启自动备份的对象');
+      } else {
+        const t = timing.read(), [h, m] = (t.at || '03:00').split(':').map(Number);
+        for (const [i, o] of list.entries()) {
+          const at = ((h * 60 + m + i * 5) % 1440), cur = scheduleOf(o)[0];
+          await api('/schedules', { id: cur ? cur.id : '', name: scheduleLabel(o), action: 'backup', type: o.type, target: o.target, database: o.type === 'database' ? o.db : '', ...t, at: `${String(Math.floor(at / 60)).padStart(2, '0')}:${String(at % 60).padStart(2, '0')}` });
+          if (cur && !cur.enabled) await api(`/schedules/${cur.id}/toggle`, {});
+          done++;
+        }
+        toast(`已为 ${done} 项开启自动备份`);
+      }
+    } catch (e) { toast(`${e.message}（已处理 ${done} 项）`, true); }
+    closeModal(); await render();
+  }, { note: '每个对象各有一条自动备份，已有的会被更新成这里的设置；开始时间依次错开 5 分钟。每个对象最多保留你设定的份数。' });
+}
+// Uploads one backup after another: the job queue runs only two jobs at a time, and a failure stops the run with its reason.
+async function uploadPending(list) {
+  confirm('上传到异地备份', `将把 ${list.length} 份还没上传的备份依次上传到已设置的异地存储，同名文件会被覆盖。`, async () => {
+    let done = 0;
+    try {
+      for (const b of list) {
+        const j = await api(`/backups/${b.id}/upload`, {});
+        for (;;) {
+          await new Promise(r => setTimeout(r, 1500));
+          const row = (await api('/jobs')).find(x => x.id === j.id);
+          if (!row) throw new Error('上传任务记录丢失，请刷新后查看');
+          if (row.state === 'failed') throw new Error(`${b.name} 上传失败：${(row.error || row.output || '').toString().trim().split('\n').pop() || '未知原因'}`);
+          if (row.state !== 'running') break;
+        }
+        done++;
+      }
+      toast(`已上传 ${done} 份备份到异地`);
+    } catch (e) { toast(`${e.message}（已成功 ${done} 份）`, true); }
+    closeModal(); await render();
+  });
 }
 function offsiteForm(current) {
   const c = current.config, kind = field('异地存储', c.type, { select: [['', '不使用'], ['webdav', 'WebDAV（坚果云、Nextcloud 等）'], ['s3', 'S3 兼容（AWS、Cloudflare R2、阿里云 OSS、MinIO 等）']], required: false });
@@ -752,30 +912,6 @@ function offsiteForm(current) {
   const result = el('div', 'form-result'); result.setAttribute('role', 'status'); form.append(result);
   const test = button('测试连接', async () => { test.disabled = true; test.setAttribute('aria-busy', 'true'); test.lastChild.textContent = '测试中…'; result.className = 'form-result'; result.textContent = ''; try { await api('/offsite/test', payload()); result.className = 'form-result ok'; result.textContent = '连接成功，可以上传。'; toast('连接成功，可以上传'); } catch (e) { result.className = 'form-result bad'; result.textContent = `连接失败：${e.message}`; toast(e.message, true); } finally { test.disabled = false; test.removeAttribute('aria-busy'); test.lastChild.textContent = '测试连接'; } }, 'secondary');
   $('#modal-footer').prepend(test);
-}
-async function newBackup() {
-  const [sites, apps, databases, catalog] = await Promise.all([api('/sites'), api('/apps'), api('/databases'), api('/catalog')]);
-  const supported = catalog.filter(t => t.backup).map(t => t.key);
-  const options = {
-    site: sites.sites.filter(s => s.kind === 'static').map(s => [s.id, `${s.name}（${s.domains[0]}）`]),
-    app: apps.filter(a => !a.removed && supported.includes(a.template)).map(a => [a.id, a.name]),
-    database: databases.filter(d => d.kind !== 'redis').map(d => [d.id, d.name]),
-  };
-  const type = field('备份内容', 'site', { select: [['site', '网站文件'], ['app', '应用数据（备份时短暂停止应用）'], ['database', '数据库导出（SQL）']] });
-  const target = field('备份对象', '', { select: [] });
-  const database = field('数据库名称', 'junpanel', { max: 63, help: '仅字母、数字及下划线。' });
-  const fill = () => {
-    const kind = type.input.value, list = options[kind];
-    target.input.replaceChildren(...list.map(([v, text]) => { const o = el('option', '', text); o.value = v; return o; }));
-    database.n.hidden = kind !== 'database'; database.input.required = kind === 'database';
-    pick();
-  };
-  const pick = () => { const d = databases.find(x => x.id === target.input.value); if (d && type.input.value === 'database') database.input.value = d.database || 'junpanel'; };
-  type.input.onchange = fill; target.input.onchange = pick; fill();
-  formModal('新建备份', [type, target, database], '开始备份', async () => {
-    if (!target.input.value) throw new Error('没有可备份的对象');
-    await mutation('/backups', { type: type.input.value, target: target.input.value, database: type.input.value === 'database' ? database.val() : '' });
-  }, { note: '备份作为后台任务运行，可在任务日志查看进度。应用备份会短暂停止应用以保证数据一致，完成后自动启动。' });
 }
 function restoreBackup(b) {
   const what = b.type === 'site'
