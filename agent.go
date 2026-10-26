@@ -166,6 +166,8 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /backups", endpoint(a.backupCreate))
 	m.HandleFunc("POST /backups/all", endpoint(a.backupAll))
 	m.HandleFunc("GET /caddy/config", endpoint(a.caddyConfigGet))
+	m.HandleFunc("GET /caddy/adoptable", endpoint(a.caddyAdoptable))
+	m.HandleFunc("POST /caddy/adopt", endpoint(a.caddyAdopt))
 	m.HandleFunc("POST /caddy/config", endpoint(a.caddyConfigSave))
 	m.HandleFunc("POST /caddy/config/restore", endpoint(a.caddyConfigRestore))
 	m.HandleFunc("GET /caddy/config/backups/{id}", endpoint(a.caddyBackupGet))

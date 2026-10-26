@@ -741,3 +741,5 @@ main { max-width: clamp(1680px, 82vw, 2400px); }
 .code-editor { box-sizing: border-box; width: 100%; height: 52vh; min-height: 320px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--fill); color: var(--text); font-family: var(--font-mono); font-size: 13px; line-height: 20px; tab-size: 4; white-space: pre; overflow: auto; resize: vertical; }
 .code-editor:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .code-editor[readonly] { color: var(--text-2); }
+
+.adopt-list { margin: 8px 0 12px; padding-left: 20px; line-height: 1.8; }
