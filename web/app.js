@@ -27,6 +27,7 @@ const paths = {
   memory: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4m4-4v4m4-4v4m4-4v4M6 18v3m6-3v3m6-3v3"/>',
   bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  upload: '<path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4"/>',
   disk: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="4"/><path d="m12 10 6 6M6 18h1"/>',
   network: '<path d="M7 3v18m-4-4 4 4 4-4M17 21V3m-4 4 4-4 4 4"/>',
   file: '<path d="M5 2h9l5 5v15H5Zm9 0v6h5M8 12h8m-8 4h8"/>',
@@ -714,11 +715,33 @@ function uploadFile(target, file) {
   });
 }
 const backupTypes = { site: '网站文件', app: '应用数据', database: '数据库' };
+// Uploads one backup after another: the job queue runs only two jobs at a time, and a failure stops the run with its reason.
+async function uploadPending(list) {
+  confirm('上传到异地备份', `将把 ${list.length} 份还没上传的备份依次上传到已设置的异地存储，同名文件会被覆盖。`, async () => {
+    let done = 0;
+    try {
+      for (const b of list) {
+        const j = await api(`/backups/${b.id}/upload`, {});
+        for (;;) {
+          await new Promise(r => setTimeout(r, 1500));
+          const row = (await api('/jobs')).find(x => x.id === j.id);
+          if (!row) throw new Error('上传任务记录丢失，请刷新后查看');
+          if (row.state === 'failed') throw new Error(`${b.name} 上传失败：${(row.error || row.output || '').toString().trim().split('\n').pop() || '未知原因'}`);
+          if (row.state !== 'running') break;
+        }
+        done++;
+      }
+      toast(`已上传 ${done} 份备份到异地`);
+    } catch (e) { toast(`${e.message}（已成功 ${done} 份）`, true); }
+    closeModal(); await render();
+  });
+}
 async function backupsPage() {
   const data = await api('/backups'), rows = data.backups, n = el('div');
   const offsite = await api('/offsite');
-  action(button('刷新', render, 'secondary', 'refresh'), button('异地备份', () => offsiteForm(offsite), 'secondary', 'disk'), button('新建备份', newBackup, 'primary', 'plus'));
-  n.append(note(offsite.config.type ? `异地备份已开启（${offsite.config.type === 's3' ? 'S3' : 'WebDAV'}${offsite.config.auto ? '，新备份自动上传' : '，手动上传'}）。本地备份保存在 ${data.directory}。` : `备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份：点“异地备份”设置 WebDAV 或 S3 存储，或及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
+  const unsent = offsite.config.type ? rows.filter(b => !b.remote) : [];
+  action(button('刷新', render, 'secondary', 'refresh'), button('异地备份', () => offsiteForm(offsite), 'secondary', 'disk'), ...(unsent.length ? [button(`上传到异地（${unsent.length}）`, () => uploadPending(unsent), 'secondary', 'upload')] : []), button('新建备份', newBackup, 'primary', 'plus'));
+  n.append(note(offsite.config.type ? `异地备份已开启（${offsite.config.type === 's3' ? 'S3' : 'WebDAV'}${offsite.config.auto ? '，新备份自动上传' : '，手动上传'}）。本地备份保存在 ${data.directory}。${rows.length ? (unsent.length ? `有 ${unsent.length} 份还没上传：点右上角“上传到异地”一次传完，或在下面每一行点“上传”。` : '所有备份都已上传。') : ''}` : `备份保存在服务器的 ${data.directory}（仅 root 可读），与应用数据在同一块磁盘，不能替代异地备份：点“异地备份”设置 WebDAV 或 S3 存储，或及时下载保存。磁盘可用 ${bytes(data.free)}。`, data.free > 0 && data.free < 2 * 1024 ** 3));
   if (!rows.length) { n.append(empty('还没有备份', '点击“新建备份”，为网站文件、应用数据或数据库留一份副本。')); return n; }
   const t = table(['时间', '类型', '对象', '大小', '说明', '操作']);
   rows.forEach(b => {
