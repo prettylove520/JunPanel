@@ -214,8 +214,7 @@ func TestBackupRequestValidation(t *testing.T) {
 // backs it up on its own nor in a one-click backup, and editing it keeps that folder.
 func TestBackupSkipsExternalSites(t *testing.T) {
 	a := testAgent(t)
-	os.WriteFile(a.cfg.Caddy, []byte("import "+filepath.ToSlash(a.cfg.Fragments)+"/*.caddy
-"), 0644)
+	os.WriteFile(a.cfg.Caddy, []byte("import "+filepath.ToSlash(a.cfg.Fragments)+"/*.caddy\n"), 0644)
 	h := a.routes()
 	ext := externalSiteDir(t)
 	outside := site{ID: "s_" + strings.Repeat("e", 20), Name: "e", Domains: []string{"e.example.com"}, Kind: "static", Root: ext, Enabled: true}
