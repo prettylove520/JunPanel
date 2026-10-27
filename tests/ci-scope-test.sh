@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf -- "$tmp"' EXIT
+# The workflow exports EVENT for the real run; the scenarios use their own SCOPE_EVENT so it cannot leak in.
 cd "$tmp"
 git init -q . && git config user.email t@example.com && git config user.name t
 printf '  local version=1.0.0\n  local expected=%064d\n  local public_ref=abc\nmain() { :; }\n' 0 > quick-install.sh
@@ -13,7 +14,7 @@ func f() {}
 git add -A && git commit -qm base && base="$(git rev-parse HEAD)"
 fail=0
 check() { # name, expected-light, expected-pin
-  local out; out="$(bash "$here/ci-scope.sh" "${EVENT:-pull_request}" "$base" "$(git rev-parse HEAD)")"
+  local out; out="$(bash "$here/ci-scope.sh" "${SCOPE_EVENT:-pull_request}" "$base" "$(git rev-parse HEAD)")"
   if [[ "$out" != $'light='"$2"$'\n'pin="$3" ]]; then echo "FAIL $1: $(echo "$out" | tr '\n' ' ')"; fail=1; else echo "ok   $1"; fi
 }
 reset() { git reset -q --hard "$base"; }
@@ -30,5 +31,5 @@ echo x >> LICENSE; echo y >> logo.png; git add -A; git commit -qm assets; check 
 mkdir -p web; echo z > web/a.png; git add -A; git commit -qm webpng; check "an image inside web/" false false; reset
 echo y > tests/new.sh; git add -A; git commit -qm test; check "a new test script" false false; reset
 git commit -q --allow-empty -m empty; check "no changed files" false false; reset
-sed -i 's/^  local version=.*/  local version=1.0.1/' quick-install.sh; git commit -qam pin; EVENT=push check "push to main" false false; reset
+sed -i 's/^  local version=.*/  local version=1.0.1/' quick-install.sh; git commit -qam pin; SCOPE_EVENT=push check "push to main" false false; reset
 exit $fail
