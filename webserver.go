@@ -261,13 +261,13 @@ func (w *webServer) serve(out http.ResponseWriter, r *http.Request) {
 		var secret string
 		switch req.Action {
 		case "password":
-			e = w.auth.change(req.Password, req.NewPassword, req.OTP)
+			e = w.auth.change(clientIP(r), req.Password, req.NewPassword, req.OTP)
 		case "totp_setup":
-			secret, e = w.auth.setupOTP(token, req.Password)
+			secret, e = w.auth.setupOTP(clientIP(r), token, req.Password)
 		case "totp_enable":
 			e = w.auth.enableOTP(token, req.OTP)
 		case "totp_disable":
-			e = w.auth.disableOTP(req.Password, req.OTP)
+			e = w.auth.disableOTP(clientIP(r), req.Password, req.OTP)
 		default:
 			e = bad(400, "未知安全操作")
 		}

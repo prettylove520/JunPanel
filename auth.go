@@ -62,6 +62,9 @@ type attempts struct {
 }
 type authStore struct {
 	sync.Mutex
+	// verify serializes credential checks, so the attempt limits stay exact, while the
+	// slow key derivation runs outside the state lock that every request needs.
+	verify   sync.Mutex
 	Path     string
 	Demo     bool
 	Account  account
@@ -181,22 +184,53 @@ func (a *authStore) checkOTP(code string, now time.Time) (int64, bool) {
 	step, ok := otpStep(a.Account.TOTP, code, now)
 	return step, ok && step > a.OTPStep
 }
-func (a *authStore) login(ip, user, password, otp string) (string, loginSession, error) {
+
+// checkPassword applies the attempt limits and compares the password without holding
+// the state lock during key derivation. Callers hold a.verify, then take the state lock
+// and call settle before acting on the result.
+func (a *authStore) checkPassword(ip, password string) (account, bool, error) {
 	a.Lock()
-	defer a.Unlock()
-	if e := a.reload(); e != nil {
-		return "", loginSession{}, e
+	e := a.reload()
+	if e == nil {
+		_, e = a.throttled(ip, time.Now())
 	}
-	now := time.Now()
-	limit, e := a.throttled(ip, now)
+	acct := a.Account
+	a.Unlock()
 	if e != nil {
-		return "", loginSession{}, e
+		return account{}, false, e
 	}
+	return acct, len(password) <= 1024 && hmac.Equal([]byte(derive(password, acct.Salt)), []byte(acct.Hash)), nil
+}
+
+// settle runs under the state lock after checkPassword: it refuses a result that was
+// computed against an account that has since changed.
+func (a *authStore) settle(acct account) error {
+	if e := a.reload(); e != nil {
+		return e
+	}
+	if a.Account.Revision != acct.Revision {
+		return bad(409, "账号配置已变更，请重试")
+	}
+	return nil
+}
+func (a *authStore) login(ip, user, password, otp string) (string, loginSession, error) {
 	if len(user) > 64 || len(password) > 1024 {
 		return "", loginSession{}, bad(400, "账号或密码长度错误")
 	}
-	good := hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash))
-	good = hmac.Equal([]byte(user), []byte(a.Account.User)) && good
+	a.verify.Lock()
+	defer a.verify.Unlock()
+	acct, good, e := a.checkPassword(ip, password)
+	if e != nil {
+		return "", loginSession{}, e
+	}
+	a.Lock()
+	defer a.Unlock()
+	if e = a.settle(acct); e != nil {
+		return "", loginSession{}, e
+	}
+	now := time.Now()
+	limit := a.client(ip, now)
+	good = hmac.Equal([]byte(user), []byte(acct.User)) && good
 	var step int64
 	if a.Account.TOTP != "" {
 		var fresh bool
@@ -254,25 +288,36 @@ func (a *authStore) logout(token string) {
 	delete(a.Sessions, token)
 	delete(a.OTPSetup, token)
 }
-func (a *authStore) change(old, new, otp string) error {
-	a.Lock()
-	defer a.Unlock()
-	if e := a.reload(); e != nil {
+func (a *authStore) change(ip, old, new, otp string) error {
+	a.verify.Lock()
+	defer a.verify.Unlock()
+	acct, good, e := a.checkPassword(ip, old)
+	if e != nil {
 		return e
 	}
-	if !hmac.Equal([]byte(derive(old, a.Account.Salt)), []byte(a.Account.Hash)) {
+	a.Lock()
+	defer a.Unlock()
+	if e = a.settle(acct); e != nil {
+		return e
+	}
+	now := time.Now()
+	limit := a.client(ip, now)
+	if !good {
+		a.failed(limit, now)
 		return bad(403, "当前密码错误")
 	}
 	var step int64
 	if a.Account.TOTP != "" {
 		var fresh bool
-		if step, fresh = a.checkOTP(otp, time.Now()); !fresh {
+		if step, fresh = a.checkOTP(otp, now); !fresh {
+			a.failed(limit, now)
 			return bad(403, "动态码错误或已使用，请等待下一个动态码")
 		}
 	}
 	if utf8.RuneCountInString(new) < 8 || utf8.RuneCountInString(new) > 256 {
 		return bad(400, "新密码需为 8–256 字符")
 	}
+	a.succeeded(limit, now)
 	v := newAccount(a.Account.User, new)
 	v.TOTP = a.Account.TOTP
 	if e := atomicJSON(a.Path, v, 0640); e != nil {
@@ -312,18 +357,28 @@ func otpStep(secret, code string, at time.Time) (int64, bool) {
 	}
 	return 0, false
 }
-func (a *authStore) setupOTP(token, password string) (string, error) {
+func (a *authStore) setupOTP(ip, token, password string) (string, error) {
+	a.verify.Lock()
+	defer a.verify.Unlock()
+	acct, good, e := a.checkPassword(ip, password)
+	if e != nil {
+		return "", e
+	}
 	a.Lock()
 	defer a.Unlock()
-	if e := a.reload(); e != nil {
+	if e = a.settle(acct); e != nil {
 		return "", e
 	}
 	if a.Account.TOTP != "" {
 		return "", bad(409, "请先关闭现有两步验证")
 	}
-	if !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) {
+	now := time.Now()
+	limit := a.client(ip, now)
+	if !good {
+		a.failed(limit, now)
 		return "", bad(403, "密码错误")
 	}
+	a.succeeded(limit, now)
 	raw, _ := hex.DecodeString(randomID(40))
 	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
 	a.OTPSetup[token] = secret
@@ -354,15 +409,25 @@ func (a *authStore) enableOTP(token, code string) error {
 	a.OTPStep = 0
 	return nil
 }
-func (a *authStore) disableOTP(password, code string) error {
-	a.Lock()
-	defer a.Unlock()
-	if e := a.reload(); e != nil {
+func (a *authStore) disableOTP(ip, password, code string) error {
+	a.verify.Lock()
+	defer a.verify.Unlock()
+	acct, good, e := a.checkPassword(ip, password)
+	if e != nil {
 		return e
 	}
-	if _, fresh := a.checkOTP(code, time.Now()); !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) || a.Account.TOTP == "" || !fresh {
+	a.Lock()
+	defer a.Unlock()
+	if e = a.settle(acct); e != nil {
+		return e
+	}
+	now := time.Now()
+	limit := a.client(ip, now)
+	if _, fresh := a.checkOTP(code, now); !good || a.Account.TOTP == "" || !fresh {
+		a.failed(limit, now)
 		return bad(403, "密码或动态码错误，动态码只能使用一次")
 	}
+	a.succeeded(limit, now)
 	v := a.Account
 	v.TOTP = ""
 	v.Revision = randomID(32)
@@ -383,22 +448,25 @@ func (a *authStore) info() (string, bool) {
 }
 
 func (a *authStore) confirm(ip, password, otp string) error {
-	a.Lock()
-	defer a.Unlock()
-	if e := a.reload(); e != nil {
-		return e
-	}
-	now := time.Now()
-	limit, e := a.throttled(ip, now)
+	a.verify.Lock()
+	defer a.verify.Unlock()
+	acct, good, e := a.checkPassword(ip, password)
 	if e != nil {
 		return e
 	}
+	a.Lock()
+	defer a.Unlock()
+	if e = a.settle(acct); e != nil {
+		return e
+	}
+	now := time.Now()
+	limit := a.client(ip, now)
 	var step int64
 	fresh := true
 	if a.Account.TOTP != "" {
 		step, fresh = a.checkOTP(otp, now)
 	}
-	if len(password) > 1024 || !hmac.Equal([]byte(derive(password, a.Account.Salt)), []byte(a.Account.Hash)) || !fresh {
+	if !good || !fresh {
 		a.failed(limit, now)
 		return bad(403, "密码或动态码错误，动态码只能使用一次")
 	}

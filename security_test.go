@@ -75,10 +75,10 @@ func TestAuthenticationLifecycle(t *testing.T) {
 		t.Fatal("idle expiry / setup cleanup")
 	}
 	token, _, _ = a.login("127.0.0.1", "admin", pw, "")
-	if e = a.change(pw, "汉字密码仅七字", ""); e == nil {
+	if e = a.change("127.0.0.1", pw, "汉字密码仅七字", ""); e == nil {
 		t.Fatal("password minimum counted bytes instead of characters")
 	}
-	if e = a.change(pw, "Jun2026!", ""); e != nil {
+	if e = a.change("127.0.0.1", pw, "Jun2026!", ""); e != nil {
 		t.Fatal(e)
 	}
 	if _, e = a.get(token, false); e == nil {
@@ -179,7 +179,7 @@ func TestTOTPEnableDisable(t *testing.T) {
 	}
 	a, pw := testAccount(t)
 	token, _, _ := a.login("127.0.0.1", "admin", pw, "")
-	secret, e := a.setupOTP(token, pw)
+	secret, e := a.setupOTP("127.0.0.1", token, pw)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -202,10 +202,10 @@ func TestTOTPEnableDisable(t *testing.T) {
 	if e = a.confirm("127.0.0.1", pw, code); e == nil {
 		t.Fatal("TOTP code replayed at reauthentication")
 	}
-	if e = a.disableOTP(pw, code); e == nil {
+	if e = a.disableOTP("127.0.0.1", pw, code); e == nil {
 		t.Fatal("TOTP code replayed to disable")
 	}
-	if e = a.disableOTP(pw, otpAt(secret, time.Now().Add(30*time.Second))); e != nil {
+	if e = a.disableOTP("127.0.0.1", pw, otpAt(secret, time.Now().Add(30*time.Second))); e != nil {
 		t.Fatal(e)
 	}
 	if a.Account.TOTP != "" {
@@ -815,5 +815,27 @@ func TestWebAgentUnixIntegration(t *testing.T) {
 	headers["Authorization"] = "Bearer should-not-forward"
 	if r = request(web.routes(), "POST", "/api/probe", `{}`, headers, cookie); r.Code != 200 {
 		t.Fatal(r.Body.String())
+	}
+}
+
+func TestPasswordGatedActionsShareLoginLimit(t *testing.T) {
+	a, pw := testAccount(t)
+	token, _, _ := a.login("127.0.0.1", "admin", pw, "")
+	for i := 0; i < clientFailures; i++ {
+		if e := a.change("127.0.0.1", "incorrect", "Jun2026!", ""); e == nil || e.(*fault).Code != 403 {
+			t.Fatalf("wrong current password accepted or misreported: %v", e)
+		}
+	}
+	if e := a.change("127.0.0.1", pw, "Jun2026!", ""); e == nil || e.(*fault).Code != 429 {
+		t.Fatal("password change not limited after repeated failures")
+	}
+	if _, e := a.setupOTP("127.0.0.1", token, pw); e == nil || e.(*fault).Code != 429 {
+		t.Fatal("two-step setup not limited")
+	}
+	if e := a.disableOTP("127.0.0.1", pw, "000000"); e == nil || e.(*fault).Code != 429 {
+		t.Fatal("two-step disable not limited")
+	}
+	if _, e := a.setupOTP("203.0.113.9", token, pw); e != nil {
+		t.Fatalf("limit on one address blocked another: %v", e)
 	}
 }
