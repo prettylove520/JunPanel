@@ -33,6 +33,9 @@ type site struct {
 	AuthHash   string   `json:"auth_hash,omitempty"`
 	AllowIPs   []string `json:"allow_ips,omitempty"`
 	NoCompress bool     `json:"no_compress,omitempty"`
+	// BlockPaths answer 404 (e.g. /.git, *.sh); NoCache sends Cache-Control: no-cache.
+	BlockPaths []string `json:"block_paths,omitempty"`
+	NoCache    bool     `json:"no_cache,omitempty"`
 }
 
 var authUser = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
@@ -40,10 +43,18 @@ var authUser = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
 // publicSite hides the password hash from the browser.
 func publicSite(s site) map[string]any {
 	return map[string]any{"id": s.ID, "name": s.Name, "domains": s.Domains, "kind": s.Kind, "upstream": s.Upstream, "root": s.Root, "enabled": s.Enabled, "created": s.Created,
-		"target": s.Target, "permanent": s.Permanent, "keep_path": s.KeepPath, "auth_user": s.AuthUser, "auth": s.AuthHash != "", "allow_ips": s.AllowIPs, "no_compress": s.NoCompress}
+		"target": s.Target, "permanent": s.Permanent, "keep_path": s.KeepPath, "auth_user": s.AuthUser, "auth": s.AuthHash != "", "allow_ips": s.AllowIPs, "no_compress": s.NoCompress,
+		"block_paths": s.BlockPaths, "no_cache": s.NoCache}
 }
 
 var siteID = regexp.MustCompile(`^s_[a-f0-9]{20}$`)
+var blockPath = regexp.MustCompile(`^[/*][A-Za-z0-9._/*~-]{0,99}$`)
+
+// externalRoot is a static site whose folder lives outside the panel's file area; only adoption brings one in.
+func (a *agent) externalRoot(s site) bool {
+	base := filepath.Join(a.cfg.Root, "sites") + string(filepath.Separator)
+	return s.Kind == "static" && s.Root != "" && !strings.HasPrefix(filepath.Clean(s.Root)+string(filepath.Separator), base)
+}
 var domainName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
 func (a *agent) readSites() ([]site, error) {
@@ -86,10 +97,26 @@ func validSite(s *site) error {
 				return bad(400, "跳转目标不能是网站自己的域名，否则会无限跳转")
 			}
 		}
-		s.Upstream, s.AuthUser, s.AuthHash, s.AllowIPs = "", "", "", nil
+		s.Upstream, s.AuthUser, s.AuthHash, s.AllowIPs, s.BlockPaths, s.NoCache = "", "", "", nil, nil, false
 	} else {
 		s.Target, s.Permanent, s.KeepPath = "", false, false
 	}
+	if len(s.BlockPaths) > 20 {
+		return bad(400, "屏蔽路径最多 20 条")
+	}
+	var paths []string
+	seenPath := map[string]bool{}
+	for _, p := range s.BlockPaths {
+		p = strings.TrimSpace(p)
+		if !blockPath.MatchString(p) {
+			return bad(400, "屏蔽路径需以 / 或 * 开头，只含字母、数字和 . _ - / * ~，最长 100 字符："+truncate(p, 60))
+		}
+		if !seenPath[p] {
+			seenPath[p] = true
+			paths = append(paths, p)
+		}
+	}
+	s.BlockPaths = paths
 	if s.AuthUser != "" && !authUser.MatchString(s.AuthUser) {
 		return bad(400, "访问用户名需为 1–32 位字母、数字、点、下划线或中划线")
 	}
@@ -149,6 +176,9 @@ func renderSites(sites []site, authDirective string) []byte {
 		guarded := len(s.AllowIPs) > 0 || s.AuthHash != ""
 		if !guarded {
 			b.WriteString(strings.Join(s.Domains, ", ") + " {\n")
+			if len(s.BlockPaths) > 0 {
+				fmt.Fprintf(&b, "  @blocked path %s\n  respond @blocked 404\n", strings.Join(s.BlockPaths, " "))
+			}
 			if !s.NoCompress {
 				b.WriteString("  encode zstd gzip\n")
 			}
@@ -157,10 +187,17 @@ func renderSites(sites []site, authDirective string) []byte {
 			} else {
 				fmt.Fprintf(&b, "  reverse_proxy %s\n", s.Upstream)
 			}
+			if s.NoCache {
+				b.WriteString("  header Cache-Control no-cache\n")
+			}
 			b.WriteString("  header X-Content-Type-Options nosniff\n}\n\n")
 			continue
 		}
 		b.WriteString(strings.Join(s.Domains, ", ") + " {\n  route {\n")
+		// Blocked paths come first, so they answer 404 before any address check or password prompt.
+		if len(s.BlockPaths) > 0 {
+			fmt.Fprintf(&b, "    @blocked path %s\n    respond @blocked 404\n", strings.Join(s.BlockPaths, " "))
+		}
 		if len(s.AllowIPs) > 0 {
 			fmt.Fprintf(&b, "    @denied not remote_ip %s\n    respond @denied \"Forbidden\" 403\n", strings.Join(s.AllowIPs, " "))
 		}
@@ -175,7 +212,11 @@ func renderSites(sites []site, authDirective string) []byte {
 		} else {
 			fmt.Fprintf(&b, "    reverse_proxy %s\n", s.Upstream)
 		}
-		b.WriteString("  }\n  header X-Content-Type-Options nosniff\n}\n\n")
+		b.WriteString("  }\n")
+		if s.NoCache {
+			b.WriteString("  header Cache-Control no-cache\n")
+		}
+		b.WriteString("  header X-Content-Type-Options nosniff\n}\n\n")
 	}
 	return []byte(b.String())
 }
@@ -352,11 +393,13 @@ func (a *agent) siteSave(w http.ResponseWriter, r *http.Request) error {
 		AuthPassword string   `json:"auth_password"`
 		AllowIPs     []string `json:"allow_ips"`
 		NoCompress   bool     `json:"no_compress"`
+		BlockPaths   []string `json:"block_paths"`
+		NoCache      bool     `json:"no_cache"`
 	}
 	if e := body(r, &req); e != nil {
 		return e
 	}
-	value := site{ID: req.ID, Name: req.Name, Domains: req.Domains, Kind: req.Kind, Upstream: req.Upstream, Target: req.Target, Permanent: req.Permanent, KeepPath: req.KeepPath, AuthUser: req.AuthUser, AllowIPs: req.AllowIPs, NoCompress: req.NoCompress}
+	value := site{ID: req.ID, Name: req.Name, Domains: req.Domains, Kind: req.Kind, Upstream: req.Upstream, Target: req.Target, Permanent: req.Permanent, KeepPath: req.KeepPath, AuthUser: req.AuthUser, AllowIPs: req.AllowIPs, NoCompress: req.NoCompress, BlockPaths: req.BlockPaths, NoCache: req.NoCache}
 	if req.AuthPassword != "" {
 		if req.AuthUser == "" {
 			return bad(400, "设置访问密码时需要填写用户名")
