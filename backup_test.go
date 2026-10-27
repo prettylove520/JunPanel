@@ -210,6 +210,37 @@ func TestBackupRequestValidation(t *testing.T) {
 	}
 }
 
+// A site adopted with its own folder outside the file area is deployed by something else; the panel neither
+// backs it up on its own nor in a one-click backup, and editing it keeps that folder.
+func TestBackupSkipsExternalSites(t *testing.T) {
+	a := testAgent(t)
+	os.WriteFile(a.cfg.Caddy, []byte("import "+filepath.ToSlash(a.cfg.Fragments)+"/*.caddy\n"), 0644)
+	h := a.routes()
+	ext := externalSiteDir(t)
+	outside := site{ID: "s_" + strings.Repeat("e", 20), Name: "e", Domains: []string{"e.example.com"}, Kind: "static", Root: ext, Enabled: true}
+	writeSites(t, a, outside)
+	if r := request(h, "POST", "/backups", `{"type":"site","target":"`+outside.ID+`"}`, nil, nil); r.Code != 400 || !strings.Contains(r.Body.String(), "外部目录") {
+		t.Errorf("external site backed up: %d %s", r.Code, r.Body.String())
+	}
+	items, _, e := a.backupItems(map[string]bool{"site": true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, it := range items {
+		if it.Target == outside.ID {
+			t.Fatal("external site in the one-click backup")
+		}
+	}
+	body := `{"id":"` + outside.ID + `","name":"renamed","domains":["e.example.com"],"kind":"static","block_paths":["/.git"],"no_cache":true}`
+	if r := request(h, "POST", "/sites", body, nil, nil); r.Code != 200 {
+		t.Fatalf("edit refused: %d %s", r.Code, r.Body.String())
+	}
+	sites, _ := a.readSites()
+	if len(sites) != 1 || sites[0].Root != ext || sites[0].Name != "renamed" || strings.Join(sites[0].BlockPaths, " ") != "/.git" || !sites[0].NoCache {
+		t.Fatalf("after edit: %+v", sites)
+	}
+}
+
 func TestDatabaseRestoreValidation(t *testing.T) {
 	a := testAgent(t)
 	meta, e := a.writeBackup(backupMeta{Type: "database", Target: "x", Name: "x", Database: "db"}, "sql.gz", func(w io.Writer) error {

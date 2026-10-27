@@ -134,7 +134,9 @@ func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 		}
 	}
 	var main, upstream, target, root string
-	compress, permanent, keepPath := false, false, false
+	compress, permanent, keepPath, noCache := false, false, false, false
+	// A path-only named matcher answered by exactly one "respond @name 404" is a blocked-path rule.
+	matchers, responds, order := map[string][]string{}, map[string]int{}, []string{}
 	for _, raw := range body {
 		line := strings.TrimSpace(codeOnly(raw))
 		if line == "" {
@@ -147,10 +149,25 @@ func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 		if len(f) == 0 {
 			continue
 		}
+		if len(f) == 3 && f[0] == "header" && strings.EqualFold(f[1], "Cache-Control") && f[2] == `"no-cache"` {
+			f[2] = "no-cache"
+		}
 		if strings.ContainsAny(strings.Join(f, " "), "\"`") {
 			return no("含有带引号的参数（" + f[0] + "）")
 		}
+		if strings.HasPrefix(f[0], "@") {
+			if len(f) < 3 || f[1] != "path" || matchers[f[0]] != nil {
+				return no("含有面板没有对应设置的匹配规则（" + truncate(f[0], 30) + "）")
+			}
+			matchers[f[0]], order = f[2:], append(order, f[0])
+			continue
+		}
 		switch f[0] {
+		case "respond":
+			if len(f) != 3 || !strings.HasPrefix(f[1], "@") || f[2] != "404" {
+				return no("respond 不是“屏蔽路径返回 404”的形式")
+			}
+			responds[f[1]]++
 		case "reverse_proxy":
 			if len(f) != 2 || main != "" {
 				return no("reverse_proxy 带有多个目标或参数")
@@ -188,7 +205,11 @@ func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 			}
 			compress = true
 		case "header":
-			if len(f) != 3 || !strings.EqualFold(f[1], "X-Content-Type-Options") || f[2] != "nosniff" {
+			switch {
+			case len(f) == 3 && strings.EqualFold(f[1], "X-Content-Type-Options") && f[2] == "nosniff":
+			case len(f) == 3 && strings.EqualFold(f[1], "Cache-Control") && f[2] == "no-cache":
+				noCache = true
+			default:
 				return no("含有 header 指令")
 			}
 		default:
@@ -201,7 +222,22 @@ func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 	if main != "static" && root != "" {
 		return no("root 只能和 file_server 一起使用")
 	}
-	s := site{Name: truncate(b.Hosts[0], 60), Domains: append([]string{}, b.Hosts...), Kind: main, NoCompress: !compress, Enabled: true}
+	var blocked []string
+	for _, name := range order {
+		if responds[name] != 1 {
+			return no("匹配规则 " + truncate(name, 30) + " 不是只用于“返回 404”")
+		}
+		blocked = append(blocked, matchers[name]...)
+	}
+	for name := range responds {
+		if matchers[name] == nil {
+			return no("respond 用到了没有定义的匹配规则（" + truncate(name, 30) + "）")
+		}
+	}
+	if main == "redirect" && (len(blocked) > 0 || noCache) {
+		return no("跳转网站不支持屏蔽路径或禁止缓存")
+	}
+	s := site{Name: truncate(b.Hosts[0], 60), Domains: append([]string{}, b.Hosts...), Kind: main, NoCompress: !compress, Enabled: true, BlockPaths: blocked, NoCache: noCache}
 	switch main {
 	case "proxy":
 		if !strings.Contains(upstream, "://") {
@@ -220,9 +256,8 @@ func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 		}
 	case "static":
 		clean := filepath.Clean(root)
-		base := filepath.Join(a.cfg.Root, "sites") + string(filepath.Separator)
-		if root == "" || !filepath.IsAbs(clean) || !strings.HasPrefix(clean+string(filepath.Separator), base) || clean+string(filepath.Separator) == base {
-			return no("静态网站的目录不在面板文件区（" + filepath.Join(a.cfg.Root, "sites") + "）里，面板无法管理它的文件")
+		if root == "" || !filepath.IsAbs(clean) || a.sensitiveRoot(clean) {
+			return no("静态网站的目录不允许由面板接管（" + truncate(root, 60) + "）")
 		}
 		if st, e := os.Stat(clean); e != nil || !st.IsDir() {
 			return no("静态网站的目录不存在")
@@ -238,6 +273,34 @@ func (a *agent) judgeCaddyBlock(addr string, body []string) caddyBlock {
 }
 
 // stripCaddyComment cuts a trailing comment but leaves quoted text alone.
+// sensitiveRoot refuses folders that must never be published as a website: top-level folders,
+// system and secret locations, and the panel's own data outside its sites area.
+func (a *agent) sensitiveRoot(path string) bool {
+	clean := filepath.Clean(path)
+	if strings.Count(strings.Trim(filepath.ToSlash(clean), "/"), "/") < 1 {
+		return true // "/" and "/srv", "/home"...
+	}
+	sites := filepath.Join(a.cfg.Root, "sites")
+	if clean == sites {
+		return true
+	}
+	if under(clean, sites) {
+		return false
+	}
+	deny := []string{"/etc", "/root", "/boot", "/proc", "/sys", "/dev", "/run", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/var/lib", "/var/log",
+		a.cfg.Root, a.cfg.State, a.cfg.Fragments, a.cfg.CaddyData, filepath.Dir(a.cfg.Caddy)}
+	for _, d := range deny {
+		if d != "" && (clean == filepath.Clean(d) || under(clean, d)) {
+			return true
+		}
+	}
+	return false
+}
+
+func under(path, dir string) bool {
+	return strings.HasPrefix(filepath.Clean(path)+string(filepath.Separator), filepath.Clean(dir)+string(filepath.Separator)) && filepath.Clean(path) != filepath.Clean(dir)
+}
+
 func stripCaddyComment(line string) string {
 	quote := rune(0)
 	prev := ' '
@@ -389,6 +452,18 @@ func (a *agent) caddyAdopt(w http.ResponseWriter, r *http.Request) error {
 	}
 	if e = a.adoptTransaction(changes, next); e != nil {
 		return e
+	}
+	// An adopted host is now an ordinary panel site; it no longer needs its link.
+	if links := a.readLinks(); len(links) > 0 {
+		keep := []string{}
+		for _, h := range links {
+			if !taken[h] {
+				keep = append(keep, h)
+			}
+		}
+		if len(keep) != len(links) {
+			atomicJSON(a.linksPath(), keep, 0600)
+		}
 	}
 	send(w, 200, map[string]any{"ok": true, "adopted": len(picked)})
 	return nil

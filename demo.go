@@ -23,6 +23,7 @@ func demoSites() []site {
 		{ID: b, Name: "工作室博客", Domains: []string{"blog.example.com"}, Kind: "proxy", Upstream: "http://127.0.0.1:8080", Enabled: true, Created: time.Now().Add(-48 * time.Hour)},
 		{ID: c, Name: "代码仓库", Domains: []string{"git.example.com"}, Kind: "proxy", Upstream: "http://127.0.0.1:3000", Enabled: true, Created: time.Now().Add(-24 * time.Hour), AuthUser: "team", AuthHash: "demo", AllowIPs: []string{"203.0.113.0/24"}},
 		{ID: d, Name: "旧域名跳转", Domains: []string{"old.example.com"}, Kind: "redirect", Target: "https://www.example.com", Permanent: true, KeepPath: true, Enabled: true, Created: time.Now().Add(-12 * time.Hour)},
+		{ID: "s_" + strings.Repeat("f", 20), Name: "快乐英语", Domains: []string{"abc.example.com"}, Kind: "static", Root: "/srv/kids-english", Enabled: true, Created: time.Now().Add(-6 * time.Hour), BlockPaths: []string{"/.git", "/.git/*", "*.sh"}, NoCache: true},
 	}
 }
 func demoPublicSites() []map[string]any {
@@ -118,7 +119,7 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, fileEntry{Name: "sites", Path: "/sites", Dir: true, Modified: time.Now().Add(-72 * time.Hour), Mode: "drwxr-xr-x"})
 		} else if current == "/sites" {
 			for _, s := range demoSites() {
-				if s.Kind == "static" {
+				if s.Kind == "static" && strings.HasPrefix(s.Root, "/srv/junpanel/sites/") {
 					entries = append(entries, fileEntry{Name: s.ID, Path: "/sites/" + s.ID, Dir: true, Modified: s.Created, Mode: "drwxr-xr-x"})
 				}
 			}

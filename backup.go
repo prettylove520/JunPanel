@@ -294,6 +294,9 @@ func (a *agent) staticSite(id string) (site, error) {
 			if s.Kind != "static" {
 				return site{}, bad(400, "只有静态网站有文件可备份")
 			}
+			if a.externalRoot(s) {
+				return site{}, bad(400, "这个网站的文件在外部目录，由它自己的部署管理，面板不备份")
+			}
 			return s, nil
 		}
 	}
@@ -899,7 +902,7 @@ func (a *agent) backupItems(want map[string]bool) ([]backupSpec, map[string]stri
 			return nil, nil, e
 		}
 		for _, s := range sites {
-			if s.Kind == "static" {
+			if s.Kind == "static" && !a.externalRoot(s) {
 				spec := backupSpec{Type: "site", Target: s.ID}
 				items = append(items, spec)
 				names[spec.Type+":"+spec.Target] = "网站 · " + s.Name
