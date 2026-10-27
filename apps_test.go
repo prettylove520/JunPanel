@@ -59,7 +59,7 @@ func TestCatalogTemplates(t *testing.T) {
 			t.Fatalf("%s keeps data but cannot be backed up", tpl.Key)
 		}
 	}
-	if len(appCatalog) != 32 {
+	if len(appCatalog) != 36 {
 		t.Fatalf("catalog has %d templates", len(appCatalog))
 	}
 }
@@ -183,26 +183,30 @@ func TestDockerPlainTemplates(t *testing.T) {
 		path string
 		want []int
 	}{
-		"nextcloud":       {"/status.php", []int{200}},
-		"jellyfin":        {"/", []int{200, 302}},
-		"navidrome":       {"/", []int{200, 302}},
-		"trilium":         {"/", []int{200, 302}},
-		"linkding":        {"/login/", []int{200}},
-		"freshrss":        {"/", []int{200, 302}},
-		"gotify":          {"/", []int{200}},
-		"ntfy":            {"/", []int{200}},
-		"stirlingpdf":     {"/", []int{200, 302}},
-		"drawio":          {"/", []int{200}},
-		"codeserver":      {"/healthz", []int{200}},
-		"audiobookshelf":  {"/healthcheck", []int{200}},
-		"kavita":          {"/api/health", []int{200}},
-		"mealie":          {"/api/app/about", []int{200}},
-		"actual":          {"/", []int{200, 302}},
-		"wallos":          {"/login.php", []int{200, 302}},
-		"homebox":         {"/api/v1/status", []int{200}},
-		"changedetection": {"/", []int{200, 302}},
-		"pairdrop":        {"/", []int{200}},
-		"cyberchef":       {"/", []int{200}},
+		"nextcloud":        {"/status.php", []int{200}},
+		"jellyfin":         {"/", []int{200, 302}},
+		"navidrome":        {"/", []int{200, 302}},
+		"trilium":          {"/", []int{200, 302}},
+		"linkding":         {"/login/", []int{200}},
+		"freshrss":         {"/", []int{200, 302}},
+		"gotify":           {"/", []int{200}},
+		"ntfy":             {"/", []int{200}},
+		"stirlingpdf":      {"/", []int{200, 302}},
+		"drawio":           {"/", []int{200}},
+		"codeserver":       {"/healthz", []int{200}},
+		"audiobookshelf":   {"/healthcheck", []int{200}},
+		"kavita":           {"/api/health", []int{200}},
+		"mealie":           {"/api/app/about", []int{200}},
+		"actual":           {"/", []int{200, 302}},
+		"wallos":           {"/login.php", []int{200, 302}},
+		"homebox":          {"/api/v1/status", []int{200}},
+		"changedetection":  {"/", []int{200, 302}},
+		"pairdrop":         {"/", []int{200}},
+		"cyberchef":        {"/", []int{200}},
+		"openwebui-ollama": {"/health", []int{200}},
+		"newapi":           {"/", []int{200}},
+		"flowise":          {"/api/v1/ping", []int{200}},
+		"maxkb":            {"/", []int{200, 301, 302}},
 	}
 	only := map[string]bool{}
 	for _, k := range strings.Split(os.Getenv("JUNPANEL_APPS"), ",") {

@@ -75,6 +75,11 @@ var appData = map[string][]dataPart{
 	"wallos":          {{"app", "/var/www/html/db", "db"}, {"app", "/var/www/html/images/uploads/logos", "logos"}},
 	"homebox":         {{"app", "/data", "data"}},
 	"changedetection": {{"app", "/datastore", "datastore"}},
+	// Not the models volume: it is several GB and can be pulled again.
+	"openwebui-ollama": {{"app", "/app/backend/data", "data"}},
+	"newapi":           {{"app", "/data", "data"}},
+	"flowise":          {{"app", "/home/node", "data"}},
+	"maxkb":            {{"app", "/opt/maxkb", "data"}},
 }
 
 // backupTag labels a backup: a note for the list and the schedule that made it.
