@@ -45,10 +45,21 @@ func linkTestAgent(t *testing.T) (*agent, string) {
 	t.Helper()
 	a := testAgent(t)
 	content := strings.Replace(linkFixture, "%s", strings.ReplaceAll(a.cfg.Fragments, "\\", "/"), 1)
+	// The folder lives outside the panel's file area, as /srv/kids-english does on the server.
+	content = strings.Replace(content, "/srv/kids-english", filepath.ToSlash(externalSiteDir(t)), 1)
 	if e := os.WriteFile(a.cfg.Caddy, []byte(content), 0644); e != nil {
 		t.Fatal(e)
 	}
 	return a, content
+}
+
+func externalSiteDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "kids-english")
+	if e := os.MkdirAll(dir, 0755); e != nil {
+		t.Fatal(e)
+	}
+	return dir
 }
 
 func TestCaddyBlocksDescribeThemselves(t *testing.T) {
@@ -60,7 +71,11 @@ func TestCaddyBlocksDescribeThemselves(t *testing.T) {
 		}
 	}
 	abc := got["abc.example.com"]
-	if abc.Adoptable || !strings.Contains(abc.Info, "静态 → /srv/kids-english") || !strings.Contains(abc.Info, "含路径规则") {
+	if !strings.Contains(abc.Info, "/kids-english") || !strings.Contains(abc.Info, "含路径规则") {
+		t.Fatalf("abc info: %+v", abc)
+	}
+	// The path filter, the no-cache header and the outside folder are all things the panel can now keep.
+	if !abc.Adoptable || abc.Kind != "static" || !strings.HasSuffix(abc.site.Root, "kids-english") || strings.Join(abc.site.BlockPaths, " ") != "/.git /.git/* *.sh" || !abc.site.NoCache || abc.site.NoCompress {
 		t.Fatalf("abc: %+v", abc)
 	}
 	fu := got["gzfuyuan.example.com"]
@@ -131,5 +146,75 @@ func TestLinkKeepsTheConfigUntouched(t *testing.T) {
 	load()
 	if len(list.Linked) != 1 || list.Linked[0] != "gzfuyuan.example.com" {
 		t.Fatalf("after unlink: %v", list.Linked)
+	}
+}
+
+func TestAdoptRefusesUnsafeOrUnknownRules(t *testing.T) {
+	a := testAgent(t)
+	ext := filepath.ToSlash(externalSiteDir(t))
+	for name, c := range map[string]struct{ block, want string }{
+		"system folder":        {"x.example.com {\n\troot * /etc/caddy\n\tfile_server\n}", "目录"},
+		"top-level folder":     {"x.example.com {\n\troot * /srv\n\tfile_server\n}", "目录"},
+		"panel state":          {"x.example.com {\n\troot * " + filepath.ToSlash(a.cfg.State) + "\n\tfile_server\n}", "目录"},
+		"respond 403":          {"x.example.com {\n\troot * " + ext + "\n\t@x path /a\n\trespond @x 403\n\tfile_server\n}", "respond"},
+		"matcher used twice":   {"x.example.com {\n\troot * " + ext + "\n\t@x path /a\n\trespond @x 404\n\trespond @x 404\n\tfile_server\n}", "@x"},
+		"matcher not path":     {"x.example.com {\n\troot * " + ext + "\n\t@x header Foo bar\n\trespond @x 404\n\tfile_server\n}", "@x"},
+		"undefined matcher":    {"x.example.com {\n\troot * " + ext + "\n\trespond @y 404\n\tfile_server\n}", "@y"},
+		"other cache header":   {"x.example.com {\n\troot * " + ext + "\n\theader Cache-Control \"max-age=60\"\n\tfile_server\n}", "引号"},
+		"unsafe blocked path":  {"x.example.com {\n\troot * " + ext + "\n\t@x path /a{b}\n\trespond @x 404\n\tfile_server\n}", ""},
+		"redirect with filter": {"x.example.com {\n\t@x path /a\n\trespond @x 404\n\tredir https://y.example.com 301\n}", "跳转"},
+	} {
+		blocks := a.parseCaddyBlocks(c.block + "\n")
+		if len(blocks) != 1 || blocks[0].Adoptable || !strings.Contains(blocks[0].Reason, c.want) {
+			t.Errorf("%s: %+v", name, blocks)
+		}
+	}
+}
+
+func TestAdoptRemovesTheLink(t *testing.T) {
+	a, _ := linkTestAgent(t)
+	h := a.routes()
+	var list struct {
+		SHA    string
+		Blocks []caddyBlock
+		Linked []string
+	}
+	load := func() {
+		list.Linked = nil
+		json.Unmarshal(request(h, "GET", "/caddy/adoptable", "", nil, nil).Body.Bytes(), &list)
+	}
+	post := func(path string, v any) int {
+		raw, _ := json.Marshal(v)
+		r := request(h, "POST", path, string(raw), nil, nil)
+		if r.Code != 200 {
+			t.Logf("%s: %d %s", path, r.Code, r.Body.String())
+		}
+		return r.Code
+	}
+	load()
+	if post("/caddy/link", map[string]any{"sha": list.SHA, "hosts": []string{"abc.example.com", "gzfuyuan.example.com"}}) != 200 {
+		t.Fatal("link refused")
+	}
+	load()
+	id := ""
+	for _, b := range list.Blocks {
+		if b.Hosts[0] == "abc.example.com" {
+			id = b.ID
+		}
+	}
+	if post("/caddy/adopt", map[string]any{"sha": list.SHA, "ids": []string{id}}) != 200 {
+		t.Fatal("adopt refused")
+	}
+	load()
+	if strings.Join(list.Linked, " ") != "gzfuyuan.example.com" {
+		t.Fatalf("links after adopt: %v", list.Linked)
+	}
+	sites, _ := a.readSites()
+	if len(sites) != 1 || !a.externalRoot(sites[0]) || strings.Join(sites[0].BlockPaths, " ") != "/.git /.git/* *.sh" || !sites[0].NoCache {
+		t.Fatalf("adopted site: %+v", sites)
+	}
+	frag, _ := os.ReadFile(filepath.Join(a.cfg.Fragments, "managed.caddy"))
+	if !strings.Contains(string(frag), "@blocked path /.git /.git/* *.sh") || !strings.Contains(string(frag), "header Cache-Control no-cache") {
+		t.Fatalf("fragment:\n%s", frag)
 	}
 }
