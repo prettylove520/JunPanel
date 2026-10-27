@@ -350,7 +350,7 @@ dl.details dd { margin: 0; }
 
 /* App store */
 .app-logo { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--fill); color: var(--text-2); font-size: 18px; font-weight: 600; }
-.catalog-grid, .installed-grid, .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.catalog-grid, .installed-grid, .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; margin-bottom: 14px; }
 .app-card, .installed-card { display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius-card); transition: box-shadow .2s, border-color .2s; }
 .app-card:hover, .installed-card:hover { border-color: var(--line); box-shadow: var(--shadow); }
 .app-card-head, .installed-header { display: flex; align-items: center; gap: 14px; }
@@ -510,7 +510,6 @@ dl.details dd { margin: 0; }
   .page-bar { flex-direction: column; align-items: stretch; }
   .page-actions { justify-content: flex-start; }
   .database-layout, .security-grid, .form-grid { grid-template-columns: 1fr; }
-  .catalog-grid, .installed-grid, .project-grid { grid-template-columns: minmax(0, 1fr); }
   .login-card { grid-template-columns: 1fr; min-height: 0; }
   .login-brand { padding: 28px; }
   .login-brand h1 { margin-top: 24px; font-size: 21px; }
@@ -743,3 +742,6 @@ main { max-width: clamp(1680px, 82vw, 2400px); }
 .code-editor[readonly] { color: var(--text-2); }
 
 .adopt-list { margin: 8px 0 12px; padding-left: 20px; line-height: 1.8; }
+
+/* Touch screens: small buttons get a finger-sized hit area (26px is too short to tap reliably). */
+@media (pointer: coarse) { .button.small { height: 36px; padding: 0 14px; } }
