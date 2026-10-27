@@ -59,7 +59,7 @@ func TestCatalogTemplates(t *testing.T) {
 			t.Fatalf("%s keeps data but cannot be backed up", tpl.Key)
 		}
 	}
-	if len(appCatalog) != 36 {
+	if len(appCatalog) != 37 {
 		t.Fatalf("catalog has %d templates", len(appCatalog))
 	}
 }
@@ -204,6 +204,7 @@ func TestDockerPlainTemplates(t *testing.T) {
 		"pairdrop":         {"/", []int{200}},
 		"cyberchef":        {"/", []int{200}},
 		"openwebui-ollama": {"/health", []int{200}},
+		"llmfit":           {"/health", []int{200}},
 		"newapi":           {"/", []int{200}},
 		"flowise":          {"/api/v1/ping", []int{200}},
 		"maxkb":            {"/", []int{200, 301, 302}},
