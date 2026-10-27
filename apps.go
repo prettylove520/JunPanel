@@ -64,7 +64,7 @@ var appCatalog = []appTemplate{
 	{"cyberchef", "CyberChef", "开发工具", "数据编解码与分析工具箱：Base64、哈希、加解密、正则等", "ghcr.io/gchq/cyberchef:latest", 8101, 8080, "", "#8a6a3b", "无需账号，也不保存数据，所有处理都在浏览器里完成。", false},
 	{"openwebui-ollama", "Open WebUI + Ollama", "AI 工具", "一个容器里同时带本地大模型运行环境（Ollama）和聊天界面，装好就能在本机跑模型", "ghcr.io/open-webui/open-webui:ollama", 3081, 8080, "", "#111827", "仅用 CPU 运行：建议内存 8 GB 以上，先拉取 1–3B 的小模型（如 qwen2.5:1.5b、llama3.2:3b）。镜像约 3.3 GB，模型文件另占磁盘（每个数 GB）。备份只含设置和聊天记录，不含模型。第一个注册的账号成为管理员。", false},
 	{"newapi", "New API", "AI 工具", "大模型接口网关：把多家模型服务聚合成统一的 OpenAI 兼容接口，管理密钥、额度和用户", "calciumion/new-api:latest", 3002, 3000, "", "#0f766e", "首次打开按页面向导创建管理员账号。对外提供接口前请设置强密码，并通过 HTTPS 域名访问。", false},
-	{"flowise", "Flowise", "AI 工具", "拖拽式搭建大模型应用和智能体工作流，可接知识库与各家模型", "flowiseai/flowise:latest", 3003, 3000, "", "#3b5bdb", "首次打开按页面提示完成管理员账号设置。镜像约 1.5 GB，运行占用内存约 1 GB。它带有能执行代码的节点，务必设置登录并只通过 HTTPS 域名使用。", false},
+	{"flowise", "Flowise", "AI 工具", "拖拽式搭建大模型应用和智能体工作流，可接知识库与各家模型", "flowiseai/flowise:3.1.3", 3003, 3000, "", "#3b5bdb", "固定在 3.1.3：最新的 3.1.4 镜像启动即报错退出（会话存储的 SQLite 错误），等上游修复后再更新。首次打开按页面提示完成管理员账号设置。镜像约 1.5 GB，运行占用内存约 1 GB。它带有能执行代码的节点，务必设置登录并只通过 HTTPS 域名使用。", false},
 	{"maxkb", "MaxKB", "AI 工具", "基于大模型的知识库问答系统：上传文档后自带向量检索与工作流，适合做内部资料问答", "1panel/maxkb:latest", 8102, 8080, "", "#3370ff", "内置数据库，建议内存 4 GB 以上，首次启动需要一两分钟。初始账号 admin、初始密码 MaxKB@123..（公开信息），登录后请立刻修改。", false},
 }
 
