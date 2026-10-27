@@ -22,6 +22,7 @@ type caddyBlock struct {
 	Hosts     []string `json:"hosts"`
 	Kind      string   `json:"kind,omitempty"`
 	Summary   string   `json:"summary,omitempty"`
+	Info      string   `json:"info,omitempty"`
 	Adoptable bool     `json:"adoptable"`
 	Reason    string   `json:"reason,omitempty"`
 	start     int
@@ -83,6 +84,7 @@ func (a *agent) parseCaddyBlocks(content string) []caddyBlock {
 		if addr != "" && !strings.HasPrefix(addr, "(") && !strings.HasPrefix(addr, "@") {
 			block := a.judgeCaddyBlock(addr, lines[i+1:j])
 			block.start, block.end = i, j
+			block.Info = describeCaddyBody(lines[i+1 : j])
 			sum := sha256.Sum256([]byte(strings.Join(lines[i:j+1], "\n")))
 			block.ID = hex.EncodeToString(sum[:8])
 			out = append(out, block)
@@ -295,7 +297,7 @@ func (a *agent) caddyAdoptable(w http.ResponseWriter, r *http.Request) error {
 		}
 		blocks = append(blocks, b)
 	}
-	send(w, 200, map[string]any{"sha": digest, "blocks": blocks, "editable": editable && caddyEditable(a.cfg.Caddy)})
+	send(w, 200, map[string]any{"sha": digest, "blocks": blocks, "linked": a.readLinks(), "editable": editable && caddyEditable(a.cfg.Caddy)})
 	return nil
 }
 
