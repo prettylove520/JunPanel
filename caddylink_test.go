@@ -55,7 +55,9 @@ func TestCaddyBlocksDescribeThemselves(t *testing.T) {
 	a, content := linkTestAgent(t)
 	got := map[string]caddyBlock{}
 	for _, b := range a.parseCaddyBlocks(content) {
-		got[b.Hosts[0]] = b
+		if _, seen := got[b.Hosts[0]]; !seen { // the same host also has an http:// redirect block; keep the first
+			got[b.Hosts[0]] = b
+		}
 	}
 	abc := got["abc.example.com"]
 	if abc.Adoptable || !strings.Contains(abc.Info, "静态 → /srv/kids-english") || !strings.Contains(abc.Info, "含路径规则") {
