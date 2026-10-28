@@ -24,6 +24,8 @@ jobs:
     outputs:
       light: ${{ steps.scope.outputs.light }}
       pin: ${{ steps.scope.outputs.pin }}
+      docker: ${{ steps.scope.outputs.docker }}
+      apps: ${{ steps.scope.outputs.apps }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -80,7 +82,7 @@ jobs:
   docker-backups:
     name: Docker tests (backups, restore, upgrade)
     needs: scope
-    if: needs.scope.outputs.light != 'true'
+    if: needs.scope.outputs.light != 'true' && needs.scope.outputs.docker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -97,7 +99,7 @@ jobs:
   docker-stacks:
     name: Docker tests (stacks, networks, alerts)
     needs: scope
-    if: needs.scope.outputs.light != 'true'
+    if: needs.scope.outputs.light != 'true' && needs.scope.outputs.docker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -115,12 +117,13 @@ jobs:
           go test -c -o /tmp/junpanel.test .
           sudo /tmp/junpanel.test -test.count=1 -test.run 'TestStackParsedWithoutRoot'
 
-  # The small app templates are the slowest part (image pulls), so they run in five shards side by side.
+  # The small app templates are the slowest part (image pulls), so they run in five shards side by side,
+  # and only when the change can reach them (see tests/ci-scope.sh); a push to main always runs them.
   # Every template must appear in exactly one shard; the heavy images are spread out.
   docker-apps:
     name: Docker tests (app templates ${{ matrix.shard }})
     needs: scope
-    if: needs.scope.outputs.light != 'true'
+    if: needs.scope.outputs.light != 'true' && needs.scope.outputs.apps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -217,7 +220,9 @@ jobs:
           if [[ "$(echo "$NEEDS" | jq -r '.scope.outputs.light')" == true ]]; then
             required=(light)
           else
-            required=(go docker-backups docker-stacks docker-apps scripts build)
+            required=(go scripts build)
+            [[ "$(echo "$NEEDS" | jq -r '.scope.outputs.docker')" == true ]] && required+=(docker-backups docker-stacks)
+            [[ "$(echo "$NEEDS" | jq -r '.scope.outputs.apps')" == true ]] && required+=(docker-apps)
           fi
           for job in "${required[@]}"; do
             [[ "$(result "$job")" == success ]] || { echo "$job did not succeed: $(result "$job")" >&2; exit 1; }
