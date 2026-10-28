@@ -1015,3 +1015,37 @@ small, .help, .panel-note, .chart-caption, .nav-heading, .page-bar p, .breadcrum
 .tag { height: 24px; font-size: 12.5px; }
 @media (min-width: 1800px) { html { zoom: 1.125; } }
 @media (min-width: 2200px) { html { zoom: 1.25; } }
+
+/* ── Sidebar, in the manner of 1Panel ──
+   A tinted column of its own, a large brand block, and every menu entry a tile of its own: roomy,
+   large icon, the selection a brand-coloured outline with a bar on its left. Tiles grow with the window
+   height, so a tall screen is filled rather than left half empty. */
+:root { --side-bg: #eef1f8; --side-tile: #f7f8fc; --side-tile-hover: #ffffff; --sidebar-width: 244px; }
+:root[data-theme=dark] { --side-bg: #101216; --side-tile: #181b21; --side-tile-hover: #1e222a; }
+.sidebar { background: var(--side-bg); border-right: 1px solid var(--side-line); }
+.sidebar > .brand { height: 68px; padding: 0 22px; gap: 12px; border-bottom: 0; font-size: 20px; }
+.sidebar > .brand img { width: 36px; height: 36px; border-radius: 9px; }
+.sidebar > .brand strong { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+.sidebar > .brand .sidebar-version { font-size: 12px; color: var(--side-muted); }
+#nav { padding: 6px 14px 14px; }
+.nav-heading { padding: 0 6px 8px; font-size: 13px; color: var(--side-muted); }
+.nav-section + .nav-section { margin-top: clamp(10px, 2vh, 26px); }
+.nav-link { position: relative; height: clamp(40px, 5vh, 54px); margin-bottom: clamp(4px, .7vh, 9px); padding: 0 16px; gap: 14px; border: 1px solid transparent; border-radius: 8px; background: var(--side-tile); color: var(--side-text); font-size: 15px; font-weight: 400; }
+.nav-link svg.icon { width: 19px; height: 19px; color: var(--side-muted); }
+.nav-link:hover { background: var(--side-tile-hover); color: var(--side-strong); border-color: var(--side-line); }
+.nav-link:hover svg.icon { color: var(--side-strong); }
+.nav-link.active { background: var(--primary-soft); border-color: var(--primary-line); color: var(--primary); font-weight: 500; }
+.nav-link.active svg.icon { color: var(--primary); }
+.nav-link.active::before { content: ""; position: absolute; left: -1px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--primary); }
+.nav-badge { height: 20px; min-width: 20px; font-size: 12px; line-height: 20px; }
+.sidebar-bottom { padding: 14px 18px; border-top: 1px solid var(--side-line); background: var(--side-bg); }
+.sidebar-bottom .user-avatar { width: 36px; height: 36px; font-size: 14px; }
+.side-account strong { font-size: 15px; }
+.side-account > span { font-size: 13px; }
+
+/* The name at the top of the overview, with its rename button. */
+.title-row { display: flex; align-items: center; gap: 10px; }
+.title-row .icon-button { width: 30px; height: 30px; color: var(--muted); opacity: .7; }
+.title-row .icon-button:hover { opacity: 1; color: var(--text); }
+.title-row .icon-button svg.icon { width: 16px; height: 16px; }
+@media (max-width: 900px) { .sidebar > .brand { height: 64px; } .nav-link { height: 48px; } }

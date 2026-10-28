@@ -167,6 +167,7 @@ var auditActions = []struct {
 	{"POST", regexp.MustCompile(`^/api/backups/[^/]+/restore$`), "恢复备份"},
 	{"DELETE", regexp.MustCompile(`^/api/backups/[^/]+$`), "删除备份"},
 	{"GET", regexp.MustCompile(`^/api/backups/[^/]+/download$`), "下载备份"},
+	{"POST", regexp.MustCompile(`^/api/display-name$`), "修改主机显示名称"},
 	{"POST", regexp.MustCompile(`^/api/firewall/rules$`), "添加防火墙规则"},
 	{"DELETE", regexp.MustCompile(`^/api/firewall/rules/[^/]+$`), "删除防火墙规则"},
 	{"POST", regexp.MustCompile(`^/api/schedules$`), "保存计划任务"},
