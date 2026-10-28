@@ -6,8 +6,8 @@ main() (
   set -Eeuo pipefail
   umask 077
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  local version=1.5.9
-  local expected=78ce32b5a3b98a425739f0dae7ec5d117ad4ac36fdfe37c3c16f422ed6089a25
+  local version=1.5.10
+  local expected=5f74fe82bb1dc6e1757aa5411dbe93575bed7f32cdb4506d6da71afc7a2dad07
   local public_ref=dfca8704170deed924ae00f0e0609c7e3b637670
   local public_hash=a10426f7c68355a7807fcecb147137ecdff9e2e57f0edd4c64122ea1e813bc2b
   local archive="JunPanel-$version-linux.tar.gz"
