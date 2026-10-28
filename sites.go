@@ -308,6 +308,7 @@ func withReason(message, out string) string {
 }
 
 func (a *agent) applySites(sites []site) error {
+	before, _ := a.readSites()
 	raw, e := os.ReadFile(a.cfg.Caddy)
 	if e != nil {
 		return bad(500, "无法读取主 Caddyfile")
@@ -360,6 +361,7 @@ func (a *agent) applySites(sites []site) error {
 		}
 		return bad(500, "登记失败，原片段已恢复")
 	}
+	a.siteListChanged(before, sites)
 	return nil
 }
 func (a *agent) siteList(w http.ResponseWriter, r *http.Request) error {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSiteTargetsPort(t *testing.T) {
@@ -114,5 +115,56 @@ func TestPurgeNeedsAnUninstalledApp(t *testing.T) {
 	}
 	if sc, _ := a.readSchedules(); len(sc) != 1 || sc[0].Target != "live" {
 		t.Fatalf("schedules after purge: %+v", sc)
+	}
+}
+
+// Removing or switching off a site clears its alert straight away, instead of leaving it up until the
+// cached host list expires and the recovery polls pass.
+func TestRemovingASiteClearsItsAlert(t *testing.T) {
+	a := testAgent(t)
+	os.WriteFile(a.cfg.Caddy, []byte("import "+filepath.ToSlash(a.cfg.Fragments)+"/*.caddy\n"), 0644)
+	h := a.routes()
+	for _, body := range []string{
+		`{"name":"llm","domains":["llm.example.com"],"kind":"proxy","upstream":"http://127.0.0.1:8103"}`,
+		`{"name":"keep","domains":["keep.example.com"],"kind":"proxy","upstream":"http://127.0.0.1:8104"}`,
+		`{"name":"off","domains":["off.example.com"],"kind":"proxy","upstream":"http://127.0.0.1:8105"}`,
+	} {
+		if r := request(h, "POST", "/sites", body, nil, nil); r.Code != 200 {
+			t.Fatalf("site: %d %s", r.Code, r.Body.String())
+		}
+	}
+	st := &alertState{Active: map[string]*activeAlert{
+		"site:llm.example.com":  {Key: "site:llm.example.com", Title: "网站后端异常：llm.example.com"},
+		"site:keep.example.com": {Key: "site:keep.example.com", Title: "网站后端异常：keep.example.com"},
+		"site:off.example.com":  {Key: "site:off.example.com", Title: "网站后端异常：off.example.com"},
+		"disk:/":                {Key: "disk:/", Title: "磁盘空间不足"},
+	}, Resolved: map[string]time.Time{}}
+	if e := atomicJSON(a.alertStatePath(), st, 0600); e != nil {
+		t.Fatal(e)
+	}
+	a.certAt = time.Now()
+	rows, _ := a.readSites()
+	id := map[string]string{}
+	for _, s := range rows {
+		id[s.Name] = s.ID
+	}
+	if r := request(h, "DELETE", "/sites/"+id["llm"], "", nil, nil); r.Code != 200 {
+		t.Fatalf("delete: %d", r.Code)
+	}
+	if r := request(h, "POST", "/sites/"+id["off"]+"/toggle", `{}`, nil, nil); r.Code != 200 {
+		t.Fatalf("toggle: %d", r.Code)
+	}
+	var left map[string]*activeAlert
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		cur, _ := a.readAlertState()
+		if left = cur.Active; len(left) == 2 {
+			break
+		}
+	}
+	if len(left) != 2 || left["site:keep.example.com"] == nil || left["disk:/"] == nil {
+		t.Fatalf("alerts left: %v", left)
+	}
+	if !a.certAt.IsZero() {
+		t.Fatal("the cached host list was not dropped")
 	}
 }
