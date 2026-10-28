@@ -235,11 +235,12 @@ function chart(history, series, max = 100, withDate = false) {
   const when = (s, full) => new Date(s).toLocaleString('zh-CN', { hour12: false, ...(withDate || full ? { month: '2-digit', day: '2-digit' } : {}), hour: '2-digit', minute: '2-digit', ...(full && !withDate ? { second: '2-digit' } : {}) });
   const value = v => max ? `${Number(v).toFixed(1)}%` : `${bytes(v)}/s`;
   canvas._draw = () => {
-    const rect = canvas.getBoundingClientRect(); if (!rect.width) return; const dpr = devicePixelRatio || 1, w = rect.width, h = H;
+    // Layout width, and a bitmap scaled by the page zoom as well as the screen, so a zoomed page stays sharp.
+    const rect = canvas.getBoundingClientRect(), w = canvas.clientWidth; if (!w || !rect.width) return; const dpr = (devicePixelRatio || 1) * (rect.width / w), h = H;
     canvas.width = w * dpr; canvas.height = h * dpr; const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
     const muted = cssVar('--muted'), grid = cssVar('--line-soft'), font = getComputedStyle(document.body).fontFamily, mono = cssVar('--font-mono') || 'monospace';
     const all = series.flatMap(([k]) => history.map(p => Number(p[k] || 0))), peak = max || Math.max(1024, ...all) * 1.2, n = history.length;
-    ctx.font = `12px ${font}`; ctx.textBaseline = 'middle';
+    ctx.font = `13px ${font}`; ctx.textBaseline = 'middle';
     for (let i = 0; i <= 4; i++) { const y = top + (h - top - bottom) * i / 4; ctx.strokeStyle = grid; ctx.setLineDash(i && i < 4 ? [2, 4] : []); ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.fillText(max ? `${Math.round(peak * (1 - i / 4))}%` : `${bytes(peak * (1 - i / 4))}/s`, left - 8, y); }
     let lx = left; series.forEach(([, label, color]) => { ctx.fillStyle = cssVar(color); ctx.beginPath(); ctx.arc(lx + 4, 10, 4, 0, 7); ctx.fill(); ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.fillText(label, lx + 14, 10); lx += ctx.measureText(label).width + 38; });
     geo = null; if (n < 2) { ctx.textAlign = 'center'; ctx.fillStyle = muted; ctx.fillText('等待更多采样…', (left + w - right) / 2, h / 2); return; }
@@ -262,7 +263,7 @@ function chart(history, series, max = 100, withDate = false) {
     ctx.textAlign = 'left'; ctx.fillStyle = muted; ctx.fillText(head, bx + 12, by + 18);
     rows.forEach(([label, text, color], i) => { const ry = by + 18 + 20 * (i + 1); ctx.fillStyle = color; ctx.fillRect(bx + 12, ry - 4, 8, 8); ctx.fillStyle = cssVar('--text'); ctx.fillText(label, bx + 26, ry); ctx.textAlign = 'right'; ctx.fillText(text, bx + bw - 12, ry); ctx.textAlign = 'left'; });
   };
-  const at = e => { if (!geo) return; const r = canvas.getBoundingClientRect(), i = Math.round((e.clientX - r.left - left) / ((r.width - left - right) / (geo.n - 1))); hover = Math.max(0, Math.min(geo.n - 1, i)); canvas._draw(); };
+  const at = e => { if (!geo) return; const r = canvas.getBoundingClientRect(), w = canvas.clientWidth, x = (e.clientX - r.left) * (w / r.width), i = Math.round((x - left) / ((w - left - right) / (geo.n - 1))); hover = Math.max(0, Math.min(geo.n - 1, i)); canvas._draw(); };
   canvas.addEventListener('pointermove', at); canvas.addEventListener('pointerdown', at);
   canvas.addEventListener('pointerleave', () => { hover = null; canvas._draw(); });
   canvas.addEventListener('blur', () => { hover = null; canvas._draw(); });

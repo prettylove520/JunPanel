@@ -1004,3 +1004,14 @@ button.ov-stop:hover .ov-figure { color: var(--primary); }
 .up-notes { max-height: 280px; overflow: auto; white-space: pre-wrap; font-family: var(--font-ui); font-size: 13px; line-height: 1.7; }
 .up-link { margin-top: 10px; font-size: 13px; }
 .up-dialog > .info { margin-top: 12px; }
+
+/* ── Legibility ──
+   Nothing that carries words goes below 13px, badges and the version below 12px. On wide screens
+   (a 2K laptop at 100% scaling is 2560px across) the whole page scales up, so it reads at the size it
+   was designed for at 1440. */
+small, .help, .panel-note, .chart-caption, .nav-heading, .page-bar p, .breadcrumb, .search-launch, .side-account > span, footer, .data-table th, .range-tabs .button.quiet, .button.small, .ov-quiet { font-size: 13px; }
+.data-table td code, .resource-row code, .app-card-bottom code { font-size: 13px; }
+.sidebar-version, .search-launch kbd, .nav-badge, .upgrade-pill { font-size: 12px; }
+.tag { height: 24px; font-size: 12.5px; }
+@media (min-width: 1800px) { html { zoom: 1.125; } }
+@media (min-width: 2200px) { html { zoom: 1.25; } }
