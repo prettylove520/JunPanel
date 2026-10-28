@@ -69,6 +69,7 @@ type authStore struct {
 	Demo     bool
 	Account  account
 	Sessions map[string]loginSession
+	Restored map[string]loginSession // carried over a restart, keyed by tokenHash
 	Clients  map[string]*attempts
 	Global   attempts
 	OTPStep  int64
@@ -90,6 +91,7 @@ func newAuth(path string, demo bool) (*authStore, error) {
 		return a, nil
 	}
 	e := a.reload()
+	a.restoreSessions()
 	return a, e
 }
 func (a *authStore) reload() error {
@@ -102,6 +104,7 @@ func (a *authStore) reload() error {
 	}
 	if a.Account.Revision != "" && a.Account.Revision != v.Revision {
 		a.Sessions = map[string]loginSession{}
+		a.Restored = map[string]loginSession{}
 		a.OTPSetup = map[string]string{}
 		a.OTPStep = 0
 	}
@@ -270,6 +273,12 @@ func (a *authStore) get(token string, touch bool) (loginSession, error) {
 		return loginSession{}, e
 	}
 	s, ok := a.Sessions[token]
+	if !ok && token != "" {
+		if s, ok = a.Restored[tokenHash(token)]; ok {
+			delete(a.Restored, tokenHash(token))
+			a.Sessions[token] = s
+		}
+	}
 	now := time.Now()
 	if !ok || s.Revision != a.Account.Revision || now.Sub(s.Seen) >= 30*time.Minute || now.Sub(s.Born) >= 8*time.Hour {
 		delete(a.Sessions, token)
@@ -286,6 +295,7 @@ func (a *authStore) logout(token string) {
 	a.Lock()
 	defer a.Unlock()
 	delete(a.Sessions, token)
+	delete(a.Restored, tokenHash(token))
 	delete(a.OTPSetup, token)
 }
 func (a *authStore) change(ip, old, new, otp string) error {
