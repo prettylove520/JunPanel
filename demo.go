@@ -34,7 +34,7 @@ func demoPublicSites() []map[string]any {
 	return out
 }
 func demoApps() []map[string]any {
-	return []map[string]any{{"id": "studio", "name": "工作室博客", "template": "wordpress", "port": 8080, "created": time.Now().Add(-72 * time.Hour), "removed": false, "busy": false, "project": "junpanel-studio", "category": "网站应用", "image": "wordpress:php8.3-apache", "database": "", "containers": 2, "running": 2, "docker_available": true}, {"id": "notes", "name": "代码仓库", "template": "gitea", "port": 3000, "created": time.Now().Add(-24 * time.Hour), "removed": false, "busy": false, "project": "junpanel-notes", "category": "开发工具", "image": "docker.gitea.com/gitea:1", "database": "", "containers": 1, "running": 1, "docker_available": true}}
+	return []map[string]any{{"id": "studio", "name": "工作室博客", "template": "wordpress", "port": 8080, "created": time.Now().Add(-72 * time.Hour), "removed": false, "busy": false, "project": "junpanel-studio", "category": "网站应用", "image": "wordpress:php8.3-apache", "database": "", "containers": 2, "running": 2, "docker_available": true}, {"id": "notes", "name": "代码仓库", "template": "gitea", "port": 3000, "created": time.Now().Add(-24 * time.Hour), "removed": false, "busy": false, "project": "junpanel-notes", "category": "开发工具", "image": "docker.gitea.com/gitea:1", "database": "", "containers": 1, "running": 1, "docker_available": true}, {"id": "llm", "name": "llmfit", "template": "llmfit", "port": 8103, "created": time.Now().Add(-48 * time.Hour), "removed": true, "busy": false, "project": "junpanel-llm", "category": "AI 工具", "image": "ghcr.io/alexsjones/llmfit", "database": "", "containers": 0, "running": 0, "docker_available": true}}
 }
 func demoJobs() []job {
 	ended := time.Now().Add(-15 * time.Minute)

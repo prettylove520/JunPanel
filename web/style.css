@@ -1049,3 +1049,10 @@ small, .help, .panel-note, .chart-caption, .nav-heading, .page-bar p, .breadcrum
 .title-row .icon-button:hover { opacity: 1; color: var(--text); }
 .title-row .icon-button svg.icon { width: 16px; height: 16px; }
 @media (max-width: 900px) { .sidebar > .brand { height: 64px; } .nav-link { height: 48px; } }
+
+/* Uninstalled apps live in their own fold at the foot of the Installed page. */
+.gone-apps { margin-top: var(--gap); }
+.gone-apps > summary { cursor: pointer; padding: 8px 0; font-size: 15px; font-weight: 500; color: var(--text-2); }
+.gone-apps > summary:hover { color: var(--text); }
+.gone-note { margin: 4px 0 16px; font-size: 13px; }
+.gone-apps .installed-card { opacity: .88; }
