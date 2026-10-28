@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // A site whose upstream is an installed app's local port stops working when the app is uninstalled:
@@ -102,4 +103,62 @@ func (a *agent) dropAppSchedules(id string, out io.Writer) {
 		return
 	}
 	fmt.Fprintf(out, "已删除 %d 个针对此应用的计划任务。\n", dropped)
+}
+
+// enabledDomains is the set of domains the given sites serve.
+func enabledDomains(rows []site) map[string]bool {
+	out := map[string]bool{}
+	for _, s := range rows {
+		if s.Enabled {
+			for _, d := range s.Domains {
+				out[d] = true
+			}
+		}
+	}
+	return out
+}
+
+// siteListChanged runs after the sites were applied. The cached Caddy host list is dropped so the checks
+// stop probing a domain that is gone at once, and the alerts for domains that are no longer served are
+// cleared instead of waiting out the cache and the recovery polls. It runs in the background because the
+// caller holds a.mu and the alert check takes it too.
+func (a *agent) siteListChanged(before, after []site) {
+	was, now := enabledDomains(before), enabledDomains(after)
+	gone := []string{}
+	for d := range was {
+		if !now[d] {
+			gone = append(gone, d)
+		}
+	}
+	a.certMu.Lock()
+	a.certAt = time.Time{}
+	a.certMu.Unlock()
+	if len(gone) > 0 {
+		go a.dropSiteAlerts(gone)
+	}
+}
+
+// dropSiteAlerts removes the active alerts of the given domains.
+func (a *agent) dropSiteAlerts(domains []string) {
+	a.alertRun.Lock()
+	defer a.alertRun.Unlock()
+	a.alertMu.Lock()
+	defer a.alertMu.Unlock()
+	st, e := a.readAlertState()
+	if e != nil {
+		return
+	}
+	changed := false
+	for _, d := range domains {
+		key := "site:" + d
+		if _, ok := st.Active[key]; ok {
+			delete(st.Active, key)
+			changed = true
+		}
+		delete(a.streak, key)
+		delete(a.okStreak, key)
+	}
+	if changed {
+		atomicJSON(a.alertStatePath(), st, 0600)
+	}
 }
