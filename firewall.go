@@ -14,9 +14,11 @@ import (
 	"time"
 )
 
-// The firewall manages one nftables table of its own, "inet junpanel". Its input chain runs just
-// before the usual filter chains and only ever drops: a blocked address or a closed port. An accept
-// in it ends only this chain, so it never opens anything another firewall (ufw, firewalld, Docker)
+// The firewall manages one nftables table of its own, "inet junpanel". Its chain hooks prerouting, after
+// connection tracking and before Docker's address translation, and only ever drops: a blocked address or
+// a closed port. Prerouting sees traffic for the host and for published container ports alike (the input
+// hook never sees the latter, they are forwarded), and the port it matches is the one visitors use. An
+// accept in it ends only this chain, so it never opens anything another firewall (ufw, firewalld, Docker)
 // has closed. With no rules the table is removed, so the server behaves exactly as before.
 
 const fwTable = "junpanel"
@@ -144,7 +146,7 @@ func sshPorts(ports []fwPort) []int {
 }
 
 // checkRule normalises a rule and refuses anything that could cut the owner off or is malformed.
-func checkRule(r fwRule, existing []fwRule, protected []int) (fwRule, error) {
+func checkRule(r fwRule, existing []fwRule, protected []int, peers []net.IP) (fwRule, error) {
 	r.Note = strings.TrimSpace(r.Note)
 	if len([]rune(r.Note)) > 60 {
 		return r, bad(400, "备注不超过 60 个字")
@@ -153,6 +155,7 @@ func checkRule(r fwRule, existing []fwRule, protected []int) (fwRule, error) {
 	case "block-ip":
 		src := strings.TrimSpace(r.Source)
 		var ip net.IP
+		var covers func(net.IP) bool
 		if strings.Contains(src, "/") {
 			addr, network, e := net.ParseCIDR(src)
 			if e != nil {
@@ -162,16 +165,21 @@ func checkRule(r fwRule, existing []fwRule, protected []int) (fwRule, error) {
 			if (bits == 32 && ones < 8) || (bits == 128 && ones < 32) {
 				return r, bad(400, "网段过大：IPv4 至少 /8，IPv6 至少 /32，避免误封大量地址")
 			}
-			ip, src = addr, network.String()
+			ip, src, covers = addr, network.String(), network.Contains
 		} else {
 			ip = net.ParseIP(src)
 			if ip == nil {
 				return r, bad(400, "地址格式无效：填写 IP（如 203.0.113.7）或网段（如 203.0.113.0/24）")
 			}
-			src = ip.String()
+			src, covers = ip.String(), ip.Equal
 		}
 		if ip.IsLoopback() || ip.IsUnspecified() {
 			return r, bad(400, "不能封禁本机回环地址或全部地址")
+		}
+		for _, peer := range peers {
+			if covers(peer) {
+				return r, bad(409, fmt.Sprintf("%s 正在通过 SSH 连着这台服务器，封禁后你会被挡在外面，已拒绝", peer))
+			}
 		}
 		r.Source, r.Port, r.Proto = src, 0, ""
 		for _, x := range existing {
@@ -235,7 +243,7 @@ func nftScript(rules []fwRule) string {
 			}
 		}
 	}
-	b.WriteString("table inet " + fwTable + " {\n\tchain input {\n\t\ttype filter hook input priority filter - 1; policy accept;\n\t\tiifname \"lo\" accept\n")
+	b.WriteString("table inet " + fwTable + " {\n\tchain prerouting {\n\t\ttype filter hook prerouting priority -150; policy accept;\n\t\tiifname \"lo\" accept\n")
 	if len(v4) > 0 {
 		b.WriteString("\t\tip saddr { " + strings.Join(v4, ", ") + " } drop\n")
 	}
@@ -294,6 +302,39 @@ func (a *agent) firewallPorts() []fwPort {
 	return listeningPorts(out)
 }
 
+// sshPeers reads `ss -H -tn state established`: the remote address is the last field and the local
+// address the one before it. It returns the remote addresses of connections to the given local ports.
+func sshPeers(out string, ports []int) []net.IP {
+	want := map[string]bool{}
+	for _, p := range ports {
+		want[strconv.Itoa(p)] = true
+	}
+	split := func(addr string) (net.IP, string) {
+		i := strings.LastIndex(addr, ":")
+		if i < 0 {
+			return nil, ""
+		}
+		host := strings.Trim(addr[:i], "[]")
+		if j := strings.Index(host, "%"); j >= 0 {
+			host = host[:j]
+		}
+		return net.ParseIP(host), addr[i+1:]
+	}
+	peers := []net.IP{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		_, localPort := split(f[len(f)-2])
+		peer, _ := split(f[len(f)-1])
+		if peer != nil && want[localPort] {
+			peers = append(peers, peer)
+		}
+	}
+	return peers
+}
+
 func (a *agent) firewallStatus(w http.ResponseWriter, r *http.Request) error {
 	a.fwMu.Lock()
 	defer a.fwMu.Unlock()
@@ -323,7 +364,12 @@ func (a *agent) firewallAdd(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	rule, e := checkRule(req, rules, sshPorts(a.firewallPorts()))
+	ssh := sshPorts(a.firewallPorts())
+	var peers []net.IP
+	if out, e := a.runner(10*time.Second, "ss", "-H", "-tn", "state", "established"); e == nil {
+		peers = sshPeers(out, ssh)
+	}
+	rule, e := checkRule(req, rules, ssh, peers)
 	if e != nil {
 		return e
 	}

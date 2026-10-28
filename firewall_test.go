@@ -55,16 +55,32 @@ func TestFirewallCheckRule(t *testing.T) {
 		{Kind: "close-port", Port: 80, Proto: "icmp"},
 		{Kind: "open-all"},
 	} {
-		if _, e := checkRule(r, existing, []int{22}); e == nil {
+		if _, e := checkRule(r, existing, []int{22}, nil); e == nil {
 			t.Fatalf("accepted %+v", r)
 		}
 	}
-	r, e := checkRule(fwRule{Kind: "block-ip", Source: " 198.51.100.9/24 ", Note: " 扫描 "}, existing, []int{22})
+	r, e := checkRule(fwRule{Kind: "block-ip", Source: " 198.51.100.9/24 ", Note: " 扫描 "}, existing, []int{22}, nil)
 	if e != nil || r.Source != "198.51.100.0/24" || r.Note != "扫描" {
 		t.Fatalf("cidr: %+v %v", r, e)
 	}
-	if _, e = checkRule(fwRule{Kind: "close-port", Port: 22, Proto: "udp"}, existing, []int{22}); e != nil {
+	if _, e = checkRule(fwRule{Kind: "close-port", Port: 22, Proto: "udp"}, existing, []int{22}, nil); e != nil {
 		t.Fatalf("udp 22 is not ssh: %v", e)
+	}
+}
+
+func TestFirewallSSHPeers(t *testing.T) {
+	out := "0 0 10.0.0.5:22 203.0.113.9:51234\n0 0 [::ffff:10.0.0.5]:22 [2001:db8::7]:40000\n0 0 10.0.0.5:443 198.51.100.4:5555\n"
+	peers := sshPeers(out, []int{22})
+	if len(peers) != 2 || peers[0].String() != "203.0.113.9" || peers[1].String() != "2001:db8::7" {
+		t.Fatalf("peers: %v", peers)
+	}
+	for _, source := range []string{"203.0.113.9", "203.0.113.0/24", "2001:db8::/32"} {
+		if _, e := checkRule(fwRule{Kind: "block-ip", Source: source}, nil, []int{22}, peers); e == nil {
+			t.Fatalf("blocked the address of a live SSH session: %s", source)
+		}
+	}
+	if _, e := checkRule(fwRule{Kind: "block-ip", Source: "198.51.100.4"}, nil, []int{22}, peers); e != nil {
+		t.Fatalf("a web visitor is not an SSH session: %v", e)
 	}
 }
 
@@ -74,7 +90,7 @@ func TestFirewallScript(t *testing.T) {
 		t.Fatalf("empty script: %q", empty)
 	}
 	s := nftScript([]fwRule{{Kind: "block-ip", Source: "203.0.113.7"}, {Kind: "block-ip", Source: "2001:db8::/32"}, {Kind: "close-port", Port: 3306, Proto: "tcp"}, {Kind: "close-port", Port: 8443, Proto: "both"}})
-	for _, want := range []string{"priority filter - 1; policy accept;", "ip saddr { 203.0.113.7 } drop", "ip6 saddr { 2001:db8::/32 } drop", "tcp dport { 3306, 8443 } drop", "udp dport { 8443 } drop"} {
+	for _, want := range []string{"hook prerouting priority -150; policy accept;", "ip saddr { 203.0.113.7 } drop", "ip6 saddr { 2001:db8::/32 } drop", "tcp dport { 3306, 8443 } drop", "udp dport { 8443 } drop"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q in\n%s", want, s)
 		}
