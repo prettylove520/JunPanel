@@ -109,7 +109,7 @@ function toast(message, error = false) { const box = $('#toasts'), n = el('div',
 const destructive = /^(删除|卸载|移除|永久删除|清空回收站)$/;
 function button(text, fn, kind = 'secondary', symbol) { const b = el('button', `button ${kind}`, text); b.type = 'button'; if (kind.includes('quiet') && destructive.test(text)) b.classList.add('danger-text'); if (symbol) b.prepend(icon(symbol)); b.addEventListener('click', async () => { try { await fn(b); } catch(e) { toast(e.message, true); } }); return b; }
 function tag(text, cls = '') { return el('span', `tag ${cls}`, text); }
-function empty(message, sub = '') { const n = el('div', 'empty'); n.append(icon('layers'), el('h3', '', message), el('p', 'muted', sub)); return n; }
+function empty(message, sub = '', act = null) { const n = el('div', 'empty'); n.append(icon('layers'), el('h3', '', message), el('p', 'muted', sub)); if (act) n.append(act); return n; }
 function note(message, warning = false) { const n = el('div', warning ? 'info warning' : 'info'); n.append(icon('info'), el('span', '', message)); return n; }
 function line(name, value) { const n = el('div', 'details-row'); n.append(el('span', 'muted', name), el('span', '', value)); return n; }
 function panel(title, right) { const n = el('section', 'panel'), h = el('div', 'panel-header'); h.append(el('h2', '', title)); if (right) h.append(right); n.append(h); return n; }
@@ -167,7 +167,7 @@ $('#sidebar-mask').onclick = () => $('#sidebar').classList.remove('open');
 // The theme setting is "auto" (follow the system, also while the page is open), "light" or "dark".
 const themeModes = ['auto', 'light', 'dark'], themeNames = { auto: '跟随系统', light: '浅色', dark: '深色' }, themeIcons = { auto: 'monitor', light: 'sun', dark: 'moon' };
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
-let themeMode = 'dark'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
+let themeMode = 'auto'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
 function applyTheme(mode = themeMode) {
   themeMode = mode;
   document.documentElement.dataset.theme = mode === 'auto' ? (systemDark.matches ? 'dark' : 'light') : mode;
@@ -266,9 +266,9 @@ function chart(history, series, max = 100, withDate = false) {
   const observer = new ResizeObserver(() => { if (!canvas.isConnected) { observer.disconnect(); return; } canvas._draw(); }); observer.observe(canvas); return canvas;
 }
 function gauge(title, value, text, sub) {
-  const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div', `gauge${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), bar = el('div', 'gauge-bar');
-  const fill = el('i'); fill.style.width = `${pct.toFixed(1)}%`; bar.append(fill);
-  n.append(el('span', 'gauge-label', title), el('strong', 'gauge-figure', text), bar, el('small', '', sub)); return n;
+  const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div','gauge'), ring = el('div', `gauge-ring${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), r = 46, c = 2 * Math.PI * r;
+  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
+  const t = el('div','gauge-text'); t.append(el('strong','',text)); ring.append(t); n.append(ring, el('span','',title), el('small','',sub)); return n;
 }
 function loadText(p) { return p < 50 ? '运行流畅' : p < 75 ? '运行正常' : p < 90 ? '运行缓慢' : '运行堵塞'; }
 // Whether a site answers: asked of the local Caddy by the panel, shown instead of where a site came from.
@@ -556,7 +556,7 @@ function credentialForm(app) {
  formModal(`${app.name} · 连接信息`,[password,otp],'验证并查看',async()=>{const data=await api('/credentials',{id:app.id,password:password.input.value,otp:otp.val()});password.input.value='';const n=el('div');n.append(note(data.note));[['地址',data.host],['端口',String(data.port)],['用户',data.user],['数据库',data.database]].filter(v=>v[1]).forEach(([a,b])=>n.append(line(a,b)));if(data.password){const secret=field('数据库密码',data.password,{type:'password',required:false});secret.input.readOnly=true;n.append(secret.n);const toggle=button('显示 / 隐藏',()=>{secret.input.type=secret.input.type==='password'?'text':'password';},'secondary small');const copy=button('复制密码',async()=>{await navigator.clipboard.writeText(data.password);toast('密码已复制，请妥善保管剪贴板');},'secondary small');n.append(ops(toggle,copy));}openModal(`${app.name} · 连接信息`,n,[button('关闭',closeModal)]);},{note:'连接凭据需要再次验证管理员身份，仅在当前弹窗中展示。'});
 }
 async function databasesPage() {
-  const rows=await api('/databases');action(button('刷新',render,'secondary','refresh'));if(!rows.length)return empty('还没有受管数据库','在应用商店安装 PostgreSQL、MySQL、Redis 或 WordPress 后，会出现在这里。');const n=el('div'),layout=el('div','database-layout'),left=el('div','database-selector'),main=el('div','panel');n.append(note('此处使用受管应用的管理员凭据。SQL 可更改或删除数据，请核对语句；可在“备份”页创建备份。',true),layout);layout.append(left,main);
+  const rows=await api('/databases');action(button('刷新',render,'secondary','refresh'));if(!rows.length)return empty('还没有受管数据库','在应用商店安装 PostgreSQL、MySQL、Redis 或 WordPress 后，会出现在这里。', button('去应用商店', () => navigate('apps'), 'primary'));const n=el('div'),layout=el('div','database-layout'),left=el('div','database-selector'),main=el('div','panel');n.append(note('此处使用受管应用的管理员凭据。SQL 可更改或删除数据，请核对语句；可在“备份”页创建备份。',true),layout);layout.append(left,main);
   const choose=d=>{left.replaceChildren();rows.forEach(row=>{const b=el('button',`database-card${row.id===d.id?' selected':''}`);b.append(icon('database'),el('strong','',row.name),el('small','muted',`${row.kind} · ${row.port || '容器内部'}`));b.onclick=()=>choose(row);left.append(b);});main.replaceChildren();main.append(el('h2','',d.name));const db=field('数据库名称',d.database || 'junpanel',{max:63}),sql=field(d.kind==='redis'?'只读命令':'SQL 语句',d.kind==='redis'?'INFO':'SELECT 1;',{area:d.kind!=='redis',rows:8,select:d.kind==='redis'?[['INFO','INFO'],['DBSIZE','DBSIZE'],['PING','PING']]:undefined});if(d.kind!=='redis')sql.input.classList.add('code-editor');const result=el('pre','log-view','执行结果将显示在这里。'),tools=el('div','database-controls'),run=button('执行',async()=>{run.disabled=true;try{const value=await api(`/databases/${d.id}/query`,{database:db.val(),sql:d.kind==='redis'?'':sql.input.value,command:d.kind==='redis'?sql.val():''});result.textContent=value.text || '执行成功（无输出）';}finally{run.disabled=false;}},'primary','play');tools.append(run,button('连接信息',()=>credentialForm(d),'secondary','lock'));if(d.kind!=='redis'){tools.append(button('新建数据库',()=>{const name=field('数据库名称','',{max:63,help:'仅字母、数字及下划线，以字母或下划线开头。'});formModal('新建数据库',[name],'创建',()=>mutation(`/databases/${d.id}/create`,{name:name.val()}));},'secondary'));tools.append(button('备份此数据库',async()=>{if(!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(db.val()))throw new Error('数据库名称格式无效');await mutation('/backups',{type:'database',target:d.id,database:db.val()});},'secondary'));}if(d.kind!=='redis')main.append(db.n);main.append(sql.n,tools,result,el('p','help','查询结果限制 8 MB。数据库备份是流式导出的压缩 SQL，不受此限制，需用数据库原生工具导入。'));};choose(rows.find(d=>d.id===state.dbId)||rows[0]);return n;
 }
 function decode64(s, decoder = new TextDecoder()) { const b=Uint8Array.from(atob(s),x=>x.charCodeAt(0));return decoder.decode(b,{stream:true}); }
