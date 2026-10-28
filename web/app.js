@@ -33,6 +33,7 @@ const paths = {
   file: '<path d="M5 2h9l5 5v15H5Zm9 0v6h5M8 12h8m-8 4h8"/>',
   trash: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16Zm9-13 4 4"/>',
   play: '<path d="m7 3 14 9-14 9Z"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
@@ -198,7 +199,7 @@ function drawChrome() {
   const sub = $('#subnav'); sub.hidden = siblings.length < 2;
   sub.replaceChildren(...siblings.map(s => { const b = el('button', `subnav-item${s === state.route ? ' active' : ''}`, routes[s][0]); b.type = 'button'; b.onclick = () => navigate(s); return b; }));
   // With tabs the tab row names the page, so the h1 is kept for screen readers only.
-  $('#page-title').textContent = label; $('#page-title').classList.toggle('sr-only', siblings.length > 1);
+  $('#page-title').textContent = label; $('#page-title').classList.toggle('sr-only', siblings.length > 1); $('#rename-host').hidden = true;
   $('#page-description').className = ''; $('#page-description').textContent = r[1]; $('#page-bar').classList.toggle('ov', state.route === 'overview');
 }
 const renderers = () => ({ overview: overviewPage, apps: appsPage, installed: appsPage, sites: sitesPage, certs: certsPage, databases: databasesPage, containers: containersPage, projects: projectsPage, images: imagesPage, networks: networksPage, volumes: volumesPage, terminal: terminalPage, files: filesPage, schedules: schedulesPage, backups: backupsPage, alerts: alertsPage, firewall: firewallPage, jobs: jobsPage, audit: auditPage, logins: loginsPage, syslog: syslogPage, security: securityPage, access: accessPage, upgrade: upgradePage });
@@ -295,6 +296,14 @@ function inventorySites(data) {
   return [...(data.sites || []), ...(data.external_hosts || []).map(host=>({name:host,domains:[host],kind:'existing',readonly:true,sources:(data.caddy_sources || []).filter(source=>(source.hosts || []).includes(host)).map(source=>source.config)}))];
 }
 function accessLabel() { return location.protocol==='https:'?'HTTPS 加密访问':'本机 / SSH 访问'; }
+// The name at the top of the overview: a label kept by the panel, the server's own hostname is not changed.
+function renameHost(current, system) {
+  const name = field('显示名称', current, { required: false, max: 40, placeholder: system || '本机', help: `只改面板里的称呼，服务器的主机名${system ? `（${system}）` : ''}不会变。留空则恢复使用主机名。` });
+  const f = el('form'); f.append(name.n);
+  const save = button('保存', async () => { await mutation('/display-name', { name: name.val() }); }, 'primary');
+  f.onsubmit = e => { e.preventDefault(); save.click(); };
+  openModal('修改显示名称', f, [button('取消', closeModal), save]); name.input.focus();
+}
 async function overviewPage() {
   const data = await api('/overview'), n = el('div'); let choice = 0, range = 'live', past = null, pastAt = 0, alertsSeen = null;
   const ranges = [['live', '实时'], ['1h', '1 小时'], ['6h', '6 小时'], ['24h', '24 小时'], ['7d', '7 天']];
@@ -313,7 +322,8 @@ async function overviewPage() {
     const finding = $('#page-description'), acts = el('div');
     finding.className = 'ov-finding'; finding.replaceChildren();
     finding.append(el('span', `lamp ${calm ? 'ok' : 'warn'}`), el('strong', '', calm ? '一切运行正常' : `${d.alerts_active} 条告警待处理`), el('span', '', `已运行 ${uptime(h.uptime)} · ${h.os || 'Linux'} · ${cores} 核`));
-    $('#page-title').textContent = h.hostname || '本机';
+    const shownName = d.display_name || h.hostname || '本机', rename = $('#rename-host');
+    $('#page-title').textContent = shownName; rename.hidden = false; rename.onclick = () => renameHost(d.display_name || '', h.hostname || '');
     if (!calm) acts.append(button('安装应用', () => navigate('apps'), 'secondary'), button('查看告警', () => navigate('alerts'), 'primary'));
     else acts.append(button('安装应用', () => navigate('apps'), 'primary'));
     if (d.update_available) { const up = button(`升级到 v${d.update_available}`, () => upgradeDialog(), 'secondary'); up.title = `当前版本 v${d.version}`; acts.prepend(up); }

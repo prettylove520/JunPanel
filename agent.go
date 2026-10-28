@@ -139,6 +139,7 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /sites/health", endpoint(a.siteHealthStatus))
 	m.HandleFunc("GET /sites/dns", endpoint(a.siteDNSStatus))
 	m.HandleFunc("GET /logs", endpoint(a.serviceLogs))
+	m.HandleFunc("POST /display-name", endpoint(a.displayNameSave))
 	m.HandleFunc("GET /firewall", endpoint(a.firewallStatus))
 	m.HandleFunc("POST /firewall/rules", endpoint(a.firewallAdd))
 	m.HandleFunc("DELETE /firewall/rules/{id}", endpoint(a.firewallDelete))
@@ -249,7 +250,7 @@ func (a *agent) overview(w http.ResponseWriter, r *http.Request) error {
 		caddyErr = he.Error()
 	}
 	state, _ := a.runner(3*time.Second, "/usr/bin/systemctl", "is-active", "caddy.service")
-	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "alerts_active": a.activeAlertCount(), "update_available": a.updateAvailable(), "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false})
+	send(w, 200, map[string]any{"host": host, "host_error": hostErr, "containers": containers, "docker_error": dockerErr, "sites": sites, "sites_error": sitesErr, "external_hosts": external, "caddy_sources": sources, "caddy_error": caddyErr, "apps": publicApps(apps), "apps_error": appsErr, "caddy_state": state, "alerts_active": a.activeAlertCount(), "update_available": a.updateAvailable(), "jobs": a.jobs.list(), "time": time.Now(), "version": version, "demo": false, "display_name": a.displayName()})
 	return nil
 }
 func decodeObject(b []byte, v any) error {
