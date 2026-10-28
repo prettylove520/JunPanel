@@ -167,7 +167,7 @@ $('#sidebar-mask').onclick = () => $('#sidebar').classList.remove('open');
 // The theme setting is "auto" (follow the system, also while the page is open), "light" or "dark".
 const themeModes = ['auto', 'light', 'dark'], themeNames = { auto: '跟随系统', light: '浅色', dark: '深色' }, themeIcons = { auto: 'monitor', light: 'sun', dark: 'moon' };
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
-let themeMode = 'auto'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
+let themeMode = 'dark'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
 function applyTheme(mode = themeMode) {
   themeMode = mode;
   document.documentElement.dataset.theme = mode === 'auto' ? (systemDark.matches ? 'dark' : 'light') : mode;
@@ -266,9 +266,9 @@ function chart(history, series, max = 100, withDate = false) {
   const observer = new ResizeObserver(() => { if (!canvas.isConnected) { observer.disconnect(); return; } canvas._draw(); }); observer.observe(canvas); return canvas;
 }
 function gauge(title, value, text, sub) {
-  const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div','gauge'), ring = el('div', `gauge-ring${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), r = 46, c = 2 * Math.PI * r;
-  ring.innerHTML = `<svg viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="${r}"/><circle class="value" cx="56" cy="56" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg>`;
-  const t = el('div','gauge-text'); t.append(el('strong','',text)); ring.append(t); n.append(ring, el('span','',title), el('small','',sub)); return n;
+  const pct = Math.max(0, Math.min(100, Number(value) || 0)), n = el('div', `gauge${pct >= 90 ? ' bad' : pct >= 75 ? ' warn' : ''}`), bar = el('div', 'gauge-bar');
+  const fill = el('i'); fill.style.width = `${pct.toFixed(1)}%`; bar.append(fill);
+  n.append(el('span', 'gauge-label', title), el('strong', 'gauge-figure', text), bar, el('small', '', sub)); return n;
 }
 function loadText(p) { return p < 50 ? '运行流畅' : p < 75 ? '运行正常' : p < 90 ? '运行缓慢' : '运行堵塞'; }
 // Whether a site answers: asked of the local Caddy by the panel, shown instead of where a site came from.
