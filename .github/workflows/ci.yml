@@ -95,11 +95,11 @@ jobs:
         run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerAppBackupAndRestore|TestDockerDatabaseBackupStreams|TestDockerScheduledBackupAndRestart|TestDockerAppUpgrade|TestDockerMemosTemplate|TestDockerDatabaseRestore' ./...
 
   docker-stacks:
-    name: Docker tests (stacks, networks, alerts, app templates)
+    name: Docker tests (stacks, networks, alerts)
     needs: scope
     if: needs.scope.outputs.light != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -110,12 +110,45 @@ jobs:
           cache-dependency-path: go.sum
       - name: Stacks, volumes, networks and alerts against the real Docker engine
         run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerContainerAlerts|TestDockerStackLifecycle|TestDockerVolumesAndNetworks' ./...
-      - name: Small app templates against the real Docker engine
-        run: JUNPANEL_DOCKER_TEST=1 JUNPANEL_APPS=navidrome,trilium,linkding,freshrss,gotify,ntfy,drawio,audiobookshelf,kavita,mealie,actual,wallos,homebox,changedetection,pairdrop,cyberchef,openwebui-ollama,llmfit,newapi,flowise,maxkb go test -count=1 -timeout 40m -run TestDockerPlainTemplates ./...
       - name: Compose checks that switch to the nobody user
         run: |
           go test -c -o /tmp/junpanel.test .
           sudo /tmp/junpanel.test -test.count=1 -test.run 'TestStackParsedWithoutRoot'
+
+  # The small app templates are the slowest part (image pulls), so they run in five shards side by side.
+  # Every template must appear in exactly one shard; the heavy images are spread out.
+  docker-apps:
+    name: Docker tests (app templates ${{ matrix.shard }})
+    needs: scope
+    if: needs.scope.outputs.light != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 1/5
+            apps: openwebui-ollama,navidrome,trilium,linkding
+          - shard: 2/5
+            apps: maxkb,freshrss,gotify,ntfy
+          - shard: 3/5
+            apps: flowise,homebox,drawio,pairdrop
+          - shard: 4/5
+            apps: newapi,mealie,cyberchef,llmfit
+          - shard: 5/5
+            apps: audiobookshelf,kavita,actual,wallos,changedetection
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - name: Small app templates against the real Docker engine
+        env:
+          APPS: ${{ matrix.apps }}
+        run: JUNPANEL_DOCKER_TEST=1 JUNPANEL_APPS="$APPS" go test -count=1 -timeout 20m -run TestDockerPlainTemplates ./...
 
   scripts:
     name: Scripts and Caddy
@@ -170,7 +203,7 @@ jobs:
   check:
     name: Linux tests and builds
     if: always()
-    needs: [scope, light, go, docker-backups, docker-stacks, scripts, build]
+    needs: [scope, light, go, docker-backups, docker-stacks, docker-apps, scripts, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -184,7 +217,7 @@ jobs:
           if [[ "$(echo "$NEEDS" | jq -r '.scope.outputs.light')" == true ]]; then
             required=(light)
           else
-            required=(go docker-backups docker-stacks scripts build)
+            required=(go docker-backups docker-stacks docker-apps scripts build)
           fi
           for job in "${required[@]}"; do
             [[ "$(result "$job")" == success ]] || { echo "$job did not succeed: $(result "$job")" >&2; exit 1; }
