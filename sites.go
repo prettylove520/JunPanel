@@ -36,6 +36,8 @@ type site struct {
 	// BlockPaths answer 404 (e.g. /.git, *.sh); NoCache sends Cache-Control: no-cache.
 	BlockPaths []string `json:"block_paths,omitempty"`
 	NoCache    bool     `json:"no_cache,omitempty"`
+	// PausedByApp is the app whose uninstall switched this site off; restoring the app switches it back on.
+	PausedByApp string `json:"paused_by_app,omitempty"`
 }
 
 var authUser = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
@@ -44,7 +46,7 @@ var authUser = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
 func publicSite(s site) map[string]any {
 	return map[string]any{"id": s.ID, "name": s.Name, "domains": s.Domains, "kind": s.Kind, "upstream": s.Upstream, "root": s.Root, "enabled": s.Enabled, "created": s.Created,
 		"target": s.Target, "permanent": s.Permanent, "keep_path": s.KeepPath, "auth_user": s.AuthUser, "auth": s.AuthHash != "", "allow_ips": s.AllowIPs, "no_compress": s.NoCompress,
-		"block_paths": s.BlockPaths, "no_cache": s.NoCache}
+		"block_paths": s.BlockPaths, "no_cache": s.NoCache, "paused_by_app": s.PausedByApp}
 }
 
 var siteID = regexp.MustCompile(`^s_[a-f0-9]{20}$`)
@@ -55,6 +57,7 @@ func (a *agent) externalRoot(s site) bool {
 	base := filepath.Join(a.cfg.Root, "sites") + string(filepath.Separator)
 	return s.Kind == "static" && s.Root != "" && !strings.HasPrefix(filepath.Clean(s.Root)+string(filepath.Separator), base)
 }
+
 var domainName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
 func (a *agent) readSites() ([]site, error) {
@@ -433,6 +436,7 @@ func (a *agent) siteSave(w http.ResponseWriter, r *http.Request) error {
 			value.Root = s.Root
 			value.Created = s.Created
 			value.Enabled = s.Enabled
+			value.PausedByApp = s.PausedByApp
 			// An edit without a new password keeps the old one for the same user;
 			// clearing the user turns the password off.
 			if value.AuthHash == "" && value.AuthUser != "" && value.AuthUser == s.AuthUser {
@@ -509,7 +513,7 @@ func (a *agent) siteToggle(w http.ResponseWriter, r *http.Request) error {
 	}
 	for i, s := range rows {
 		if s.ID == r.PathValue("id") {
-			rows[i].Enabled = !s.Enabled
+			rows[i].Enabled, rows[i].PausedByApp = !s.Enabled, ""
 			if e = a.applySites(rows); e != nil {
 				return e
 			}

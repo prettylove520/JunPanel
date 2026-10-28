@@ -450,6 +450,8 @@ func (a *agent) launchAppThen(record appRecord, action string, done func(error))
 			args = append(args, "restart", "--timeout", "15")
 		case "remove":
 			args = append(args, "down", "--timeout", "15")
+		case "purge":
+			args = append(args, "down", "--volumes", "--timeout", "15")
 		default:
 			return bad(400, "应用操作无效")
 		}
@@ -479,14 +481,33 @@ func (a *agent) launchAppThen(record appRecord, action string, done func(error))
 				}
 			}
 		}
+		if e == nil && action == "purge" {
+			kept := rows[:0]
+			for _, r := range rows {
+				if r.ID != record.ID {
+					kept = append(kept, r)
+				}
+			}
+			rows = kept
+		}
 		if writeErr := a.storeApps(rows); writeErr != nil {
 			return writeErr
 		}
 		if e != nil {
 			return bad(502, "应用操作失败；容器状态可能已变化，请查看任务输出并核对")
 		}
-		if action == "remove" {
+		switch action {
+		case "remove":
+			a.pauseAppSites(record, out)
 			fmt.Fprintln(out, "应用容器已卸载；数据卷和私有项目凭据保留，可恢复部署。")
+		case "restore", "deploy":
+			a.resumeAppSites(record, out)
+		case "purge":
+			if e := os.RemoveAll(a.appDir(record.ID)); e != nil {
+				fmt.Fprintf(out, "应用已删除，但项目目录清理失败，可忽略或手动删除：%v\n", e)
+			}
+			a.dropAppSchedules(record.ID, out)
+			fmt.Fprintln(out, "应用及其数据卷、私有项目凭据已彻底删除；备份文件不受影响，绑定的域名保持停用。")
 		}
 		return nil
 	})
@@ -508,7 +529,7 @@ func (a *agent) appAction(w http.ResponseWriter, r *http.Request) error {
 
 // appActionJob validates an app action, marks the app busy and starts the job.
 func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
-	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" && action != "upgrade" {
+	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" && action != "upgrade" && action != "purge" {
 		return job{}, bad(400, "操作无效")
 	}
 	a.mu.Lock()
@@ -524,8 +545,11 @@ func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
 		if record.Busy {
 			return job{}, bad(409, "此应用已有操作进行中")
 		}
-		if record.Removed && action != "restore" {
+		if record.Removed && action != "restore" && action != "purge" {
 			return job{}, bad(409, "应用已卸载，请先恢复部署")
+		}
+		if action == "purge" && !record.Removed {
+			return job{}, bad(409, "请先卸载应用，再彻底删除")
 		}
 		containers, e := a.docker.list()
 		if e != nil {
