@@ -66,6 +66,7 @@ type agent struct {
 	healthHTTPS    string
 	healthHTTP     string
 	health         healthCache
+	fwMu           sync.Mutex
 }
 
 func newAgent(cfg agentConfig) (*agent, error) {
@@ -107,6 +108,7 @@ func newAgent(cfg agentConfig) (*agent, error) {
 	if e = a.recoverSchedules(); e != nil {
 		return nil, e
 	}
+	a.firewallRestore()
 	a.refreshRun(a.now())
 	return a, nil
 }
@@ -137,6 +139,9 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("GET /sites/health", endpoint(a.siteHealthStatus))
 	m.HandleFunc("GET /sites/dns", endpoint(a.siteDNSStatus))
 	m.HandleFunc("GET /logs", endpoint(a.serviceLogs))
+	m.HandleFunc("GET /firewall", endpoint(a.firewallStatus))
+	m.HandleFunc("POST /firewall/rules", endpoint(a.firewallAdd))
+	m.HandleFunc("DELETE /firewall/rules/{id}", endpoint(a.firewallDelete))
 	m.HandleFunc("POST /sites", endpoint(a.siteSave))
 	m.HandleFunc("POST /sites/{id}/toggle", endpoint(a.siteToggle))
 	m.HandleFunc("DELETE /sites/{id}", endpoint(a.siteDelete))

@@ -20,7 +20,7 @@ import (
 
 //go:embed web/*
 var assets embed.FS
-var version = "1.5.10"
+var version = "1.5.11"
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
@@ -100,7 +100,7 @@ func main() {
 		a.startScheduler(metricsStop)
 		a.startAlerts(metricsStop)
 		a.startUpdateChecks(metricsStop)
-		serve(&http.Server{Handler: a.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, MaxHeaderBytes: 32768}, listener)
+		serve(&http.Server{Handler: a.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, MaxHeaderBytes: 32768}, listener, nil)
 	case "server":
 		if *port < 1024 || *port > 65535 {
 			log.Fatal("端口需在 1024–65535")
@@ -119,15 +119,18 @@ func main() {
 		if *demo {
 			fmt.Println("演示账号 demo / JunPanelPreview2026!；所有变更被拒绝")
 		}
-		serve(&http.Server{Handler: web.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32768}, listener)
+		serve(&http.Server{Handler: web.routes(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32768}, listener, web.auth.saveSessions)
 	default:
 		log.Fatal("未知命令")
 	}
 }
-func serve(s *http.Server, l net.Listener) {
-	stop := make(chan os.Signal, 1)
+
+// serve runs until SIGTERM; afterStop, when given, runs once the server has stopped taking requests.
+func serve(s *http.Server, l net.Listener, afterStop func()) {
+	stop, done := make(chan os.Signal, 1), make(chan struct{})
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() {
+		defer close(done)
 		<-stop
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
@@ -135,5 +138,9 @@ func serve(s *http.Server, l net.Listener) {
 	}()
 	if e := s.Serve(l); e != nil && e != http.ErrServerClosed {
 		log.Fatal(e)
+	}
+	<-done
+	if afterStop != nil {
+		afterStop()
 	}
 }

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f5f6f8">
+  <meta name="theme-color" content="#171719">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <title>JunPanel</title>
   <link rel="preload" href="/fonts/geist-variable.woff2" as="font" type="font/woff2" crossorigin>
@@ -12,31 +12,6 @@
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <section id="login" class="login-layout">
-    <div class="login-card">
-      <div class="login-brand">
-        <div class="brand"><img src="/logo.svg" alt="" width="40" height="40"><strong>JunPanel</strong></div>
-        <h1>现代化的 Linux<br>服务器运维面板</h1>
-        <p>网站、应用、容器、数据库、备份与告警，在一个地方管理。</p>
-        <ul class="login-points"><li>基于现有 Caddy 与 Docker，不改动原有服务</li><li>备份可恢复，计划任务按时执行</li><li>独立低权限网页服务，管理代理仅本机可达</li></ul>
-      </div>
-      <form id="login-form" class="login-form">
-        <h2>登录</h2>
-        <p class="muted">使用管理员账号进入面板</p>
-        <label for="login-user">账号</label>
-        <input id="login-user" autocomplete="username" placeholder="请输入账号" required maxlength="64">
-        <label for="login-password">密码</label>
-        <div class="password-field"><input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" required maxlength="256"><button type="button" id="show-password" aria-label="显示或隐藏密码"><span data-icon="eye"></span></button></div>
-        <label for="login-otp">动态码 <span class="muted">（已开启两步验证时填写）</span></label>
-        <input id="login-otp" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="6 位数字">
-        <div id="login-error" class="form-error" role="alert"></div>
-        <button type="submit" id="login-submit" class="button primary wide">登录</button>
-        <div class="login-boundary"><span class="status-dot"></span><span></span></div>
-        <p id="demo-hint" class="demo-hint" hidden>演示账号 demo · 密码 JunPanelPreview2026!<br>仅展示模拟数据，服务器变更已禁用。</p>
-      </form>
-    </div>
-    <div class="login-footer">JunPanel · 自托管服务器面板</div>
-  </section>
 
   <div id="application" class="shell" hidden>
     <aside class="sidebar" id="sidebar">
@@ -57,6 +32,7 @@
         <button class="icon-button mobile-menu" id="mobile-menu" aria-label="打开或收起菜单"><span data-icon="menu"></span></button>
         <div class="breadcrumb" id="breadcrumb"></div>
         <div class="topbar-actions">
+          <button type="button" class="upgrade-pill" id="upgrade-pill" hidden></button>
           <button class="search-launch" id="open-search"><span data-icon="search"></span><span>搜索</span><kbd>Ctrl K</kbd></button>
           <button class="icon-button" id="theme-toggle" title="主题：跟随系统（点击切换）" aria-label="切换主题"><span data-icon="moon"></span></button>
         </div>
@@ -71,6 +47,31 @@
       </main>
     </div>
   </div>
+  <section id="login" class="login-layout">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand"><img src="/logo.svg" alt="" width="40" height="40"><strong>JunPanel</strong></div>
+        <p class="login-headline">现代化的 Linux<br>服务器运维面板</p>
+        <p>网站、应用、容器、数据库、备份与告警，在一个地方管理。</p>
+        <ul class="login-points"><li>基于现有 Caddy 与 Docker，不改动原有服务</li><li>备份可恢复，计划任务按时执行</li><li>独立低权限网页服务，管理代理仅本机可达</li></ul>
+      </div>
+      <form id="login-form" class="login-form">
+        <h1 class="login-title">登录</h1>
+        <p class="muted">使用管理员账号进入面板</p>
+        <label for="login-user">账号</label>
+        <input id="login-user" autocomplete="username" placeholder="请输入账号" required maxlength="64">
+        <label for="login-password">密码</label>
+        <div class="password-field"><input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" required maxlength="256"><button type="button" id="show-password" aria-label="显示或隐藏密码"><span data-icon="eye"></span></button></div>
+        <label for="login-otp">动态码 <span class="muted">（已开启两步验证时填写）</span></label>
+        <input id="login-otp" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="6 位数字">
+        <div id="login-error" class="form-error" role="alert"></div>
+        <button type="submit" id="login-submit" class="button primary wide">登录</button>
+        <div class="login-boundary"><span class="status-dot"></span><span></span></div>
+        <p id="demo-hint" class="demo-hint" hidden>演示账号 demo · 密码 JunPanelPreview2026!<br>仅展示模拟数据，服务器变更已禁用。</p>
+      </form>
+    </div>
+    <div class="login-footer">JunPanel · 自托管服务器面板</div>
+  </section>
 
   <dialog id="modal" class="modal" aria-labelledby="modal-title"><div class="modal-header"><h2 id="modal-title"></h2><button class="icon-button" id="modal-close" aria-label="关闭弹窗"><span data-icon="close"></span></button></div><div id="modal-content" class="modal-content"></div><div id="modal-footer" class="modal-footer"></div></dialog>
   <dialog id="search-dialog" class="search-dialog" aria-label="快速搜索"><div class="search-dialog-field"><span data-icon="search"></span><input id="search-input" placeholder="搜索菜单、网站或应用" aria-label="快速搜索"><button class="text-button" id="search-close">ESC</button></div><div id="search-results"></div></dialog>

@@ -69,6 +69,20 @@ func demoAPI(w http.ResponseWriter, r *http.Request) {
 			"monitor.example.com": {State: "error", Code: 502, Scheme: "https"}, "www.example.com": {State: "up", Code: 200, Scheme: "https"},
 			"blog.example.com": {State: "up", Code: 200, Scheme: "https"}, "git.example.com": {State: "down"}, "notes.example.com": {State: "tls"},
 		}, "checked": time.Now()}
+	case "/firewall":
+		ports := listeningPorts(`tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=611,fd=3))
+tcp LISTEN 0 4096 *:443 *:* users:(("caddy",pid=702,fd=7))
+tcp LISTEN 0 4096 *:80 *:* users:(("caddy",pid=702,fd=6))
+udp UNCONN 0 0 *:443 *:* users:(("caddy",pid=702,fd=8))
+tcp LISTEN 0 4096 127.0.0.1:8787 0.0.0.0:* users:(("junpanel",pid=733,fd=5))
+tcp LISTEN 0 4096 127.0.0.1:8080 0.0.0.0:* users:(("docker-proxy",pid=1290,fd=4))
+tcp LISTEN 0 4096 127.0.0.1:3000 0.0.0.0:* users:(("docker-proxy",pid=1341,fd=4))
+tcp LISTEN 0 80 127.0.0.1:3306 0.0.0.0:* users:(("docker-proxy",pid=1377,fd=4))`)
+		value = map[string]any{"supported": true, "active": true, "ports": ports, "ssh_ports": sshPorts(ports), "rules": []fwRule{
+			{ID: "f_" + strings.Repeat("a", 16), Kind: "block-ip", Source: "203.0.113.45", Note: "SSH 暴力破解", Created: time.Now().Add(-26 * time.Hour)},
+			{ID: "f_" + strings.Repeat("b", 16), Kind: "block-ip", Source: "198.51.100.0/24", Note: "扫描来源网段", Created: time.Now().Add(-50 * time.Hour)},
+			{ID: "f_" + strings.Repeat("c", 16), Kind: "close-port", Port: 3306, Proto: "tcp", Note: "数据库只走本机", Created: time.Now().Add(-120 * time.Hour)},
+		}}
 	case "/logs":
 		unit := r.URL.Query().Get("unit")
 		value = map[string]any{"unit": unit, "label": unit, "lines": 4, "trimmed": false, "time": time.Now(), "text": "2026-10-22T10:00:01+0800 demo " + unit + "[812]: 服务已启动（演示数据）\n2026-10-22T10:02:11+0800 demo " + unit + "[812]: 已重载配置\n2026-10-22T10:05:40+0800 demo " + unit + "[812]: 演示日志，不是真实服务器的输出\n2026-10-22T10:07:03+0800 demo " + unit + "[812]: 一切正常"}
