@@ -14,7 +14,7 @@ main() (
   local url="https://github.com/prettylove520/JunPanel/releases/download/v$version/$archive"
   local public_url="https://raw.githubusercontent.com/prettylove520/JunPanel/$public_ref/public-access.sh"
   local access="${JUNPANEL_ACCESS:-public}" public_ip='' public_result=1
-  local workdir='' status=0 panel_user=admin panel_password='' line=''
+  local looked_up=0 workdir='' status=0 panel_user=admin panel_password='' line=''
   fail() { printf '\n[JunPanel] %s\n' "$*" >&2; exit 1; }
   cleanup() {
     status=$?
@@ -95,6 +95,22 @@ fi
 say '运行环境已准备好。'
 PREPARE
   }
+  # The server's own interfaces only show a private address behind NAT. Ask public services what address
+  # this server connects from; an answer counts only when two services agree and public-access.sh accepts it.
+  lookup_public_ip() {
+    local service='' answer='' checked=''
+    local -a answers=()
+    for service in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+      answer="$(curl --ipv4 --fail --silent --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 8 "$service" 2>/dev/null | tr -d '[:space:]')" || continue
+      [[ "$answer" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && answers+=("$answer")
+    done
+    for answer in "${answers[@]}"; do
+      [[ "$(printf '%s\n' "${answers[@]}" | grep -Fxc -- "$answer")" -ge 2 ]] || continue
+      checked="$(JUNPANEL_PUBLIC_IP="$answer" bash "$1" --detect 2>/dev/null)" || continue
+      printf '%s\n' "$checked"; return 0
+    done
+    return 1
+  }
   trap cleanup EXIT
   [[ "$access" == public || "$access" == local ]] || fail 'JUNPANEL_ACCESS 只能为 public 或 local。'
   [[ "$(uname -s)" == Linux ]] || fail '请在 Debian 服务器的 SSH 窗口执行此命令。'
@@ -116,7 +132,16 @@ PREPARE
       if [[ "$public_ip" =~ ^[0-9.]+$ ]]; then printf '[JunPanel] 自动识别到服务器公网 IP：%s\n' "$public_ip"; else printf '[JunPanel] 沿用已配置的域名入口：%s\n' "$public_ip"; fi
     else
       public_ip=''
-      printf '[JunPanel] 未识别到唯一公网 IPv4，将先安装面板，不生成未经确认的公网地址。\n'
+      if [[ "${JUNPANEL_NO_IP_LOOKUP:-0}" != 1 ]]; then
+        printf '[JunPanel] 网卡上没有公网地址（云服务器常见的 NAT 情况），向公共服务查询本机出口 IP…\n'
+        if public_ip="$(lookup_public_ip "$workdir/public-access.sh")"; then
+          looked_up=1
+          printf '[JunPanel] 出口 IP：%s（至少两个服务给出相同结果）\n' "$public_ip"
+        else
+          public_ip=''
+        fi
+      fi
+      if [[ -z "$public_ip" ]]; then printf '[JunPanel] 未识别到唯一公网 IPv4，将先安装面板，不生成未经确认的公网地址。\n'; fi
     fi
   fi
   tar --extract --gzip --file "$workdir/$archive" --directory "$workdir" --no-same-owner
@@ -148,6 +173,7 @@ PREPARE
     if ((public_result == 0)); then
       printf '  登录链接：https://%s\n  状态：HTTPS 检查通过，可使用上方链接登录\n==================================================\n\n以后直接打开上方链接，无需建立 SSH 隧道。\n' "$public_ip"
     elif ((public_result == 2)); then
+      if ((looked_up)); then printf '\n  提示：这台服务器在 NAT 之后，请到云服务商的安全组 / 防火墙放行 TCP 80 和 443（入站），证书才能签发。\n'; fi
       printf '  登录链接（准备中）：https://%s\n  状态：证书或入口尚未就绪，当前不能确认可登录\n==================================================\n\n请查看上方提示，或执行：sudo journalctl -u caddy -n 80 --no-pager\n' "$public_ip"
     else
       printf '  公网入口：配置未完成，请查看上方报错\n==================================================\n'
