@@ -118,3 +118,36 @@ func waitIdle(t *testing.T, a *agent, id string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestDetectInstalledByImage(t *testing.T) {
+	all := []container{
+		{ID: "1", Name: "ollama", Image: "ollama/ollama", State: "running", Project: "ai"},
+		{ID: "2", Name: "open-webui", Image: "ghcr.io/open-webui/open-webui:main", State: "exited", Project: "ai"},
+		{ID: "3", Name: "chat", Image: "ghcr.io/open-webui/open-webui:ollama", State: "running"},
+		{ID: "4", Name: "junpanel-x-app-1", Image: "ghcr.io/open-webui/open-webui:main", State: "running", Project: "junpanel-x"},
+		{ID: "5", Name: "db", Image: "postgres:16", State: "running", Project: "other"},
+	}
+	got := detectInstalled(all, nil)
+	byTemplate := map[string]detectedApp{}
+	for _, d := range got {
+		byTemplate[d.Template] = d
+	}
+	if len(got) != 2 {
+		t.Fatalf("detected: %+v", got)
+	}
+	if d := byTemplate["openwebui"]; d.Container != "open-webui" || d.Project != "ai" || !d.Adoptable || d.Adopted {
+		t.Fatalf("openwebui: %+v", d)
+	}
+	if d := byTemplate["openwebui-ollama"]; d.Container != "chat" || d.Project != "" || d.Adoptable {
+		t.Fatalf("openwebui-ollama: %+v", d)
+	}
+	adopted := detectInstalled(all, []appRecord{{ID: "ai", Adopted: true, Project: "ai"}})
+	for _, d := range adopted {
+		if d.Template == "openwebui" && (!d.Adopted || d.Adoptable) {
+			t.Fatalf("adopted: %+v", d)
+		}
+	}
+	if repo, tag := imageRef("docker.io/library/Redis"); repo != "redis" || tag != "latest" {
+		t.Fatalf("imageRef: %s %s", repo, tag)
+	}
+}

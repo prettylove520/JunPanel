@@ -271,3 +271,96 @@ func (a *agent) adoptedJob(rows []appRecord, i int, action string, done func(err
 	}
 	return j, nil
 }
+
+// imageRef splits an image reference into its repository and tag; a missing tag means "latest".
+func imageRef(image string) (string, string) {
+	if i := strings.Index(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	tag := "latest"
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		image, tag = image[:i], image[i+1:]
+	}
+	image = strings.TrimPrefix(strings.TrimPrefix(image, "docker.io/"), "library/")
+	return strings.ToLower(image), tag
+}
+
+type detectedApp struct {
+	Template  string `json:"template"`
+	Container string `json:"container"`
+	Project   string `json:"project"`
+	State     string `json:"state"`
+	Adopted   bool   `json:"adopted"`
+	Adoptable bool   `json:"adoptable"`
+}
+
+// detectInstalled finds store apps that already run on the server without having been installed by the
+// panel, by the image of their containers. Templates meant to be installed several times are skipped.
+func detectInstalled(all []container, apps []appRecord) []detectedApp {
+	adopted := map[string]bool{}
+	for _, r := range apps {
+		if r.Adopted && !r.Removed {
+			adopted[r.Project] = true
+		}
+	}
+	offered := map[string]bool{}
+	for _, p := range adoptableProjects(all, apps) {
+		offered[p.Project] = true
+	}
+	out := []detectedApp{}
+	seen := map[string]bool{}
+	for _, c := range all {
+		if c.Protected || c.Oneoff || c.Stack != "" || strings.HasPrefix(c.Project, "junpanel-") {
+			continue
+		}
+		repo, tag := imageRef(c.Image)
+		sameRepo, exact := []string{}, ""
+		for _, t := range appCatalog {
+			if multiInstance[t.Key] {
+				continue
+			}
+			r, tg := imageRef(t.Image)
+			if r != repo {
+				continue
+			}
+			sameRepo = append(sameRepo, t.Key)
+			if tg == tag {
+				exact = t.Key
+			}
+		}
+		key := exact
+		if key == "" && len(sameRepo) == 1 {
+			key = sameRepo[0]
+		}
+		if key == "" || (seen[key] && c.State != "running") {
+			continue
+		}
+		if seen[key] {
+			for i := range out {
+				if out[i].Template == key && out[i].State != "running" {
+					out = append(out[:i], out[i+1:]...)
+					break
+				}
+			}
+		}
+		seen[key] = true
+		out = append(out, detectedApp{Template: key, Container: c.Name, Project: c.Project, State: c.State, Adopted: adopted[c.Project], Adoptable: offered[c.Project]})
+	}
+	return out
+}
+
+func (a *agent) appDetected(w http.ResponseWriter, r *http.Request) error {
+	a.mu.Lock()
+	apps, e := a.readApps()
+	a.mu.Unlock()
+	if e != nil {
+		return e
+	}
+	all, e := a.docker.list()
+	if e != nil {
+		send(w, 200, []detectedApp{})
+		return nil
+	}
+	send(w, 200, detectInstalled(all, apps))
+	return nil
+}
