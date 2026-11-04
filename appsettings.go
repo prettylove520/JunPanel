@@ -92,6 +92,9 @@ func (a *agent) appSettings(w http.ResponseWriter, r *http.Request) error {
 		if rec.ID != r.PathValue("id") {
 			continue
 		}
+		if rec.Adopted {
+			return bad(409, "接管的项目没有面板设置，请直接修改它自己的 compose 文件")
+		}
 		presets := appPresets[rec.Template]
 		if presets == nil {
 			presets = []appPreset{}
@@ -140,6 +143,10 @@ func (a *agent) appSettingsSave(w http.ResponseWriter, r *http.Request) error {
 		return bad(404, "应用不存在")
 	}
 	old := rows[idx]
+	if old.Adopted {
+		a.mu.Unlock()
+		return bad(409, "接管的项目没有面板设置，请直接修改它自己的 compose 文件")
+	}
 	if old.Busy {
 		a.mu.Unlock()
 		return bad(409, "此应用已有操作进行中")
