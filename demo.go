@@ -102,6 +102,8 @@ tcp LISTEN 0 80 127.0.0.1:3306 0.0.0.0:* users:(("docker-proxy",pid=1377,fd=4))`
 		value = []map[string]any{{"id": strings.Repeat("1", 64), "name": "bridge", "driver": "bridge", "scope": "local", "internal": false, "subnets": []string{"172.17.0.0/16"}, "containers": 0, "builtin": true, "project": ""}, {"id": strings.Repeat("2", 64), "name": "junpanel-blog_default", "driver": "bridge", "scope": "local", "internal": false, "subnets": []string{"172.18.0.0/16"}, "containers": 2, "builtin": false, "project": "junpanel-blog"}, {"id": strings.Repeat("3", 64), "name": "backend", "driver": "bridge", "scope": "local", "internal": true, "subnets": []string{"172.19.0.0/16"}, "containers": 0, "builtin": false, "project": ""}}
 	case "/catalog":
 		value = catalogView()
+	case "/apps/detected":
+		value = []detectedApp{{Template: "openwebui", Container: "open-webui", Project: "ai", State: "exited", Adoptable: true}, {Template: "openwebui-ollama", Container: "chat", State: "running"}}
 	case "/apps/adoptable":
 		value = []adoptable{{Project: "ai", Containers: []string{"ollama", "open-webui"}, Running: 1, Images: []string{"ollama/ollama", "ghcr.io/open-webui/open-webui:main"}, Port: 11434}}
 	case "/apps":
