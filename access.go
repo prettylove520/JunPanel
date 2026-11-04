@@ -33,8 +33,12 @@ type accessEntry struct {
 }
 
 // accessEntries reads the addresses the panel's entry file serves.
-func (a *agent) accessEntries() ([]accessEntry, bool) {
-	data, e := os.ReadFile(filepath.Join(a.cfg.Fragments, "panel-access.caddy"))
+func (a *agent) accessEntries() ([]accessEntry, bool) { return panelEntries(a.cfg.Fragments) }
+
+// panelEntries reads the addresses the entry file in the fragments directory serves; the second result
+// says whether the file is the one public-access.sh manages.
+func panelEntries(fragments string) ([]accessEntry, bool) {
+	data, e := os.ReadFile(filepath.Join(fragments, "panel-access.caddy"))
 	if e != nil || !strings.HasPrefix(string(data), "# JunPanel public HTTPS access - managed by public-access.sh\n") {
 		return []accessEntry{}, false
 	}

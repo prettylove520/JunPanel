@@ -184,7 +184,7 @@ PREPARE
   if [[ -n "$panel_password" ]]; then printf '  密码：%s\n' "$panel_password"; else printf '  密码：沿用原有面板密码（本次未重置）\n'; fi
   if [[ "$access" == public && -n "$public_ip" ]]; then
     if ((public_result == 0)); then
-      printf '  登录链接：https://%s\n  状态：HTTPS 检查通过，可使用上方链接登录\n==================================================\n\n以后直接打开上方链接，无需建立 SSH 隧道。\n' "$public_ip"
+      printf '  登录链接：https://%s\n  状态：HTTPS 检查通过，可使用上方链接登录\n==================================================\n\n以后直接打开上方链接，无需建立 SSH 隧道。\n\n管理菜单（升级、添加域名、重置密码、卸载）：在服务器上输入 junpanel\n' "$public_ip"
     elif ((public_result == 2)); then
       if ((looked_up)); then printf '\n  提示：这台服务器在 NAT 之后，请到云服务商的安全组 / 防火墙放行 TCP 80 和 443（入站），证书才能签发。\n'; fi
       printf '  登录链接（准备中）：https://%s\n  状态：证书或入口尚未就绪，当前不能确认可登录\n==================================================\n\n请查看上方提示，或执行：sudo journalctl -u caddy -n 80 --no-pager\n' "$public_ip"
@@ -195,7 +195,7 @@ PREPARE
   fi
   local client_ip='' client_port='' server_ip='' server_port='' ssh_user='' ssh_host='' panel_port=8787
   if [[ -f /opt/junpanel/port && ! -L /opt/junpanel/port ]]; then read -r panel_port < /opt/junpanel/port; elif [[ -n "${JUNPANEL_PORT:-}" ]]; then panel_port="$JUNPANEL_PORT"; fi
-  printf '  本机入口：http://127.0.0.1:%s\n==================================================\n' "$panel_port"
+  printf '  本机入口：http://127.0.0.1:%s\n  管理菜单：在服务器上输入 junpanel（升级、添加域名、重置密码、卸载）\n==================================================\n' "$panel_port"
   if [[ "$access" == local && "$public_result" != 0 ]]; then printf '\n公网入口关闭未完成，请查看上方报错确认访问状态。\n'; fi
   if [[ "$access" == public ]]; then printf '\n公网 IP 未识别；NAT、仅内网或多公网 IP 环境需要手动指定。可设置 JUNPANEL_PUBLIC_IP 后重跑安装器，账号与数据会保留。\n'; fi
   read -r client_ip client_port server_ip server_port <<< "${SSH_CONNECTION:-}"
