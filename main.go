@@ -20,15 +20,21 @@ import (
 
 //go:embed web/*
 var assets embed.FS
-var version = "1.5.16"
+var version = "1.5.17"
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
 	if len(os.Args) < 2 {
-		fmt.Println("JunPanel · server / agent / setup / password / version")
+		if isInteractive() {
+			os.Exit(runCLI("menu", nil))
+		}
+		fmt.Print(cliHelp)
 		return
 	}
 	cmd := os.Args[1]
+	if cliCommands[cmd] {
+		os.Exit(runCLI(cmd, os.Args[2:]))
+	}
 	f := flag.NewFlagSet(cmd, flag.ExitOnError)
 	data := f.String("data", "/var/lib/junpanel-web", "认证数据目录")
 	state := f.String("state", "/var/lib/junpanel-agent", "管理数据目录")
@@ -48,6 +54,11 @@ func main() {
 		fmt.Println("JunPanel", version)
 		return
 	case "setup", "password":
+		if cmd == "password" {
+			if handled, code := resetAsWebUser(); handled {
+				os.Exit(code)
+			}
+		}
 		if e := os.MkdirAll(*data, 0750); e != nil {
 			log.Fatal(e)
 		}
@@ -68,7 +79,11 @@ func main() {
 		if e := atomicJSON(file, account, 0600); e != nil {
 			log.Fatal(e)
 		}
-		fmt.Printf("管理员：%s\n初始密码：%s\n首次登录后请在设置中修改密码。\n", account.User, password)
+		label := "初始密码"
+		if cmd == "password" {
+			label = "新密码"
+		}
+		fmt.Printf("管理员：%s\n%s：%s\n首次登录后请在设置中修改密码。\n", account.User, label, password)
 		return
 	case "agent":
 		cfg := agentConfig{State: *state, Root: *root, Caddy: *caddy, Fragments: *fragments, Socket: *sock, CaddyData: *caddyData}

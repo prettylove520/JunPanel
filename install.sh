@@ -80,6 +80,7 @@ install -m 0755 -o root -g root "$BIN" /opt/junpanel/junpanel.next
 mv /opt/junpanel/junpanel.next /opt/junpanel/junpanel
 printf 'JunPanel 0.1.11\n' > /opt/junpanel/.junpanel-install
 chmod 0644 /opt/junpanel/.junpanel-install
+ln -sfn /opt/junpanel/junpanel /usr/local/bin/junpanel
 if [[ ! -e /var/lib/junpanel-web/account.json ]]; then runuser -u junpanel-web -- /opt/junpanel/junpanel setup --data /var/lib/junpanel-web; fi
 [[ -f /var/lib/junpanel-web/account.json && ! -L /var/lib/junpanel-web/account.json ]] || die '管理员配置异常'
 chown junpanel-web:junpanel-web /var/lib/junpanel-web/account.json
@@ -165,4 +166,4 @@ chmod 0644 /opt/junpanel/port
 for temp in "$ROLLBACK" "$BIN_OLD" "$WEB_OLD" "$AGENT_OLD"; do [[ -z "$temp" ]] || rm -f -- "$temp"; done
 trap - ERR
 say '安装完成。现有 SSH、Fail2ban、防火墙、Swap 和安全更新均未配置变更。'
-printf '\n在你的电脑上建立 SSH 隧道（保持本窗口运行）：\n  ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:%s:127.0.0.1:%s 你的SSH用户@服务器IP\n\n浏览器打开：http://127.0.0.1:%s\n账号：admin（即 admin）\n忘记面板密码：sudo -u junpanel-web /opt/junpanel/junpanel password\n' "$PORT" "$PORT" "$PORT"
+printf '\n在你的电脑上建立 SSH 隧道（保持本窗口运行）：\n  ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:%s:127.0.0.1:%s 你的SSH用户@服务器IP\n\n浏览器打开：http://127.0.0.1:%s\n账号：admin（即 admin）\n管理菜单（升级、域名、重置密码、卸载）：sudo junpanel\n' "$PORT" "$PORT" "$PORT"
