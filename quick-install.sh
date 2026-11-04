@@ -46,11 +46,20 @@ die() { printf '[JunPanel] %s\n' "$*" >&2; exit 1; }
 [[ -d /run/systemd/system ]] || die '需要 systemd 系统，无法自动准备运行环境。'
 . /etc/os-release
 distro="${ID:-}" codename="${VERSION_CODENAME:-}"
-need_docker=0 need_compose=0 need_caddy=0
+need_docker=0 need_compose=0 need_caddy=0 caddy_old=0 access="${1:-public}"
 command -v docker >/dev/null || need_docker=1
 if ((need_docker == 0)) && ! docker compose version >/dev/null 2>&1; then need_compose=1; fi
 [[ -x /usr/bin/caddy ]] || need_caddy=1
-if ((need_docker + need_compose + need_caddy == 0)); then
+# The HTTPS entry for an IP address needs Caddy 2.10.1 or newer; Debian's own package is older.
+# A Caddy installed from a package is upgraded from the official repository; any other is left alone.
+if ((need_caddy == 0)) && [[ "$access" == public ]]; then
+  caddy_version="$(/usr/bin/caddy version 2>/dev/null || true)"; caddy_version="${caddy_version%% *}"; caddy_version="${caddy_version#v}"
+  if [[ -n "$caddy_version" ]] && dpkg --compare-versions "$caddy_version" lt 2.10.1; then
+    if dpkg -s caddy >/dev/null 2>&1; then caddy_old=1
+    else say "现有 Caddy $caddy_version 低于 2.10.1，且不是软件包安装的，无法自动升级；请自行升级，或设置 JUNPANEL_ACCESS=local 仅用 SSH 隧道。"; fi
+  fi
+fi
+if ((need_docker + need_compose + need_caddy + caddy_old == 0)); then
   say 'Docker、Compose 与 Caddy 均已就绪，无需额外安装。'
   exit 0
 fi
@@ -77,17 +86,21 @@ if ((need_docker + need_compose)); then
   docker info >/dev/null 2>&1 || die 'Docker 已安装但服务未能启动，请执行 systemctl status docker 查看原因。'
   docker compose version >/dev/null 2>&1 || die 'Docker Compose 插件不可用，请手动安装后重跑。'
 fi
-if ((need_caddy)); then
-  for port in 80 443; do
-    if [[ -n "$(ss -H -ltnp "sport = :$port" 2>/dev/null)" ]]; then
-      die "端口 $port 已被其它程序占用，Caddy 无法启动。请先停用占用者（ss -ltnp 'sport = :$port' 可查看），或自行安装 Caddy 后重跑。"
-    fi
-  done
-  say '安装 Caddy（Caddy 官方源）…'
+if ((need_caddy + caddy_old)); then
+  if ((need_caddy)); then
+    for port in 80 443; do
+      if [[ -n "$(ss -H -ltnp "sport = :$port" 2>/dev/null)" ]]; then
+        die "端口 $port 已被其它程序占用，Caddy 无法启动。请先停用占用者（ss -ltnp 'sport = :$port' 可查看），或自行安装 Caddy 后重跑。"
+      fi
+    done
+    say '安装 Caddy（Caddy 官方源）…'
+  else
+    say "升级 Caddy $caddy_version → 官方最新版（保留现有 Caddyfile 与站点；升级时 Caddy 会重启几秒）…"
+  fi
   fetch_key https://dl.cloudsmith.io/public/caddy/stable/gpg.key /etc/apt/keyrings/caddy-stable.asc
   printf 'deb [signed-by=/etc/apt/keyrings/caddy-stable.asc] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main\n' > /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -qq
-  apt-get install -y -qq caddy >/dev/null || die 'Caddy 安装失败，请查看上方报错。'
+  apt-get install -y -qq -o Dpkg::Options::=--force-confold caddy >/dev/null || die 'Caddy 安装或升级失败，请查看上方报错。'
   systemctl enable --now caddy.service >/dev/null 2>&1 || true
   for _ in {1..20}; do systemctl is-active --quiet caddy.service && break; sleep 1; done
   systemctl is-active --quiet caddy.service || die 'Caddy 已安装但服务未能启动，请执行 journalctl -u caddy -n 50 --no-pager 查看原因。'
@@ -149,7 +162,7 @@ PREPARE
   if [[ "${JUNPANEL_AUTO_DEPS:-1}" != 0 ]]; then
     printf '[3/5] 准备运行环境（缺少 Docker 或 Caddy 时自动安装，普通用户可能需要输入 sudo 密码）…\n'
     write_prepare "$workdir/prepare.sh"
-    "${runner[@]}" bash "$workdir/prepare.sh"
+    "${runner[@]}" bash "$workdir/prepare.sh" "$access"
   else
     printf '[3/5] 已跳过自动准备运行环境（JUNPANEL_AUTO_DEPS=0）。\n'
   fi
