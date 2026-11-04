@@ -268,7 +268,7 @@ func (a *agent) containerFindings(st *alertState, now time.Time) (out []finding,
 	busy := map[string]bool{}
 	for _, r := range apps {
 		if r.Busy {
-			busy["junpanel-"+r.ID] = true
+			busy[appProject(r)] = true
 		}
 	}
 	current := map[string]container{}

@@ -139,6 +139,7 @@ var auditActions = []struct {
 	{"POST", regexp.MustCompile(`^/api/sites/[^/]+/toggle$`), "启用或停用网站"},
 	{"DELETE", regexp.MustCompile(`^/api/sites/[^/]+$`), "删除网站"},
 	{"POST", regexp.MustCompile(`^/api/apps$`), "安装应用"},
+	{"POST", regexp.MustCompile(`^/api/apps/adopt$`), "接管已有项目"},
 	{"POST", regexp.MustCompile(`^/api/apps/[^/]+/action$`), "应用操作"},
 	{"POST", regexp.MustCompile(`^/api/credentials$`), "查看连接信息"},
 	{"POST", regexp.MustCompile(`^/api/containers/[^/]+/action$`), "容器操作"},

@@ -162,6 +162,8 @@ type appRecord struct {
 	Env        map[string]string `json:"env,omitempty"`
 	Created    time.Time         `json:"created"`
 	Removed    bool              `json:"removed"`
+	Adopted    bool              `json:"adopted,omitempty"`
+	Project    string            `json:"project,omitempty"`
 	Busy       bool              `json:"busy"`
 	LastError  string            `json:"last_error,omitempty"`
 }
@@ -190,6 +192,9 @@ func (a *agent) appCredentials(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 		values := map[string]any{"host": "127.0.0.1", "port": record.Port, "user": "", "database": "", "password": "", "note": "应用首次访问时自行创建管理员账号；界面端口仅监听本机。"}
+		if record.Adopted {
+			values["note"] = "这是接管的已有项目，账号和密码由项目自己管理，面板没有保存。端口是项目发布到本机的第一个 TCP 端口。"
+		}
 		switch record.Template {
 		case "wordpress":
 			values["host"] = "database（应用项目内部网络）"
@@ -232,7 +237,7 @@ func publicApps(rows []appRecord) []map[string]any {
 	out := []map[string]any{}
 	for _, r := range rows {
 		template, _ := findTemplate(r.Template)
-		out = append(out, map[string]any{"id": r.ID, "name": r.Name, "template": r.Template, "port": r.Port, "created": r.Created, "removed": r.Removed, "busy": r.Busy, "last_error": r.LastError, "project": "junpanel-" + r.ID, "category": template.Category, "image": template.Image, "database": template.Database})
+		out = append(out, map[string]any{"id": r.ID, "name": r.Name, "template": r.Template, "port": r.Port, "created": r.Created, "removed": r.Removed, "busy": r.Busy, "last_error": r.LastError, "project": appProject(r), "adopted": r.Adopted, "category": template.Category, "image": template.Image, "database": template.Database})
 	}
 	return out
 }
@@ -353,6 +358,15 @@ func (a *agent) appList(w http.ResponseWriter, r *http.Request) error {
 				if c.State == "running" {
 					running++
 				}
+			}
+		}
+		if p["adopted"] == true {
+			rows := projectContainers(containers, p["project"].(string))
+			if port := publishedPort(rows); port > 0 {
+				p["port"] = port
+			}
+			if len(rows) > 0 {
+				p["image"] = rows[0].Image
 			}
 		}
 		p["containers"] = total
@@ -529,7 +543,7 @@ func (a *agent) appAction(w http.ResponseWriter, r *http.Request) error {
 
 // appActionJob validates an app action, marks the app busy and starts the job.
 func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
-	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" && action != "upgrade" && action != "purge" {
+	if action != "start" && action != "stop" && action != "restart" && action != "deploy" && action != "remove" && action != "restore" && action != "upgrade" && action != "purge" && action != "release" {
 		return job{}, bad(400, "操作无效")
 	}
 	a.mu.Lock()
@@ -544,6 +558,12 @@ func (a *agent) appActionJob(id, action string, done func(error)) (job, error) {
 		}
 		if record.Busy {
 			return job{}, bad(409, "此应用已有操作进行中")
+		}
+		if record.Adopted {
+			return a.adoptedJob(rows, i, action, done)
+		}
+		if action == "release" {
+			return job{}, bad(409, "只有接管的项目可以取消接管")
 		}
 		if record.Removed && action != "restore" && action != "purge" {
 			return job{}, bad(409, "应用已卸载，请先恢复部署")

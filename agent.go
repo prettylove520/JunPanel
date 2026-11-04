@@ -160,6 +160,8 @@ func (a *agent) routes() http.Handler {
 	m.HandleFunc("POST /trash/empty", endpoint(a.trashEmpty))
 	m.HandleFunc("GET /catalog", endpoint(a.catalog))
 	m.HandleFunc("GET /apps", endpoint(a.appList))
+	m.HandleFunc("GET /apps/adoptable", endpoint(a.appAdoptable))
+	m.HandleFunc("POST /apps/adopt", endpoint(a.appAdopt))
 	m.HandleFunc("POST /apps", endpoint(a.appInstall))
 	m.HandleFunc("POST /apps/{id}/action", endpoint(a.appAction))
 	m.HandleFunc("GET /apps/{id}/settings", endpoint(a.appSettings))
