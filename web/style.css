@@ -1306,3 +1306,18 @@ button.ov-stop:hover .ov-figure { color: var(--primary); }
 @media (max-width: 900px) { .page-bar { align-items: stretch; } .page-actions { flex-wrap: wrap; } }
 /* A field that sits on the ground, outside any card, is a white pill of its own. */
 .view input:not(.panel input):not(.table-wrap input):not([type=checkbox]):not([type=radio]), .view select:not(.panel select):not(.table-wrap select) { background: var(--card); border-radius: 999px; padding-left: 16px; box-shadow: var(--shadow-raised); }
+
+/* Soft Bento · Lime, second pass: the places the first pass did not reach. */
+.terminal-panel { border: 0; border-radius: var(--radius-card); padding: var(--pad); box-shadow: var(--shadow); }
+.log-view { border-radius: var(--radius-tile); padding: 16px 18px; }
+.terminal-output { border-radius: var(--radius-tile) var(--radius-tile) 0 0; padding: 16px 18px; }
+.terminal-input { border-radius: 0 0 var(--radius-tile) var(--radius-tile); padding: 10px 18px; }
+/* Fields that belong to a dark surface or a bare dialog bar stay bare. */
+.view .terminal-input input, .view .terminal-input input:focus, .search-dialog-field input, .search-dialog-field input:focus { padding-left: 0 !important; border: 0 !important; border-radius: 0 !important; background: none !important; box-shadow: none !important; color: inherit; }
+.view .terminal-input input { color: var(--log-text); }
+/* Fields inside a card of another name keep the soft well instead of the white pill. */
+.view .terminal-panel select, .view .terminal-panel .field input { background: var(--fill); box-shadow: none; }
+.modal .log-view, .up-notes { border-radius: var(--radius-tile); }
+.upgrade-pill { white-space: nowrap; flex: none; }
+.breadcrumb { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) { .topbar-actions { gap: 6px; } .upgrade-pill { height: 34px; padding: 0 12px; font-size: 12px; } }
