@@ -20,7 +20,7 @@ import (
 
 //go:embed web/*
 var assets embed.FS
-var version = "1.5.19"
+var version = "1.6.0"
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
