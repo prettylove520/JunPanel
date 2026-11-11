@@ -170,7 +170,7 @@ $('#sidebar-mask').onclick = () => $('#sidebar').classList.remove('open');
 // The theme setting is "auto" (follow the system, also while the page is open), "light" or "dark".
 const themeModes = ['auto', 'light', 'dark'], themeNames = { auto: '跟随系统', light: '浅色', dark: '深色' }, themeIcons = { auto: 'monitor', light: 'sun', dark: 'moon' };
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
-let themeMode = 'dark'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
+let themeMode = 'light'; try { const saved = localStorage.getItem('junpanel-theme'); if (themeModes.includes(saved)) themeMode = saved; } catch {}
 function applyTheme(mode = themeMode) {
   themeMode = mode;
   document.documentElement.dataset.theme = mode === 'auto' ? (systemDark.matches ? 'dark' : 'light') : mode;
