@@ -1321,3 +1321,26 @@ button.ov-stop:hover .ov-figure { color: var(--primary); }
 .upgrade-pill { white-space: nowrap; flex: none; }
 .breadcrumb { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 640px) { .topbar-actions { gap: 6px; } .upgrade-pill { height: 34px; padding: 0 12px; font-size: 12px; } }
+
+/* Soft Bento · Lime, third pass (1.6.1): phone widths and what the pointer does. */
+/* The crumb is a flex row, so the ellipsis has to sit on the parts; the divider never shrinks. */
+.breadcrumb span, .breadcrumb strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.breadcrumb .sep { flex: none; }
+/* Row actions in a compose card are the same words-that-become-pills as in an installed card. */
+.installed-actions .button.quiet { padding: 4px 10px; border-radius: 999px; transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
+.installed-actions .button.quiet:hover:not(:disabled) { padding: 4px 10px; background: var(--fill); color: var(--text); }
+/* A destructive word stays red under the pointer instead of turning into an ordinary one. */
+.data-table td .button.quiet.danger-text:hover:not(:disabled), .resource-row .button.quiet.danger-text:hover:not(:disabled), .installed-card .button.quiet.danger-text:hover:not(:disabled), .installed-actions .button.quiet.danger-text:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
+.button.quiet.danger-text:hover:not(:disabled) { color: var(--danger); }
+.chip:hover:not(.active) { background: var(--line-soft) !important; }
+.security-actions { flex-wrap: wrap; }
+@media (max-width: 900px) {
+  /* Tabs stay on one line and scroll sideways; a lone tab on a second line reads as a stray button. */
+  .subnav { flex-wrap: nowrap; scrollbar-width: none; }
+  .subnav::-webkit-scrollbar { display: none; }
+  .ov-alarm { width: auto; }
+}
+@media (max-width: 640px) {
+  /* On a phone the bar has room for the page name only. */
+  .breadcrumb span { display: none; }
+}
