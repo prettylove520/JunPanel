@@ -4,11 +4,11 @@
 
 [![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.6.0](https://github.com/prettylove520/JunPanel/releases/tag/v1.6.0) · [MIT 许可证](LICENSE)
 
-中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用石墨色与薄荷绿设计，支持深浅主题和手机布局。
+中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用 Soft Bento 风格（浅灰底、白色大圆角卡片、青柠绿强调色），支持浅色与深色主题和手机布局。
 
 品牌素材：[矢量标识](web/logo.svg) · [标识预览](logo-preview.png)
 
-界面参照 1Panel 的布局，视觉沿用常见服务器面板的结构（左侧菜单、首页四个圆环仪表、卡片和表格），细节参照 Vercel、Linear：一套中性灰阶、近黑色操作按钮、只用一种靛蓝表示选中/链接/图表，状态以“圆点 + 文字”显示；左侧一级菜单（概览、应用商店、网站、数据库、容器、文件、计划任务、备份、告警、日志、面板设置），同一模块下的页面用顶部标签切换；支持浅色与深色主题（默认跟随系统），小屏幕自动收起菜单。概览与网站列表同时显示面板网站和原有 Caddy 域名（只读，按域名统计）。除主配置外，还会从运行中的系统 Caddy 进程发现其他配置文件，显示配置路径、PID 和读取结果；相同域名去重，其他实例不会被面板重载。读取的是磁盘配置，并非运行时管理 API 快照；使用 `--resume`、自定义适配器或被隐藏的进程不在自动发现范围内；Docker 列表包含系统 Docker 中运行和已停止的全部容器。直接运行的程序和 systemd 服务不属于 Docker 容器，“面板安装应用”只统计通过 JunPanel 安装的应用。读取失败会显示错误，不当作零项。 界面字体（Geist、Geist Mono，中文为思源黑体 Noto Sans SC，均为 SIL OFL 授权，见 `web/fonts/LICENSE.txt`）随程序内置，不访问外部字体服务；中文字体按 Unicode 分片，页面只下载实际用到的字。应用商店显示各应用自己的 Logo（来源与授权见 `third-party/app-icons-NOTICE.txt`），仅用于标识应用。
+界面参照 1Panel 的布局，沿用常见服务器面板的结构（左侧菜单、首页资源读数卡片、卡片和表格）；外观自 v1.6.0 起为 Soft Bento：浅灰底、白色大圆角卡片、柔和阴影、近黑色操作按钮，只用一种青柠绿渐变表示选中、进度和升级入口，状态以“圆点 + 文字”显示；左侧一级菜单（概览、应用商店、网站、数据库、容器、文件、计划任务、备份、告警、日志、面板设置），同一模块下的页面用顶部标签切换；支持浅色与深色主题（默认浅色，切换后会被记住），小屏幕自动收起菜单。概览与网站列表同时显示面板网站和原有 Caddy 域名（只读，按域名统计）。除主配置外，还会从运行中的系统 Caddy 进程发现其他配置文件，显示配置路径、PID 和读取结果；相同域名去重，其他实例不会被面板重载。读取的是磁盘配置，并非运行时管理 API 快照；使用 `--resume`、自定义适配器或被隐藏的进程不在自动发现范围内；Docker 列表包含系统 Docker 中运行和已停止的全部容器。直接运行的程序和 systemd 服务不属于 Docker 容器，“面板安装应用”只统计通过 JunPanel 安装的应用。读取失败会显示错误，不当作零项。 界面字体（Geist、Geist Mono，中文为思源黑体 Noto Sans SC，均为 SIL OFL 授权，见 `web/fonts/LICENSE.txt`）随程序内置，不访问外部字体服务；中文字体按 Unicode 分片，页面只下载实际用到的字。应用商店显示各应用自己的 Logo（来源与授权见 `third-party/app-icons-NOTICE.txt`），仅用于标识应用。
 
 界面预览（模拟数据）：[概览](preview.png) · [应用商店](app-center.png)
 
@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 在线安装器固定下载 v1.6.0 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
 
-IP 识别不访问第三方 IP 查询服务：优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。NAT、仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接。证书尚未就绪会标注“准备中”，不会提示已经可登录。
+IP 识别优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。网卡上没有公网地址时（云服务器常见的 NAT 情况），会向 api.ipify.org、ifconfig.me、icanhazip.com 查询出口 IP，至少两个给出相同结果才采用；设置 `JUNPANEL_NO_IP_LOOKUP=1` 可不查询。仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接；NAT 机器还需在云服务商的安全组放行 TCP 80 和 443。证书尚未就绪会标注“准备中”，不会提示已经可登录。
 
 如果只希望使用 SSH 隧道，显式选择本机模式：
 
@@ -207,6 +207,20 @@ SSH 转发两端及浏览器地址也都改用 8877。后续重新执行安装�
 
 ## 常用维护
 
+安装后服务器上有 `junpanel` 命令（需要 root，普通用户会自动改用 sudo）：
+
+```bash
+junpanel                    # 打开菜单
+junpanel info               # 管理员账号、访问地址、版本、服务状态
+junpanel password           # 重置管理员密码并显示新密码
+junpanel domain add 域名    # 添加或更换域名入口（先把 A 记录指向本机）
+junpanel domain remove      # 移除域名入口
+junpanel upgrade            # 检查并升级到最新版本
+junpanel uninstall          # 卸载面板（保留数据、网站和应用）
+```
+
+也可以直接用系统命令：
+
 ```bash
 # 两个面板服务的状态与最近日志
 sudo systemctl status junpanel-agent junpanel-web --no-pager
@@ -279,10 +293,10 @@ Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不�
 - 数据库查询结果上限 8 MiB，过大时拒绝，避免把截断结果当成完整结果。数据库备份与恢复是流式的，不受此限；整站迁移请用原生工具。
 - 编排只允许面板能检查的写法：不允许 `privileged`、宿主机网络/PID/IPC 命名空间、额外权限（少数无害权限除外）、设备、GPU、`build`、`env_file`，以及挂载 `/srv/junpanel` 以外的目录；检查在 `nobody` 用户下由 `docker compose config` 规范化后进行，部署的就是检查过的内容。
 - 现有 Compose 项目按标签识别，整组操作逐个执行，不重新解释外部 Compose 文件或保证依赖顺序；遇到失败会停止并提示部分完成。一次性容器不参与整组操作。
-- 安装器面向 Debian + 标准 systemd `caddy.service`、`caddy` 用户（home 为 `/var/lib/caddy`）、`/usr/bin/caddy`、`/etc/caddy/Caddyfile`、现有 Docker/Compose。自定义 Caddy 环境文件、主配置中的环境变量、非标准路径会拒绝自动安装；其它导入文件中的环境变量同样需要人工核对后，为代理及 Caddy 校验命令配置一致的环境。
+- 安装器面向 Debian + 标准 systemd `caddy.service`、`caddy` 用户（home 为 `/var/lib/caddy`）、`/usr/bin/caddy`、`/etc/caddy/Caddyfile` 和 Docker/Compose。一键安装在 Debian / Ubuntu 上会补装缺少的 Docker、Compose 和 Caddy，软件包安装的旧版 Caddy 会升级到官方最新版；解压后直接运行 `install.sh` 不会安装这些依赖。自定义 Caddy 环境文件、主配置中的环境变量、非标准路径会拒绝自动安装；其它导入文件中的环境变量同样需要人工核对后，为代理及 Caddy 校验命令配置一致的环境。
 - Caddy 管理 API 必须可由现有 `systemctl reload caddy` 正常使用；`admin off` 等定制需先自行处理。安装前可先确认现有 reload 能工作。
 - Docker REST 客户端支持 API 1.41–1.56 的协商区间，超出支持范围时明确报错；用户所给 Compose 版本由安装器直接检测，不安装替换版本。
-- 已完成 Go 自动测试、静态检查、前端语法检查、浏览器演示交互和响应式检查，以及 Linux 双架构交叉编译。详见 `VALIDATION.md`。**当前本地开发环境没有 Debian/systemd/Docker 守护进程，未进行真实服务器安装、容器启动、数据库初始化、PTY 或真实证书签发联调，也没有部署到你的远程服务器。**
+- 已完成 Go 自动测试、静态检查、前端语法检查、浏览器演示交互和响应式检查，以及 Linux 双架构交叉编译。CI 在 Linux 上运行带 race 检测的测试，并用真实 Docker 和真实 Caddy 运行一部分测试。详见 `VALIDATION.md`。**没有在真实的 Debian 服务器上做过整机验收：安装器与 systemd 的实际效果、防火墙规则在 nftables 中实际生效、旧版 Caddy 自动升级、`junpanel` 命令菜单、接管已有 Compose 项目、PTY 和真实证书签发都还需要在你的服务器上确认；也没有部署到你的远程服务器。**
 
 ## 自行开发
 
