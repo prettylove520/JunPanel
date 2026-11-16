@@ -2,7 +2,7 @@
 
 ![JunPanel](logo-preview.png)
 
-[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.6.1](https://github.com/prettylove520/JunPanel/releases/tag/v1.6.1) · [MIT 许可证](LICENSE)
+[![CI](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/prettylove520/JunPanel/actions/workflows/ci.yml) · [下载 v1.6.2](https://github.com/prettylove520/JunPanel/releases/tag/v1.6.2) · [MIT 许可证](LICENSE)
 
 中文优先的自托管服务器工作台。独立编写的 Go 后端与原生 HTML/CSS/JavaScript 界面，采用 Soft Bento 风格（浅灰底、白色大圆角卡片、青柠绿强调色），支持浅色与深色主题和手机布局。
 
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 
 自动完成下载、校验、**缺少 Docker / Compose / Caddy 时从官方源自动安装（Debian / Ubuntu；已有的不会被替换，设置 `JUNPANEL_AUTO_DEPS=0` 可跳过）**、环境检查、面板安装、**公网 IPv4 识别和 HTTPS 管理入口配置**。结束时集中显示账号、随机密码和登录链接：证书及面板响应检查通过后可直接打开 `https://服务器IP`，无需再填 IP 或执行另一条配置命令。公网登录页会公开，仍需管理员认证；建议开启两步验证。HTTPS 入口要求现有 Caddy 至少 2.10.1、公网 80/443 可达。
 
-在线安装器固定下载 v1.6.1 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
+在线安装器固定下载 v1.6.2 安装包，并从固定 Git 提交下载 HTTPS 配置器；两者都使用脚本内固定的 SHA-256 校验，失败不会执行安装。已有安装可重跑同一命令，沿用账号、数据与保存的端口；不会重置原密码。请先等待后台任务结束。
 
 IP 识别优先保留已配置的公网入口，再读取当前 SSH 连接、本机路由和网卡。网卡上没有公网地址时（云服务器常见的 NAT 情况），会向 api.ipify.org、ifconfig.me、icanhazip.com 查询出口 IP，至少两个给出相同结果才采用；设置 `JUNPANEL_NO_IP_LOOKUP=1` 可不查询。仅 IPv6、仅内网或多地址无法确定时会明确提示，不把私网 IP 当成公网链接；NAT 机器还需在云服务商的安全组放行 TCP 80 和 443。证书尚未就绪会标注“准备中”，不会提示已经可登录。
 
@@ -44,17 +44,17 @@ curl -fsSL https://raw.githubusercontent.com/prettylove520/JunPanel/main/quick-i
 1. 在服务器的 SSH 窗口下载安装包并核对校验和：
 
    ```bash
-   curl -fL -o JunPanel-1.6.1-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.6.1/JunPanel-1.6.1-linux.tar.gz
-   curl -fL -o JunPanel-1.6.1-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.6.1/JunPanel-1.6.1-SHA256SUMS.txt
-   sha256sum --ignore-missing -c JunPanel-1.6.1-SHA256SUMS.txt
+   curl -fL -o JunPanel-1.6.2-linux.tar.gz https://github.com/prettylove520/JunPanel/releases/download/v1.6.2/JunPanel-1.6.2-linux.tar.gz
+   curl -fL -o JunPanel-1.6.2-SHA256SUMS.txt https://github.com/prettylove520/JunPanel/releases/download/v1.6.2/JunPanel-1.6.2-SHA256SUMS.txt
+   sha256sum --ignore-missing -c JunPanel-1.6.2-SHA256SUMS.txt
    ```
 
-   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.6.1)下载到电脑，再通过 `scp` 上传。
+   如果服务器无法连接 GitHub，可从[版本下载页](https://github.com/prettylove520/JunPanel/releases/tag/v1.6.2)下载到电脑，再通过 `scp` 上传。
 
 2. 在服务器的 SSH 窗口执行：
 
    ```bash
-   tar -xzf JunPanel-1.6.1-linux.tar.gz && sudo bash junpanel/install.sh
+   tar -xzf JunPanel-1.6.2-linux.tar.gz && sudo bash junpanel/install.sh
    ```
 
    安装器自动选择架构、验证程序校验和、检查现有服务、创建随机面板密码并启动两个 systemd 服务。记下终端显示的 `admin` 账号与随机密码。**新安装没有默认密码**。
@@ -296,7 +296,7 @@ Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不�
 - 安装器面向 Debian + 标准 systemd `caddy.service`、`caddy` 用户（home 为 `/var/lib/caddy`）、`/usr/bin/caddy`、`/etc/caddy/Caddyfile` 和 Docker/Compose。一键安装在 Debian / Ubuntu 上会补装缺少的 Docker、Compose 和 Caddy，软件包安装的旧版 Caddy 会升级到官方最新版；解压后直接运行 `install.sh` 不会安装这些依赖。自定义 Caddy 环境文件、主配置中的环境变量、非标准路径会拒绝自动安装；其它导入文件中的环境变量同样需要人工核对后，为代理及 Caddy 校验命令配置一致的环境。
 - Caddy 管理 API 必须可由现有 `systemctl reload caddy` 正常使用；`admin off` 等定制需先自行处理。安装前可先确认现有 reload 能工作。
 - Docker REST 客户端支持 API 1.41–1.56 的协商区间，超出支持范围时明确报错；用户所给 Compose 版本由安装器直接检测，不安装替换版本。
-- 已完成 Go 自动测试、静态检查、前端语法检查、浏览器演示交互和响应式检查，以及 Linux 双架构交叉编译。CI 在 Linux 上运行带 race 检测的测试，并用真实 Docker 和真实 Caddy 运行一部分测试。详见 `VALIDATION.md`。v1.6.1 在一台运行中的 Debian 13 服务器上验证过防火墙规则在 nftables 中生效（含 Docker 发布的端口）、拒绝封禁正在使用的 SSH 地址、`junpanel` 命令与菜单、面板内升级和接管已有 Compose 项目。**还没有在实机上验证的：全新机器上的一键安装（自动安装 Docker 与 Caddy、旧版 Caddy 自动升级、NAT 出口 IP 查询）、`junpanel` 的重置密码/域名/卸载、防火墙规则重启后恢复、PTY 和真实证书签发。**
+- 已完成 Go 自动测试、静态检查、前端语法检查、浏览器演示交互和响应式检查，以及 Linux 双架构交叉编译。CI 在 Linux 上运行带 race 检测的测试，并用真实 Docker 和真实 Caddy 运行一部分测试。详见 `VALIDATION.md`。v1.6.2 在一台运行中的 Debian 13 服务器上验证过防火墙规则在 nftables 中生效（含 Docker 发布的端口）、拒绝封禁正在使用的 SSH 地址、`junpanel` 命令与菜单、面板内升级和接管已有 Compose 项目。**还没有在实机上验证的：全新机器上的一键安装（自动安装 Docker 与 Caddy、旧版 Caddy 自动升级、NAT 出口 IP 查询）、`junpanel` 的重置密码/域名/卸载、防火墙规则重启后恢复、PTY 和真实证书签发。**
 
 ## 自行开发
 
