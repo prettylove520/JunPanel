@@ -296,7 +296,7 @@ Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不�
 - 安装器面向 Debian + 标准 systemd `caddy.service`、`caddy` 用户（home 为 `/var/lib/caddy`）、`/usr/bin/caddy`、`/etc/caddy/Caddyfile` 和 Docker/Compose。一键安装在 Debian / Ubuntu 上会补装缺少的 Docker、Compose 和 Caddy，软件包安装的旧版 Caddy 会升级到官方最新版；解压后直接运行 `install.sh` 不会安装这些依赖。自定义 Caddy 环境文件、主配置中的环境变量、非标准路径会拒绝自动安装；其它导入文件中的环境变量同样需要人工核对后，为代理及 Caddy 校验命令配置一致的环境。
 - Caddy 管理 API 必须可由现有 `systemctl reload caddy` 正常使用；`admin off` 等定制需先自行处理。安装前可先确认现有 reload 能工作。
 - Docker REST 客户端支持 API 1.41–1.56 的协商区间，超出支持范围时明确报错；用户所给 Compose 版本由安装器直接检测，不安装替换版本。
-- 已完成 Go 自动测试、静态检查、前端语法检查、浏览器演示交互和响应式检查，以及 Linux 双架构交叉编译。CI 在 Linux 上运行带 race 检测的测试，并用真实 Docker 和真实 Caddy 运行一部分测试。详见 `VALIDATION.md`。**没有在真实的 Debian 服务器上做过整机验收：安装器与 systemd 的实际效果、防火墙规则在 nftables 中实际生效、旧版 Caddy 自动升级、`junpanel` 命令菜单、接管已有 Compose 项目、PTY 和真实证书签发都还需要在你的服务器上确认；也没有部署到你的远程服务器。**
+- 已完成 Go 自动测试、静态检查、前端语法检查、浏览器演示交互和响应式检查，以及 Linux 双架构交叉编译。CI 在 Linux 上运行带 race 检测的测试，并用真实 Docker 和真实 Caddy 运行一部分测试。详见 `VALIDATION.md`。v1.6.1 在一台运行中的 Debian 13 服务器上验证过防火墙规则在 nftables 中生效（含 Docker 发布的端口）、拒绝封禁正在使用的 SSH 地址、`junpanel` 命令与菜单、面板内升级和接管已有 Compose 项目。**还没有在实机上验证的：全新机器上的一键安装（自动安装 Docker 与 Caddy、旧版 Caddy 自动升级、NAT 出口 IP 查询）、`junpanel` 的重置密码/域名/卸载、防火墙规则重启后恢复、PTY 和真实证书签发。**
 
 ## 自行开发
 
