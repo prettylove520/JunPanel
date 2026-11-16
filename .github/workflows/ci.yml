@@ -71,7 +71,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
           cache-dependency-path: go.sum
       - name: Static checks
         run: go vet ./...
@@ -91,7 +91,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
           cache-dependency-path: go.sum
       - name: Backup, restore and upgrade tests against the real Docker engine
         run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerAppBackupAndRestore|TestDockerDatabaseBackupStreams|TestDockerScheduledBackupAndRestart|TestDockerAppUpgrade|TestDockerMemosTemplate|TestDockerDatabaseRestore' ./...
@@ -108,7 +108,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
           cache-dependency-path: go.sum
       - name: Stacks, volumes, networks and alerts against the real Docker engine
         run: JUNPANEL_DOCKER_TEST=1 go test -count=1 -run 'TestDockerContainerAlerts|TestDockerStackLifecycle|TestDockerVolumesAndNetworks' ./...
@@ -146,7 +146,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
           cache-dependency-path: go.sum
       - name: Small app templates against the real Docker engine
         env:
@@ -165,7 +165,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
           cache-dependency-path: go.sum
       - name: Browser and installer syntax
         run: |
@@ -195,7 +195,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
           cache-dependency-path: go.sum
       - run: |
           for arch in amd64 arm64; do

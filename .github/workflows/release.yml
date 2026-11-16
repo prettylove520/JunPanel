@@ -66,7 +66,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
+          # The same line as CI, at its newest patch release. Reading the version from go.mod picked the
+          # exact ".0" written there, so releases were built without any of the later security fixes.
+          go-version: '1.27.x'
+          check-latest: true
           cache-dependency-path: go.sum
       - name: Test and package
         run: bash scripts/package-release.sh "$VERSION"
@@ -86,8 +89,11 @@ jobs:
           done
       - name: Open a pull request pinning quick-install.sh
         env:
-          # Pull requests opened with the workflow token do not trigger the CI workflow.
-          PUSH_TOKEN: ${{ github.token }}
+          # The workflow token may not open pull requests in this repository, and one it did open would not
+          # start CI. With a RELEASE_TOKEN secret (a token of the owner's with contents and pull-requests
+          # write) the pull request is opened and checked; without it the branch is pushed and the step warns.
+          PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         run: |
           hash="$(sha256sum "dist/JunPanel-$VERSION-linux.tar.gz" | cut -d' ' -f1)"
           branch="release/pin-v$VERSION"
@@ -107,4 +113,4 @@ jobs:
           git push -q --force origin "$branch"
           body="Release v$VERSION 已发布，将在线安装器改为下载该版本，并固定安装包的 SHA-256：\`$hash\`。合并后一键安装命令才会安装 v$VERSION。"
           gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title "一键安装改用 v$VERSION" --body "$body" \
-            || echo "::warning::未能自动创建 PR（仓库设置里需允许 Actions 创建 PR）。分支 $branch 已推送，请手动创建。"
+            || echo "::warning::未能自动创建 PR（工作流令牌在本仓库不能创建 PR；可添加 RELEASE_TOKEN 密钥）。分支 $branch 已推送，请手动执行：gh pr create --base main --head $branch"
