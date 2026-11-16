@@ -83,6 +83,24 @@ func tarNames(t *testing.T, gzipped []byte) []string {
 	}
 }
 
+// flipByte damages a file by inverting one byte. Writing a fixed value instead leaves the file intact
+// whenever the byte already had that value, and the archive bytes vary from run to run.
+func flipByte(t *testing.T, path string, offset int64) {
+	t.Helper()
+	f, e := os.OpenFile(path, os.O_RDWR, 0)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer f.Close()
+	b := make([]byte, 1)
+	if _, e = f.ReadAt(b, offset); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = f.WriteAt([]byte{^b[0]}, offset); e != nil {
+		t.Fatal(e)
+	}
+}
+
 func TestSiteBackupRestoreAndIntegrity(t *testing.T) {
 	a := testAgent(t)
 	h := a.routes()
@@ -146,9 +164,7 @@ func TestSiteBackupRestoreAndIntegrity(t *testing.T) {
 	// A modified archive is refused before anything is touched.
 	original := backups[1]
 	path := filepath.Join(a.backupDir(), original.File)
-	f, _ := os.OpenFile(path, os.O_WRONLY, 0)
-	f.WriteAt([]byte{0xff}, 12)
-	f.Close()
+	flipByte(t, path, 12)
 	os.WriteFile(filepath.Join(s.Root, "index.html"), []byte("keep me"), 0644)
 	r = request(h, "POST", "/backups/"+original.ID+"/restore", `{"confirm":true}`, nil, nil)
 	if j := waitOutcome(t, a, r.Body.Bytes()); j.State != "failed" || !strings.Contains(j.Error, "校验失败") {

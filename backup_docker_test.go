@@ -173,9 +173,7 @@ func TestDockerAppBackupAndRestore(t *testing.T) {
 
 	// A modified backup must be refused, and the app left alone.
 	path := filepath.Join(a.backupDir(), backup.File)
-	f, _ := os.OpenFile(path, os.O_WRONLY, 0)
-	f.WriteAt([]byte{0xff}, 40)
-	f.Close()
+	flipByte(t, path, 40)
 	if r = request(h, "POST", "/backups/"+backup.ID+"/restore", `{"confirm":true}`, nil, nil); r.Code != 202 {
 		t.Fatal(r.Body.String())
 	}
