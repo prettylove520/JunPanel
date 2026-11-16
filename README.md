@@ -300,7 +300,7 @@ Cookie 是 HttpOnly、SameSite=Strict，令牌仅存服务器内存，界面不�
 
 ## 自行开发
 
-Go 1.26 或更新版本；浏览器资源直接嵌入程序，不需要前端依赖安装。只有两个通用第三方 Go 模块：`creack/pty` 与 `gorilla/websocket`。
+Go 1.27 或更新版本；浏览器资源直接嵌入程序，不需要前端依赖安装。只有两个通用第三方 Go 模块：`creack/pty` 与 `gorilla/websocket`。
 
 ```bash
 go test ./...
